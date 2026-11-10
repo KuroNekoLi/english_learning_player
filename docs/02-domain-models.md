@@ -1,0 +1,54 @@
+# 資料模型與 ID 契約（v0.1）
+
+## 1. 身分、時間、版本
+- `userId`：Firebase Auth UID，不用作本機檔案路徑的原始字串。
+- `materialId`：UUID，代表使用者可學習的教材；**不等於檔案 hash**。
+- `assetId`：同帳號內穩定檔案參照；`sha256` 表示位元內容完整性，重複可去重。
+- `trackId`：字幕軌身分；`cueId`：一個 track version 的局部唯一 cue id，不以 SRT 序號當全域 id。
+- `playlistId`、`folderBindingId`、`deviceId`、`sessionId` 都用獨立穩定 ID。
+- 所有區間 `[startMs,endMs)`；毫秒整數；end 必須大於 start；Server timestamp 用於排序，client sequence 用於識別過期寫入。
+- `schemaVersion`、`revision` 具明確遷移邏輯，不能在既有資料上直接改型別。
+
+## 2. 核心實體（概念欄位）
+| Entity | 欄位 | 重要不變式 |
+|---|---|---|
+| LearningMaterial | id, ownerId, title, audioAssetId, durationMs?, status, createdAt | status = importing/localReady/uploading/cloudReady/error/archived |
+| MediaAsset | id, ownerId, sha256, mime, byteLength, localPath?, storagePath?, availability | `localPath` 僅本機，永不寫雲端 |
+| SubtitleTrack | id, materialId, languageTag, sourceAssetId, sourceName, revision, offsetMs, selectionMode | languageTag 為 BCP 47 如 en, zh-TW；手動優先 |
+| SubtitleCue | trackId, cueId, sequence, startMs, endMs, text | cue 時區無關；文字 UTF-8，容許重疊 |
+| Playlist | id, ownerId, name, order, deletedAt? | 清單可以沒有綁定來源 |
+| PlaylistEntry | playlistId, materialId, order | 同一教材可加入多清單 |
+| FolderBinding | id, playlistId, sourceKind, displayLabel, localGrantRef, scanCursor? | `localGrantRef` 本機專用；跨裝置只同步來源類型與顯示名稱 |
+| PlaybackProgress | ownerId, materialId, positionMs, state, sessionId, deviceId, sequence, serverUpdatedAt | 每個 user + material 一條 canonical 進度；衝突另有決策 |
+| Bookmark | id, ownerId, materialId, cueAnchor, createdAt, deletedAt? | cue 更換時 anchor 需可重定位 |
+| SyncOperation | id, userId, entityType, entityId, operation, payloadHash, attempts, nextRetryAt, state | 至少一次投遞；服務端冪等處理 |
+
+## 3. Local SQLite / Drift
+- `materials`, `media_assets`, `subtitle_tracks`, `subtitle_cues`, `playlists`, `playlist_entries`, `folder_bindings`, `playback_progress`, `bookmarks`, `sync_outbox`, `sync_state`。
+- FK、唯一索引（ownerId+materialId；trackId+cueId 等）、必要 query index、migration test 必備。
+- 保存本機下載路徑、最後檔案存在驗證、快取狀態；在登出時對不同帳號採隔離策略（具體見 ADR）。
+
+## 4. Firestore 建議路徑（先審再建）
+```text
+users/{uid}/materials/{materialId}
+users/{uid}/mediaAssets/{assetId}
+users/{uid}/subtitleTracks/{trackId}
+users/{uid}/playlists/{playlistId}
+users/{uid}/playlists/{playlistId}/entries/{materialId}
+users/{uid}/progress/{materialId}
+users/{uid}/bookmarks/{bookmarkId}
+```
+二進位檔案：`users/{uid}/assets/{assetId}/{safeFilename}`。需 Security Rules 驗證 request.auth.uid == uid、內容大小/類型/metadata，並寫 Firebase Emulator rules 測試。客戶端絕不能自行決定其他人的 UID 路徑。
+
+## 5. 事件和 API 契約
+- `ImportRequested(sourceRef, playlistId?)` → `ImportResult(materialId, stage, errors)`
+- `SubtitleSelected(materialId, languageTag, assetId, isManual)` → `SubtitleTrackChanged(revision)`
+- `PlaybackCommand(materialId, action, positionMs?)` → `PlaybackSnapshot(positionMs, durationMs?, processingState, speed)`
+- `ProgressRecorded(materialId, positionMs, sessionId, sequence)` → outbox 待上傳項目
+- `FolderScanResult(bindingId, added, updated, missing, pendingDownload)` → 匯入協調器
+
+## 6. 參考衝突範例
+兩台裝置相同 material 不等於「最新收到的寫入即正確」。本機負責立即播放，雲端 canonical progress 使用 Session ID + monotonic sequence + server 時間戳驗證；無法判定先後時須保留兩個候選位置供使用者選擇。不要靠 client timestamp 單獨判斷。
+
+## 7. 待決的 schema ADR
+雲端 hash 去重限於同帳號或跨帳號（推薦同帳號）、字幕 cue anchor 遷移策略、登出時本機快取保留政策、清單刪除的墓碑保留期限，皆見 `12-decisions-and-risks.md`。

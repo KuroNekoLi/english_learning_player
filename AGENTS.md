@@ -1,0 +1,41 @@
+# English Learning Player — AI Agent 作業規範
+
+本儲存庫是 Flutter 版 Android / iOS / macOS 雙語精聽播放器。所有 Agent 在修改程式前必須先讀本檔、`docs/README.md`、本次任務所對應的模組規格，以及 `docs/11-work-packages.md`。
+
+## 權威性順序
+1. 使用者本次明確指示與安全限制。
+2. 本檔與 `docs/00-product-requirements.md` 的已核准範圍。
+3. `docs/01-architecture.md`、`docs/02-domain-models.md` 與各模組規格。
+4. `docs/11-work-packages.md` 的任務驗收。
+5. 對應的 `.agents/skills/*/SKILL.md` 與 Flutter/Dart 官方文件。
+
+衝突時不要擅自改變產品行為；把衝突、選項、風險寫入 `docs/12-decisions-and-risks.md`。不可將「提議」視為使用者已批准的事實。
+
+## 開發硬規則
+- 先讀規格，再只實作一個有 ID 的工作包；先檢查 `git status`，不可覆蓋其他人的未提交變更。
+- 遵守 Flutter 官方 View → ViewModel → Repository → Service 分層；複雜且可重用的規則才抽 Domain。共用 UI 與商業邏輯禁止直接使用 platform plugin。
+- 專案決策採 Riverpod；官方架構 Skill 若示範 `ChangeNotifier` / `provider`，學習其責任分層，但在此專案使用 Riverpod DI / Notifier，不混用兩套狀態管理。
+- 音訊必須經過 `AudioEngine` 單一入口；字幕對齊、循環、同步衝突、檔案配對應為可測試的純 Dart 邏輯。
+- 必須同時考慮 Android、iOS、macOS；原生存取使用 Platform Channel / 專用 Adapter，不散落 Widget。
+- 使用者資料先落地、離線可用；網路同步可重試且具冪等性，不因資料夾來源刪除就直接抹除收藏及學習紀錄。
+- 嚴禁將 Firebase admin 憑證、個人金鑰、簽章檔、登入 Token 或真實媒體教材提交 Git；客戶端 Firebase 設定不等於伺服器秘密，但仍依環境管理。
+- 不要添加無關功能、帳號付費機制、強制 AI 或 Android 開發類比。
+- 新增套件前檢查官方文件、現有 Flutter/Dart 相容性、macOS 支援與授權；不可默默升級 SDK 或繞過平台權限。
+- 未實際執行的命令與真機測試不可標註 PASS。對需要 Apple Developer/Firebase 專案的步驟，標記 BLOCKED 與人工前置條件。
+
+## Agent Skills
+依任務選擇性讀取 `.agents/skills/`，詳見 `docs/13-skills-and-sources.md`。本專案附有 Flutter/Dart 官方維護的 Skill 副本與專案專屬 Skill `english-learning-player-engineering`。
+
+## 每個工作包的標準流程
+1. 讀工作包的輸入、產出、依賴、驗收及測試案例。
+2. 寫簡短執行計畫；確認 API / 資料模型契約未被任意改寫。
+3. 實作最小可驗證範圍，補測試、假物件與錯誤處理。
+4. 執行 `dart format --output=none --set-exit-if-changed .`、`flutter analyze`、`flutter test`；依工作包加做真機、整合或 Firebase Emulator 測試。
+5. 摘要列出修改檔案、測試結果、未驗證情境與剩餘風險；必要時更新契約文件。
+6. 只在任務明確要求時 commit；不得自動 push、建立遠端資源或配置雲端計費。
+
+## 已鎖定產品目標
+M4A/MP3 音訊優先，雙語 SRT 自動/手動配對、逐句播放及精聽、跨 macOS/iOS/Android 同帳號同步、Mac iCloud 授權資料夾綁定播放清單。iOS 直接資料夾監控與影片不是第一條端到端驗收鏈路。
+
+## 開發階段
+Stage 1 Sol High（架構與契約）→ Stage 2 Luna High（模組實作）→ Stage 3 Sol High（高風險整合）→ Stage 4 Luna 測試 + Sol 審查。實際模型名稱取決於可用設定；重點是任務類型與驗收門檻，而非宣稱模型保證成功。
