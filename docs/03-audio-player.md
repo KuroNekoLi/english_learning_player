@@ -36,3 +36,12 @@
 
 ## 6. 測試
 `FakeAudioEngine` 可手動推進時間、模擬 buffered/error/interruption；測試 load race、seek racing、loop 清理、速度、狀態轉移、重啟恢復。真機測 Android/iOS/macOS 及 M4A/MP3；未執行的真機測試要標 BLOCKED。
+
+## 7. WP-04 已交付的 adapter 行為
+- `AudioEngine` 是播放器唯一上層入口；`JustAudioAdapter` 依賴可注入的 `AudioPlayerPort`，原生套件只存在於 `JustAudioPlayerPort`。Riverpod `audioEngineProvider` 負責建立及釋放 adapter。
+- `load` 只接受 `file:`, `http:` 及 `https:` URI。每次載入增加世代；過期呼叫以 `AudioFailure.superseded` 結束，載入中 snapshot 先切到新教材。載入失敗映射為 `sourceUnavailable` 或 `unsupportedFormat`（`FormatException`），其餘原生錯誤為 `platform`。
+- `seekTo` 以毫秒 clamp 到 `[0,duration]`。命令序列化，所以一組連續 seek 完成後最後一個位置生效。倍速接受 `[0.5,2.0]`，非有限或區間外數值拋 `ArgumentError`。
+- 句循環透過 `setClip` + `LoopMode.one`，不使用高頻 UI timer。啟用與取消時暫停後重設 clip/位置，再恢復原播放狀態。seek 到循環範圍以外會清 clip；換音源前先停播、停用 loop 並清 clip。
+- iOS/Android 將 `audio_session` 設為 speech 設定。中斷開始、包括 duck 事件及耳機拔除都暫停；中斷結束不自動恢復。macOS 暫無 `audio_session` 中斷訂閱；background/media-key 功能留 WP-10。
+- `just_audio` 0.10.6、`audio_session` 0.1.25 已鎖入 `pubspec.yaml` / lockfile。使用 audio_session 0.1.25 是為保留 Android minSdk 21；其 Android Gradle 設定為 minSdk 19，且 just_audio 0.10.6 宣告相依範圍 `>=0.1.24 <0.3.0`。本地 unit tests 不代替真機播放測試。來源：[just_audio 0.10.6](https://pub.dev/packages/just_audio/versions/0.10.6)、[audio_session changelog](https://pub.dev/packages/audio_session/changelog)。
+- 限制：`stop` 後由 adapter 額外 seek 到 0；平台播放器 loop 邊界精度、AAC/MP3 實際解碼延遲及中斷行為仍須 Android/iOS/macOS 實機 smoke，目標誤差 ≤150ms 未由本次假播放器驗證。

@@ -10,21 +10,24 @@ final class FakeAudioEngine implements AudioEngine {
   MediaSource? _source;
   int? _durationMs;
   int _positionMs = 0;
+  int? _bufferedMs;
   bool _playing = false;
   double _speed = 1;
   TimeRange? _loop;
+  AudioProcessingState _processingState = AudioProcessingState.idle;
+  AudioEngineException? _error;
 
   @override
   PlaybackSnapshot get snapshot => PlaybackSnapshot(
     materialId: _source?.materialId,
     positionMs: _positionMs,
     durationMs: _durationMs,
+    bufferedMs: _bufferedMs,
     playing: _playing,
     speed: _speed,
     currentLoop: _loop,
-    processingState: _source == null
-        ? AudioProcessingState.idle
-        : AudioProcessingState.ready,
+    processingState: _processingState,
+    error: _error,
   );
 
   @override
@@ -34,6 +37,9 @@ final class FakeAudioEngine implements AudioEngine {
   Future<void> load(MediaSource source) async {
     final durationMs = durationsMs[source.uri];
     if (durationMs == null) {
+      _processingState = AudioProcessingState.error;
+      _error = const AudioEngineException(AudioFailure.sourceUnavailable);
+      _events.add(snapshot);
       throw const AudioEngineException(AudioFailure.sourceUnavailable);
     }
     _source = source;
@@ -41,6 +47,9 @@ final class FakeAudioEngine implements AudioEngine {
     _positionMs = 0;
     _playing = false;
     _loop = null;
+    _bufferedMs = 0;
+    _error = null;
+    _processingState = AudioProcessingState.ready;
     _events.add(snapshot);
   }
 
@@ -62,6 +71,9 @@ final class FakeAudioEngine implements AudioEngine {
     _playing = false;
     _positionMs = 0;
     _loop = null;
+    _processingState = _source == null
+        ? AudioProcessingState.idle
+        : AudioProcessingState.ready;
     _events.add(snapshot);
   }
 
@@ -93,6 +105,45 @@ final class FakeAudioEngine implements AudioEngine {
 
   @override
   Future<void> dispose() => _events.close();
+
+  /// Move the fake playhead explicitly; no wall-clock timer is involved.
+  void advanceTo(int positionMs) {
+    if (_source == null) return;
+    final loop = _loop;
+    if (loop != null && positionMs >= loop.endMs) {
+      final loopLength = loop.endMs - loop.startMs;
+      _positionMs = loop.startMs + (positionMs - loop.startMs) % loopLength;
+    } else {
+      _positionMs = positionMs.clamp(0, _durationMs!);
+      if (_positionMs == _durationMs) {
+        _playing = false;
+        _processingState = AudioProcessingState.completed;
+      }
+    }
+    _events.add(snapshot);
+  }
+
+  void setBufferedPosition(int positionMs) {
+    _bufferedMs = positionMs.clamp(0, _durationMs ?? positionMs);
+    _events.add(snapshot);
+  }
+
+  void fail(AudioFailure failure) {
+    _playing = false;
+    _processingState = AudioProcessingState.error;
+    _error = AudioEngineException(failure);
+    _events.add(snapshot);
+  }
+
+  /// Simulate an interruption. An ended event intentionally never resumes.
+  void interruption({required bool began}) {
+    if (began && _playing) {
+      _playing = false;
+      _processingState = AudioProcessingState.ready;
+      _error = const AudioEngineException(AudioFailure.interrupted);
+      _events.add(snapshot);
+    }
+  }
 
   void _requireSource() {
     if (_source == null) {

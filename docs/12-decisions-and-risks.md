@@ -27,6 +27,7 @@
 | ADR-019 | OPEN | 刪除保留期、孤兒資產回收、字幕錨點重定位 | 先保留 tombstone 和舊錨點；清理視窗與重定位規則分別在 WP-08／07 前審核 |
 | ADR-020 | ACCEPTED | WP-02 以 owner namespace 隔離本機 DB/媒體；媒體按 SHA-256 去重，教材只對相同來源鍵與內容雜湊冪等 | 保留不同來源的獨立 materialId；來源鍵不得含原始路徑。孤兒媒體回收沿用 ADR-019，待後續工作包處理 |
 | ADR-021 | ACCEPTED | WP-03 SRT 配對以半開區間重疊判斷；有效重疊至少覆蓋較短 cue 的 25% | 依 T-SRT fixture 驗證多對一、一對多及邊界擦碰；保留門檻參數以便後續 fixture/產品決策調整 |
+| ADR-022 | ACCEPTED | WP-04 透過 `AudioPlayerPort` 隔離 just_audio；audio_session 固定 0.1.25 以保留 Android minSdk 21；iOS/Android 中斷暫停且不自動續播 | 0.2.4 實測宣告 minSdk 24；0.1.25 Android Gradle 設定 minSdk 19，且符合 just_audio 0.10.6 相依範圍。speech session 與事件依套件文件；loop 用原生 clip + LoopMode.one。真機精度仍待驗 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -63,6 +64,13 @@
 - 選 25% 是 WP-03 的明確預設值：可剔除短暫邊界擦碰，同時讓跨句／合併字幕由較短一側完整覆蓋時成立。門檻在 `SubtitleAligner` 可設定；若真實教材 fixtures 顯示誤配，應在回歸測試中校正而非按序號 fallback。
 - Unicode 檔名比較用 NFC；依賴 `unorm_dart 0.3.3`，pub.dev 列出 Dart/Flutter 及 Android/iOS/macOS 平台與 MIT license：[套件來源](https://pub.dev/packages/unorm_dart)。套件未引入 platform plugin。
 - 驗證證據：`test/features/subtitles/subtitle_engine_test.dart` 測試兩英句對一中句、一英句對多中句、offset、重疊、相似 stem、歧義及 10,000 cue 定位；`subtitle_repository_test.dart` 驗證 manual 保護及 schema v1 升級。具體結果見 WP-03 handoff。
+
+### ADR-022 — WP-04 AudioEngine 與中斷政策
+
+- `AudioEngine` 維持 Stage 1 公開契約，adapter 僅透過注入式 `AudioPlayerPort` 使用 plugin。這讓 T-AUDIO 測試不載入原生 plugin，並保留後續平台替換邊界。播放器依賴固定為 `just_audio 0.10.6`、`audio_session 0.1.25`；0.1.25 符合 just_audio 相依範圍並保留 minSdk 21。官方套件文件列出平台支援與 clip/LoopMode API。[just_audio 0.10.6](https://pub.dev/packages/just_audio/versions/0.10.6)、[audio_session changelog](https://pub.dev/packages/audio_session/changelog)
+- iOS/Android session 配置為 speech；中斷開始（含 duck）及耳機拔除都暫停，結束事件不自動恢復。選此策略是因精聽播放不應在系統中斷結束後未經使用者操作突然續播。macOS 中斷、背景與媒體鍵不由本 ADR 宣稱支援，交 WP-10 實測。
+- 句循環用原生 clip + `LoopMode.one`，開啟/清除 loop 時恢復原本播放狀態；超出 loop 的 seek 與載入新音源會清除 clip。測試使用假 port 驗證命令順序與快照，不證明原生解碼器 ≤150ms 的邊界精度。真機裝置、三類媒體來源與誤差量測仍為 WP-10/WP-15 的必要驗證。
+- 證據：套件版本由 `pubspec.lock` 固定。首輪 Android build 證實 audio_session 0.2.4 因 manifest minSdk 24 與專案 minSdk 21 衝突；改用 Android Gradle minSdk 19 的 0.1.25 後，三平台 debug build 均通過。官方 changelog 記錄 Android minSdk 變更，just_audio 0.10.6 支援此 audio_session 相依範圍。`test/features/audio/just_audio_adapter_test.dart` 覆蓋 T-AUDIO-01..08、競態、取消、中斷及快照。詳見 [WP-04 交棒](agent/wp-04-handoff.md)。
 
 ### ADR-012 — 進度衝突與回復
 

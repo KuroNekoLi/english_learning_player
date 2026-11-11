@@ -40,4 +40,4 @@
 - Apple Security Scoped Bookmarks / NSFileCoordinator：<https://developer.apple.com/documentation/foundation/>
 - Flutter testing：<https://docs.flutter.dev/testing>
 
-文中套件名是**規劃選項**，不是表示已安裝或已驗證在本機 SDK 可運作。WP-00 必須以實測的版本和 build 結果更新資訊。
+除明確標記為已實作的依賴外，文中套件名是規劃選項，不表示已安裝或已驗證在本機 SDK 可運作。WP-04 已安裝 `just_audio 0.10.6` 與 `audio_session 0.1.25`；版本與本機 build 證據見 lockfile 及 [WP-04 交棒](agent/wp-04-handoff.md)。
