@@ -52,3 +52,15 @@ users/{uid}/bookmarks/{bookmarkId}
 
 ## 7. 待決的 schema ADR
 雲端 hash 去重限於同帳號或跨帳號（推薦同帳號）、字幕 cue anchor 遷移策略、登出時本機快取保留政策、清單刪除的墓碑保留期限，皆見 `12-decisions-and-risks.md`。
+
+## 8. Stage 1 固定的持久化邊界
+
+| 邊界 | Stage 1 契約 |
+|---|---|
+| 本機身分 | `profileKey` 為 app 內部的非路徑型 opaque key；有雲端帳號時將它映射到經驗證的 UID。Repository instance 只服務一個 profile。ID 按 §1 產生，雜湊表示內容而非教材身分。 |
+| 本機列／參照 | 依 §3 的表規劃，library 以 `(ownerId, materialId)` 取教材，同 owner 的 `assetId` 為 FK；跨表參照須包含 owner 或受該 owner 的 DB 實體隔離約束。playlist entry 以 `(playlistId, materialId)`、cue 以 `(trackId, trackRevision, cueId)` 局部唯一。時間位置用非負整數毫秒，offset 可帶正負。 |
+| 檔案資料 | 本機媒體以 app 私有區相對路徑表示，`localGrantRef`、來源絕對路徑、設備下載狀態不進 Firestore。雲端資產在 UID 內唯一，object key 由已核對的帳號與 asset ID 構成。 |
+| Canonical 與候選 | `users/{uid}/progress/{materialId}` 保存 §2 進度欄位及遞增 `revision`。該文件下以 session stream 識別保存 high-water 與最新未決 checkpoint，候選有原 `baseRevision`，receipt 以 UID＋opId 唯一並記錄結果與 payload hash。沒有 canonical 時 revision 為 0。 |
+| Durable outbox | `(ownerId, opId)` 唯一，含 entity、operation、revision／baseRevision、版本化 payload 及其 hash、attempts、nextRetryAt、lease deadline、state、lastError。索引覆蓋 `(ownerId, state, nextRetryAt)`。初始 schema version 1，SQLite migration、rules、receipt 保存期限需在實作工作包驗證。 |
+
+Dart 骨架目前提供 `LearningMaterial`、`ProgressCheckpoint`、音訊狀態與資料夾 inventory；SQLite DDL 和 Firestore serializers 留在 WP-02／08／09。具體衝突、重試和刪除決策見 [ADR-009／012／014／019](12-decisions-and-risks.md)。

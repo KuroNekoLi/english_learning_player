@@ -1,6 +1,6 @@
 # 工程文件入口
 
-> 狀態：Specification baseline v0.1（尚未代表程式已實作）。日期：2026-11-10。
+> 狀態：Specification baseline v0.1。Stage 1 已有離線 bootstrap 與介面骨架。日期：2026-11-10。
 > 優先完成一條可量測的使用者旅程：Mac iCloud 資料夾新增 M4A＋雙 SRT → 自動配對匯入 → 雲端同步 → iPhone 同帳號續播。
 
 ## 文件地圖與閱讀順序
@@ -28,5 +28,4 @@
 ## 開發守則
 - `AGENTS.md` 是 Codex 專案進入點；技能採 `.agents/skills/<name>/SKILL.md`。
 - 指定工作包如 `WP-02`，先閱讀任務所引文件，不必每次讀完整文件庫。
-- 規格中的 Types 與路徑屬**預期契約**，尚未存在於 `lib/`；不把規格當已完成實作。
-- 首版 Flutter 預設樣板仍在；下一個程式碼任務才會更動 `lib/main.dart`。
+- [WP-00／WP-01 交棒](agent/wp-00-01-handoff.md) 記錄現有程式契約、平台證據與後續工作包的驗證範圍。

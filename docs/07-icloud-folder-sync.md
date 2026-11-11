@@ -25,13 +25,16 @@ User selects folder via NSOpenPanel
 MVP iOS 只同步 Firebase 教材，不要求 iPhone 自己監控 iCloud 資料夾。日後可用 `UIDocumentPickerViewController`、Security-Scoped URL 做使用者選取資料夾與前景掃描；iOS 系統不保證 App 被終止/長時間背景時仍能監控任意資料夾。這不是 Firebase 的 bug。
 
 ## 4. Flutter ↔ Swift 契約
-建議以 `FolderAccessGateway` 介面隔離：
-- `pickFolder(): Future<FolderHandle?>`：使用者取消回傳 null。
-- `restoreGrant(bindingId): Future<GrantStatus>`：valid/stale/denied/missing。
-- `scan(bindingId): Stream<FolderScanEvent>` 或一次性 `ScanResult`，不得將大量完整檔案位元組直接經 MethodChannel 傳遞。
-- `watch(bindingId)`：macOS foreground/session watcher，增量變更只通知重新掃描。
-- `disconnect(bindingId)`：撤銷 App 綁定、停止 watcher，不觸碰原資料夾。
-Channel 的 error code 應可區分 cancelled、permissionDenied、providerUnavailable、fileNotDownloaded、notFound、transientIO。
+以 [FolderAccessGateway](../lib/core/platform/folder_access_gateway.dart) 隔離原生授權及來源讀取。
+
+- `pickFolder(bindingId): Future<FolderHandle?>` 接受新綁定 ID，使用者取消回傳 null。
+- `restoreGrant(bindingId): Future<GrantStatus>` 回傳 valid、stale、denied 或 missing。
+- `scan(bindingId): Future<List<FolderEntry>>` 取得完整 inventory 或失敗。pendingDownload 仍代表檔案存在。
+- `watch(bindingId): Stream<void>` 通知應重新掃描，取消訂閱時停止觀察。
+- `stageFile(bindingId, relativePath): Future<Uri>` 由原生協調讀取並複製到 app staging，以 app 所有的檔案 URI 交接。
+- `disconnect(bindingId)` 停止 watcher 並釋放綁定的本機 grant。原始資料夾為唯讀。
+
+Channel 錯誤需區分 permissionDenied、providerUnavailable、fileNotDownloaded、notFound、transientIo。授權細節見 [ADR-007／008](12-decisions-and-risks.md)。
 
 ## 5. 掃描與去重政策
 - 先依檔案名稱、大小、修改日期判別候選，穩定後讀取 hash；未完整下載不視為刪除。

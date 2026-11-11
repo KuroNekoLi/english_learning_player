@@ -13,7 +13,9 @@
 - 雲端資料與本地資料分層；FireStore 的離線快取不能取代檔案快取和 outbox 冪等操作。
 - 來源檔案被移除：標記 sourceMissing；除非使用者明確執行刪除，不刪雲端資產或收藏。
 
-## 3. 播放進度合併（設計待 Stage 1 Spike 驗證）
+重試分類、jitter、持久化 lease 與重送規則見 [ADR-009](12-decisions-and-risks.md)。
+
+## 3. 播放進度合併（ADR-012）
 | 情境 | 規則 |
 |---|---|
 | Mac 暫停、iPhone 尚未播 | iPhone 開啟時讀取已確認的 Mac 進度 |
@@ -22,6 +24,8 @@
 | 離線 A 停在 5m，線上 B 停在 12m | A 恢復上線時保留候選衝突，不能無條件覆蓋 B |
 | 兩候選無法排序 | 顯示選擇上次播放位置，選擇後才寫 canonical 版本 |
 | 裝置時間不準 | 不以 client clock 作唯一依據 |
+
+每筆 checkpoint 保存上次確認的 canonical revision。提交交易先查 opId receipt、再檢查該 session 的 sequence 及 baseRevision，版本不同時保留候選。純 Dart 規則已有測試，交易、Rules 與兩裝置整合由 WP-08／09／13 驗證。見 [ADR-012](12-decisions-and-risks.md)。
 
 預設每 15 秒寫本地 checkpoint 並排隊；暫停、seek 完成、切教材與生命周期退出寫 checkpoint。是否每 15 秒上傳遠端取決於前景/電量/成本；應合併 outbox 同實體連續進度。不要無限制每幀寫 Firestore。
 

@@ -9,19 +9,50 @@
 | ADR-002 | ACCEPTED | M4A/MP3 優先，雙語 SRT 逐句精聽 | 使用者要求 |
 | ADR-003 | ACCEPTED | 同 App 帳號跨平台同步教材、字幕與進度 | 使用者要求 |
 | ADR-004 | ACCEPTED | Mac iCloud 使用者自選資料夾，播放清單綁定 | 使用者要求 |
-| ADR-005 | PROPOSED | Firebase Auth/Firestore/Storage 作跨平台後端 | 需建立/選定 Firebase 專案，確認 Blaze 用量與 Storage 成本 |
-| ADR-006 | PROPOSED | Riverpod + Drift + just_audio + go_router | 需確認實際 pub.dev 版本與 local Flutter 3.32 相容性 |
-| ADR-007 | PROPOSED | Apple iCloud folder 為 read-only source | 保護個人原始檔案，刪來源時不抹除學習資料 |
-| ADR-008 | PROPOSED | Mac 是 MVP 自動 iCloud 入口；iOS 直接 folder scan 延後 | iOS background 不保證即時任意目錄監控 |
-| ADR-009 | PROPOSED | SQLite + Outbox，按需下載、雲端資產上傳後發佈 metadata | 弱網可靠性；需明確 Retry/Idempotency |
+| ADR-005 | PROPOSED | Firebase Auth / Firestore / Storage 保留為候選 | macOS Core 與本機 Firestore／Storage 傳輸通過，Auth 卡在 Keychain entitlement。正式環境受 ADR-010／011／018 阻擋 |
+| ADR-006 | ACCEPTED | Riverpod 3.3.2 接入 bootstrap；Drift 2.31.0、just_audio 0.10.6 作後續 Spike 基準 | 同一個 Dart 3.8.1 solver 已解析成功；套件與原生驗證分開記錄；單頁暫緩 go_router |
+| ADR-007 | ACCEPTED | macOS 自選來源採唯讀授權 | grant 留在裝置，原始檔不經 app 寫入；sandbox 實測留 WP-11 |
+| ADR-008 | ACCEPTED | Mac 是 MVP 自動 iCloud 入口，iOS 直接 folder scan 延後 | 產品範圍 §4 與 folder 規格 §3 |
+| ADR-009 | ACCEPTED | SQLite 原子寫入與 durable outbox；先驗證 blob 再發佈 metadata | 依同步規格與 Firestore 交易限制；重試與部分失敗規則見下方 |
 | ADR-010 | OPEN | Auth providers（Google/Apple/Email） | 需看 App Store 登入規則與使用者偏好 |
 | ADR-011 | OPEN | Firebase 所有權、費率預算、最大單檔限制 | 不能擅自建立付費資源 |
-| ADR-012 | OPEN | 播放進度衝突 canonical algorithm | 需 spike 對兩裝置交錯/離線事件的真實時序 |
+| ADR-012 | ACCEPTED | 以 canonical revision 和 session sequence 判斷進度寫入；落後版本保留候選 | 純 Dart 時序已測；伺服器交易及規則由 WP-08／09／13 驗證 |
 | ADR-013 | OPEN | macOS 背景播放與 Media key 控制方案 | 實測 just_audio_background / audio_service plugin support |
-| ADR-014 | OPEN | 登出時本機下載、cache 與 outbox 保留或刪除 | 涉及跨帳號隱私/容量 |
+| ADR-014 | OPEN | 登出時保留／移除快取的產品選項 | 強制 UID 隔離與暫停舊 UID outbox；實際保留期限與磁碟政策待定 |
 | ADR-015 | OPEN | 音訊外再支援 MP4 的里程碑 | 使用者主要使用音訊，影片之後擴充 |
 | ADR-016 | OPEN | SRT encoding fallback 與語言偵測套件 | UTF-8 優先；需平台與授權評估 |
-| ADR-017 | OPEN | SDK 最低 OS 版本與 Flutter SDK 升級 | 本機目前 Flutter 3.32.2；先診斷後提出升級方案 |
+| ADR-017 | OPEN | 正式最低 OS、Flutter SDK 與 Android JDK 選型 | Flutter 3.32.2 固定；Gradle 8.12 用 JDK 17。候選 Firebase 原生最低版本須審核 |
+
+| ADR-018 | OPEN | FlutterFire Apple 發佈的套件管理方式 | CocoaPods pin 可重跑 Spike；評估 SwiftPM 與 Flutter SDK 升級的相依性後再定正式方案 |
+| ADR-019 | OPEN | 刪除保留期、孤兒資產回收、字幕錨點重定位 | 先保留 tombstone 和舊錨點；清理視窗與重定位規則分別在 WP-08／07 前審核 |
+
+## Stage 1 決策細節（2026-11-10）
+
+### ADR-005／006／010／011／017／018 — 版本與雲端閘門
+
+- Riverpod 以 exact pin 與 lockfile 隨 bootstrap 交付。Drift、just_audio、FlutterFire 只在獨立 Spike 解析；個別模組在接線時再加入依賴。單頁先用 MaterialApp。版本、授權、實測與重跑步驟見 [WP-00／01 交棒](agent/wp-00-01-handoff.md)。
+- Firebase Auth／Firestore／Storage 的 macOS 支援表列為 beta。正式 Storage 要 Blaze；即使有免費配額也須先核准專案、預算、單檔上限及區域。驗證先用本機 Emulator 與合成資料。本機 Auth Emulator 匿名登入在目前 debug app 的 Keychain 保存失敗（`SecItemAdd -34018`）。登入方式、具 Keychain Sharing 的有效簽章與帳號切換仍待驗。依據：[FlutterFire 平台表](https://firebase.google.com/docs/flutter/setup)、[Storage 計費要求](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024)。
+- CocoaPods Spike 的 FlutterFire core 5.1.0 固定 Apple SDK 12.19.3。官方已在 2026 年 10 月停止以 CocoaPods 發佈新 Firebase 版本。正式方案需驗證 Flutter 3.32.2 的 SwiftPM 整合及三平台最低 OS；若須升級，另審 SDK、原生目標與回歸範圍。[Apple SDK 套件管理遷移](https://firebase.google.com/docs/ios/cocoapods-deprecation)。
+
+### ADR-007／008 — Mac 資料夾權限
+
+- 透過使用者選擇的目錄建立 app-scoped、唯讀 bookmark。bookmark bytes、絕對來源路徑及 scan cursor 限於授權裝置與本機使用者範圍。同步資料只含 binding/playlist ID、來源類型與標籤。每次成功的 scope access 成對釋放，watch 取消、disconnect 或登出時結束 session。stale 嘗試安全更新，更新失敗要求重選。
+- 原生端協調讀取並檢查解析後 URL 仍位於已授權根目錄，拒絕絕對路徑、穿越與越界 symlink。只將可讀且完整的檔案複製到 app staging，再由匯入層接手。待下載列為存在。掃描失敗不得推導來源缺失，完整掃描發現缺檔只標記來源狀態。watch 事件只觸發重掃。
+- WP-11 驗證 sandboxed build 的 user-selected read-only 與 app-scope bookmark 能力、重啟還原、撤銷、移動及 placeholder。直接讀取 iCloud 私有系統路徑會越過使用者選擇的範圍。依據：[Apple App Sandbox](https://developer.apple.com/documentation/security/app-sandbox)、[Security-scoped URL 存取](https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource())、[資料夾規格](07-icloud-folder-sync.md)。
+
+### ADR-009／014／019 — 重送、媒體與帳號隔離
+
+- 本機業務資料與 outbox 同一交易。每筆送出前以本機交易取得 lease；持久化 immutable `opId`、payload/hash、attempts、retry deadline 與可辨識錯誤類型。重啟可回收過期 lease。一次一個 owner/entity 的 in-flight 寫入，僅合併還未取得 lease 且從未送出的連續 checkpoint。伺服器已提交但本地未收到回覆時以原 opId 重送並讀取原結果。任何不同 payload 重用 opId 應回傳完整性錯誤。
+- 初版重試策略以實際暫時失敗次數 n 計算延遲，從 `[cap/2, cap]` 取 jitter，`cap = min(60 s, 2^(n−1) s)`。限流指示可延後下次嘗試。離線暫停派送，等待復線再評估 deadline。暫時錯誤達 8 次進入待處理，使用者重試保留 opId 並重置重試計數。認證失效停至同 UID 恢復。拒絕存取、無效 payload、永久完整性問題進入待處理，需修復原因後重試。60 秒上限與 8 次門檻是 Stage 1 初始值，WP-08 以可注入 clock/RNG 驗證。暫時性錯誤、冪等性與退避依據 [Cloud Storage retry strategy](https://docs.cloud.google.com/storage/docs/retry-strategy)。
+- 資產在同 UID 內按內容雜湊去重，遠端以穩定 assetId/object key 辨識；先確認遠端資產大小、類型與 SHA-256，再以交易發佈 ready metadata。物件已上傳而 metadata 失敗時重送同一操作並重新核對，下載驗證 hash 後才以原子移動發布本機檔。WP-08 驗證可落地的完整性檢查與 rules，不能只信任客戶端宣告的 hash。可下載狀態以服務端確認為準。
+- App 以本機 profile/UID namespace 隔離 DB、媒體、provider scope、watcher 與 outbox。登出立即停用其讀取和傳輸，清除記憶體狀態，傳輸回覆須校驗當前帳號世代。離線 profile 以獨立 namespace 運作；匯入另一帳號須明確選擇。既有資料留在原 namespace，清理策略仍待定。理由是 [同步規格](06-cloud-sync.md) 的離線需求與 [Firestore 交易](https://firebase.google.com/docs/firestore/manage-data/transactions) 無法離線執行。
+
+### ADR-012 — 進度衝突與回復
+
+1. 每個 `(UID, materialId)` 有 canonical revision，無紀錄為 0。每次播放工作階段建立 sessionId；sequence 依 `(UID, materialId, deviceId, sessionId)` 單調遞增。每筆 checkpoint 帶有當時確認的 `baseRevision`。
+2. 提交時先讀 opId receipt，重送回傳既有結果。交易內讀取該 session 的 sequence high-water 與 canonical。sequence 已見過或較舊就忽略。baseRevision 等於 canonical 才接受並遞增 revision。否則保留該 session 最新候選及原 baseRevision。交易同時寫入結果 receipt、高水位與適用的 canonical／候選，避免併發與回覆遺失造成重複效果。
+3. 離線 checkpoint 留在本機，候選確認後 outbox 可完成，候選仍可供使用者選擇。若使用者選定候選或保留目前位置，用畫面當時的 canonical revision 和候選識別提交明確的解決操作，交易檢查兩者仍有效後更新 canonical 並標記已解決的候選。任一版本已改變則重新呈現，保留其他候選。後續本機 checkpoint 可以承接同 session 自己剛確認的寫入；只可在產生新未送出操作時使用該 revision，不能借用別台裝置的新版本覆蓋衝突。
+4. 裝置時鐘與播放位置大小都不能決定勝負，倒帶也能合法接受。進度的 server timestamp 用於呈現，遠端更新只影響下次開啟／明確續播選擇。依據：[時序測試](../test/unit/progress_policy_test.dart)、[Firestore 交易隔離](https://firebase.google.com/docs/firestore/transaction-data-contention)。WP-09／13 尚需驗證 receipt 重送、兩裝置併發、切帳號與播放中的 Seek 隔離。
 
 ## 風險清單
 | 風險 | 嚴重度 | 失敗形態 | 降低方式 / 檢驗 |
