@@ -1,21 +1,62 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/db/account_database_service.dart';
+import '../../core/db/account_scope.dart';
+import '../../core/files/app_media_store.dart';
+import 'data/sqlite_material_repository.dart';
 import 'material_repository.dart';
+import 'services/audio_file_picker.dart';
+import 'services/audio_import_service.dart';
 
-final materialRepositoryProvider = Provider<MaterialRepository>(
-  (ref) => const _EmptyMaterialRepository(),
+final accountScopeProvider = Provider<AccountScope>(
+  (ref) => AccountScope('local-default'),
 );
+
+final accountDatabaseServiceProvider = FutureProvider<AccountDatabaseService>(
+  (ref) => AccountDatabaseService.createForApplication(),
+);
+
+final localDatabaseProvider = FutureProvider.autoDispose((ref) async {
+  final service = await ref.watch(accountDatabaseServiceProvider.future);
+  final database = await service.open(ref.watch(accountScopeProvider));
+  ref.onDispose(() => unawaited(database.close()));
+  return database;
+});
+
+final materialRepositoryProvider = FutureProvider<MaterialRepository>((
+  ref,
+) async {
+  final database = await ref.watch(localDatabaseProvider.future);
+  return SqliteMaterialRepository(
+    scope: ref.watch(accountScopeProvider),
+    database: database,
+  );
+});
+
+final audioFilePickerProvider = Provider<AudioFilePicker>(
+  (ref) => NativeAudioFilePicker(),
+);
+
+final audioImportServiceProvider =
+    FutureProvider.autoDispose<AudioImportService>((ref) async {
+      final service = await ref.watch(accountDatabaseServiceProvider.future);
+      final scope = ref.watch(accountScopeProvider);
+      final database = await ref.watch(localDatabaseProvider.future);
+      final repository = SqliteMaterialRepository(
+        scope: scope,
+        database: database,
+      );
+      return AudioImportService(
+        repository: repository,
+        mediaStore: AppMediaStore(storage: service, scope: scope),
+      );
+    });
 
 final libraryViewModelProvider = FutureProvider<List<LearningMaterial>>((
   ref,
 ) async {
-  final repository = ref.watch(materialRepositoryProvider);
-  return List.unmodifiable(await repository.listMaterials());
+  final repository = await ref.watch(materialRepositoryProvider.future);
+  return repository.listMaterials();
 }, retry: (_, _) => null);
-
-final class _EmptyMaterialRepository implements MaterialRepository {
-  const _EmptyMaterialRepository();
-
-  @override
-  Future<List<LearningMaterial>> listMaterials() async => const [];
-}

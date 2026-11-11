@@ -7,18 +7,25 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final material = LearningMaterial(
     id: 'test-material',
-    ownerId: 'test-profile',
+    ownerId: 'local-default',
     title: '合成教材',
     audioAssetId: 'test-asset',
     status: MaterialStatus.localReady,
     createdAt: DateTime.utc(2026),
   );
 
-  testWidgets('FR-01: empty bootstrap launches without a cloud account', (
+  testWidgets('empty repository displays the library empty state', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const ProviderScope(child: EnglishLearningPlayer()),
+      ProviderScope(
+        overrides: [
+          materialRepositoryProvider.overrideWith(
+            (ref) async => _FakeMaterialRepository([]),
+          ),
+        ],
+        child: const EnglishLearningPlayer(),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('目前沒有教材'), findsOneWidget);
@@ -28,8 +35,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          materialRepositoryProvider.overrideWithValue(
-            _FakeMaterialRepository([material]),
+          materialRepositoryProvider.overrideWith(
+            (ref) async => _FakeMaterialRepository([material]),
           ),
         ],
         child: const EnglishLearningPlayer(),
@@ -45,7 +52,9 @@ void main() {
     final repository = _FakeMaterialRepository([material])..fail = true;
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [materialRepositoryProvider.overrideWithValue(repository)],
+        overrides: [
+          materialRepositoryProvider.overrideWith((ref) async => repository),
+        ],
         child: const EnglishLearningPlayer(),
       ),
     );
@@ -73,4 +82,14 @@ final class _FakeMaterialRepository implements MaterialRepository {
     if (fail) throw StateError('Simulated local read failure');
     return materials;
   }
+
+  @override
+  Future<InsertMaterialResult> insertAudio({
+    required StoredAudioAsset asset,
+    required String sourceKey,
+    required String title,
+    required String materialId,
+    required DateTime createdAt,
+  }) =>
+      throw UnsupportedError('Import is not exercised by these widget tests.');
 }

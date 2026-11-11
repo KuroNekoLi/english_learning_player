@@ -25,6 +25,7 @@
 
 | ADR-018 | OPEN | FlutterFire Apple 發佈的套件管理方式 | CocoaPods pin 可重跑 Spike；評估 SwiftPM 與 Flutter SDK 升級的相依性後再定正式方案 |
 | ADR-019 | OPEN | 刪除保留期、孤兒資產回收、字幕錨點重定位 | 先保留 tombstone 和舊錨點；清理視窗與重定位規則分別在 WP-08／07 前審核 |
+| ADR-020 | ACCEPTED | WP-02 以 owner namespace 隔離本機 DB/媒體；媒體按 SHA-256 去重，教材只對相同來源鍵與內容雜湊冪等 | 保留不同來源的獨立 materialId；來源鍵不得含原始路徑。孤兒媒體回收沿用 ADR-019，待後續工作包處理 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -46,6 +47,14 @@
 - 初版重試策略以實際暫時失敗次數 n 計算延遲，從 `[cap/2, cap]` 取 jitter，`cap = min(60 s, 2^(n−1) s)`。限流指示可延後下次嘗試。離線暫停派送，等待復線再評估 deadline。暫時錯誤達 8 次進入待處理，使用者重試保留 opId 並重置重試計數。認證失效停至同 UID 恢復。拒絕存取、無效 payload、永久完整性問題進入待處理，需修復原因後重試。60 秒上限與 8 次門檻是 Stage 1 初始值，WP-08 以可注入 clock/RNG 驗證。暫時性錯誤、冪等性與退避依據 [Cloud Storage retry strategy](https://docs.cloud.google.com/storage/docs/retry-strategy)。
 - 資產在同 UID 內按內容雜湊去重，遠端以穩定 assetId/object key 辨識；先確認遠端資產大小、類型與 SHA-256，再以交易發佈 ready metadata。物件已上傳而 metadata 失敗時重送同一操作並重新核對，下載驗證 hash 後才以原子移動發布本機檔。WP-08 驗證可落地的完整性檢查與 rules，不能只信任客戶端宣告的 hash。可下載狀態以服務端確認為準。
 - App 以本機 profile/UID namespace 隔離 DB、媒體、provider scope、watcher 與 outbox。登出立即停用其讀取和傳輸，清除記憶體狀態，傳輸回覆須校驗當前帳號世代。離線 profile 以獨立 namespace 運作；匯入另一帳號須明確選擇。既有資料留在原 namespace，清理策略仍待定。理由是 [同步規格](06-cloud-sync.md) 的離線需求與 [Firestore 交易](https://firebase.google.com/docs/firestore/manage-data/transactions) 無法離線執行。
+
+### ADR-020 — WP-02 本機匯入冪等與資產去重
+
+- 每個 `AccountScope` 以 SHA-256(ownerId UTF-8) 產生路徑 namespace；資料庫仍保存原 ownerId 並以 owner 條件查詢。SQLite 資料表以 owner 複合主鍵／外鍵防止跨 owner 關聯；目前每個 owner 使用獨立 DB 檔和 app support 媒體目錄。
+- 匯入來源鍵為選取來源路徑的 SHA-256，不保存原始來源路徑。相同 owner、來源鍵與檔案 SHA-256 再匯入時回傳既有教材；同 owner 相同 SHA-256 的二進位內容共用一筆 `media_assets` 與一個內容定址檔案。不同來源即使內容相同仍建立獨立 `materialId`，符合 [materialId 不等於檔案 hash 的契約](02-domain-models.md)，避免自動合併使用者的學習身分。
+- 檔案先複製到 app support 暫存檔、串流計算 SHA-256，檢查非空及既有內容完整性後以 rename 發佈，再以 SQLite transaction 建立 asset/material/source 關聯。程序在檔案發佈後、資料庫提交前中止可能留下未引用檔案；回收延後至 ADR-019 所列清理工作，不在 WP-02 刪除未知引用狀態的檔案。
+- macOS 手動選檔採 file selector 使用者明確選取的單次讀取；唯讀 entitlement 不代表持久 iCloud 資料夾授權或監看能力。bookmark、長期授權和資料夾掃描維持 ADR-007／WP-11 邊界。
+- 驗證證據：`test/features/library/audio_import_test.dart` 覆蓋重開 DB、同來源重匯、跨來源同內容、跨帳號隔離、空／不支援檔案與來源串流中斷；三平台建置結果以本 WP 驗收摘要為準。
 
 ### ADR-012 — 進度衝突與回復
 
