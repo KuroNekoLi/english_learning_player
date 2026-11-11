@@ -1,5 +1,6 @@
 import 'package:english_learning_player/features/library/library_view_model.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
+import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/main.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -92,4 +93,16 @@ final class _FakeMaterialRepository implements MaterialRepository {
     required DateTime createdAt,
   }) =>
       throw UnsupportedError('Import is not exercised by these widget tests.');
+
+  @override
+  Future<SubtitleTrack> saveSubtitleTrack(
+    SubtitleTrack track, {
+    required bool manual,
+  }) => throw UnsupportedError(
+    'Subtitles are not exercised by these widget tests.',
+  );
+
+  @override
+  Future<List<SubtitleTrack>> listSubtitleTracks(String materialId) async =>
+      const [];
 }

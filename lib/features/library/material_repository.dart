@@ -1,3 +1,5 @@
+import '../subtitles/domain/subtitle_models.dart';
+
 enum MaterialStatus {
   importing,
   localReady,
@@ -38,6 +40,13 @@ abstract interface class MaterialRepository {
     required String materialId,
     required DateTime createdAt,
   });
+
+  Future<SubtitleTrack> saveSubtitleTrack(
+    SubtitleTrack track, {
+    required bool manual,
+  });
+
+  Future<List<SubtitleTrack>> listSubtitleTracks(String materialId);
 }
 
 final class StoredAudioAsset {

@@ -50,3 +50,13 @@ zh      [10000,17000)
 | 1萬 cue 隨機 Seek | 索引/二分搜尋，避免逐次全表線性掃描 |
 
 不可使用外部字幕 AI 生成當 MVP 的隱形需求。
+
+## 7. WP-03 實作契約
+
+- `SrtParser.parse(bytes)` 嚴格以 UTF-8 解碼；UTF-8 BOM 由解碼器移除，但原始 bytes 不變。CRLF/LF/CR 正規化為 cue 文字中的 `\n`，解析結果保留原始 sequence、毫秒時間和文字。無效 cue 逐筆略過並回傳 warning；非 UTF-8 以可修復 `invalidUtf8` 錯誤返回，不保存亂碼。
+- `SubtitleFilenameMatcher` 僅比較 NFC 正規化、大小寫折疊後的完整 stem；支援 `.en[-locale]`、`.zh[-locale]`、`_English`、`_Chinese`。多個同語言候選回傳 ambiguous、selected 為 null；手動選擇優先於目前候選清單。
+- `SubtitleAligner` 只依 `[startMs,endMs)` 時間重疊，不看字幕序號。offset 轉換為 `audioTime = subtitleTime - offsetMs`。候選重疊須至少覆蓋較短 cue 的 25%，以排除只擦過邊界的極小重疊；以重疊毫秒降冪，再以時間與 cue ID 穩定排序。此門檻可建構時覆寫，依據與風險見 ADR-021。
+- `SubtitleSynchronizer` 對 cue 起點排序，預先建立 end-time prefix maximum；定位採二分搜尋並只檢查可能仍重疊的區間。offset 正值表示字幕較晚，查找使用 `positionMs - offsetMs`；區間右端不包含。重疊時優先保留上一 cue，其次選起點較晚者，再以較早 end 和 cue ID 決勝。
+- Drift schema v2 新增 source track BLOB 與 cue rows；每個 material/language 最多一條 selected 軌。手動軌覆蓋自動軌；晚到的自動字幕可保存為未選取候選。升級保留 WP-02 material/asset/source 資料。
+
+實際介面、T-SRT 驗收對應及 build/test 證據見 [WP-03 交棒摘要](agent/wp-03-handoff.md)。

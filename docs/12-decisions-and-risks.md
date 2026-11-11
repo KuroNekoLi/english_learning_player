@@ -26,6 +26,7 @@
 | ADR-018 | OPEN | FlutterFire Apple 發佈的套件管理方式 | CocoaPods pin 可重跑 Spike；評估 SwiftPM 與 Flutter SDK 升級的相依性後再定正式方案 |
 | ADR-019 | OPEN | 刪除保留期、孤兒資產回收、字幕錨點重定位 | 先保留 tombstone 和舊錨點；清理視窗與重定位規則分別在 WP-08／07 前審核 |
 | ADR-020 | ACCEPTED | WP-02 以 owner namespace 隔離本機 DB/媒體；媒體按 SHA-256 去重，教材只對相同來源鍵與內容雜湊冪等 | 保留不同來源的獨立 materialId；來源鍵不得含原始路徑。孤兒媒體回收沿用 ADR-019，待後續工作包處理 |
+| ADR-021 | ACCEPTED | WP-03 SRT 配對以半開區間重疊判斷；有效重疊至少覆蓋較短 cue 的 25% | 依 T-SRT fixture 驗證多對一、一對多及邊界擦碰；保留門檻參數以便後續 fixture/產品決策調整 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -55,6 +56,13 @@
 - 檔案先複製到 app support 暫存檔、串流計算 SHA-256，檢查非空及既有內容完整性後以 rename 發佈，再以 SQLite transaction 建立 asset/material/source 關聯。程序在檔案發佈後、資料庫提交前中止可能留下未引用檔案；回收延後至 ADR-019 所列清理工作，不在 WP-02 刪除未知引用狀態的檔案。
 - macOS 手動選檔採 file selector 使用者明確選取的單次讀取；唯讀 entitlement 不代表持久 iCloud 資料夾授權或監看能力。bookmark、長期授權和資料夾掃描維持 ADR-007／WP-11 邊界。
 - 驗證證據：`test/features/library/audio_import_test.dart` 覆蓋重開 DB、同來源重匯、跨來源同內容、跨帳號隔離、空／不支援檔案與來源串流中斷；三平台建置結果以本 WP 驗收摘要為準。
+
+### ADR-021 — WP-03 字幕重疊匹配門檻
+
+- 對齊使用音訊時間軸上的半開區間。不同 track 的 `offsetMs` 先套用，cue 序號不參與對應。只有重疊長度佔較短 cue 時長至少 25% 才建立關係；匹配結果按重疊毫秒降冪並穩定排序。相同中文 cue 可以連到多個英文 cue，單一英文 cue 也可以連到多個中文 cue。
+- 選 25% 是 WP-03 的明確預設值：可剔除短暫邊界擦碰，同時讓跨句／合併字幕由較短一側完整覆蓋時成立。門檻在 `SubtitleAligner` 可設定；若真實教材 fixtures 顯示誤配，應在回歸測試中校正而非按序號 fallback。
+- Unicode 檔名比較用 NFC；依賴 `unorm_dart 0.3.3`，pub.dev 列出 Dart/Flutter 及 Android/iOS/macOS 平台與 MIT license：[套件來源](https://pub.dev/packages/unorm_dart)。套件未引入 platform plugin。
+- 驗證證據：`test/features/subtitles/subtitle_engine_test.dart` 測試兩英句對一中句、一英句對多中句、offset、重疊、相似 stem、歧義及 10,000 cue 定位；`subtitle_repository_test.dart` 驗證 manual 保護及 schema v1 升級。具體結果見 WP-03 handoff。
 
 ### ADR-012 — 進度衝突與回復
 
