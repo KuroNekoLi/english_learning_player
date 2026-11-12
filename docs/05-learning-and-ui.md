@@ -46,3 +46,12 @@ bilingualShown
 - 320dp 等效窄視窗 / 桌面 1280×720 / 大字體 / 繁中介面。
 - 點句子呼叫 ViewModel 命令一次；切換字幕模式保留原播放位置。
 - 模擬字幕缺漏與同步錯誤可正常渲染。
+
+## 7. WP-05 LearningSession 實作契約
+- `LearningSession` 為純 Dart controller，綁定單一教材的英文軌及可選中文軌；只依賴 `AudioEngine` 和既有字幕 Domain，不依賴 Widget 或播放器 plugin。
+- `LearningSessionState` 是不可變快照：mode、phase、有效字幕顯示模式、目前英文 cue、對齊的中文 cues。`states` 訂閱先收到當前值。
+- 精聽揭露嚴格依 blindListening → englishShown → bilingualShown；提早揭露中文不改狀態。沒有翻譯時仍可揭露，View 可顯示「未提供翻譯」；播放在 cue 空檔時不顯示缺翻譯提示。
+- `replay()` 從目前英文句重播，不改揭露狀態；有啟用句循環時沿用循環。`setCueLoopEnabled` 控制目前句循環。`playCue(cueId)` 切換到指定句並播放；`nextCue()` 依英文 cue 音訊時間順序前進。切到另一句時退出舊 loop 並在精聽模式重設遮蔽；重播同一句保留已揭露狀態。
+- 英文 cue 同步仍交由 `SubtitleSynchronizer.at`。句播放區間依既有 positive `offsetMs` 顯示延遲規則換算為 `[startMs + offsetMs, endMs + offsetMs)`，並限制在媒體 duration 內。無效/空區間不操作播放器。
+- Session 確認 AudioEngine snapshot 的 `materialId` 與字幕軌一致後才執行 cue 命令；會取消自己的 snapshot 訂閱，但不擁有或 dispose `AudioEngine`。`LearningSessionFactory` 透過 Riverpod 提供建立入口；使用者負責 dispose session。
+- T-LEARN-01..05 對應測試見 `test/features/learning/learning_session_test.dart`；具體驗收與未測項見 [WP-05 交棒](agent/wp-05-handoff.md)。

@@ -76,4 +76,4 @@ final alignment = const SubtitleAligner().align(
 
 - 尚無真實字幕教材 fixture；25% 門檻需在後續代表性字幕集上檢視誤配率，若調整須保留本測試矩陣。
 - 本 WP 沒有加入字幕選擇 UI、原生 SRT file picker 或 folder watcher。matcher、bytes import 與持久化已有可測介面；人工操作屬之後 UI/資料夾工作包。
-- WP-04 已交付後，建議下一個工作包為 WP-05 LearningSession。使用 `SubtitleSynchronizer.at` 消費 `AudioEngine.snapshots`；LearningSession 不得自行呼叫播放器 plugin 或改變字幕 offset 語意。AudioEngine 的公開介面與驗收結果見 [WP-04 交棒](wp-04-handoff.md)。
+- WP-05 LearningSession 已交付，建議下一個工作包為 WP-06 UI。字幕同步仍由 `SubtitleSynchronizer.at` 消費 `AudioEngine.snapshots`；LearningSession 不得自行呼叫播放器 plugin 或改變字幕 offset 語意。介面與驗收結果見 [WP-04 交棒](wp-04-handoff.md) 及 [WP-05 交棒](wp-05-handoff.md)。

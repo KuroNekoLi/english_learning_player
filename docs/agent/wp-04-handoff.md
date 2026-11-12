@@ -45,4 +45,4 @@
 
 `PlayerViewModel`/`LearningSession` 從 Riverpod 取得 `AudioEngine`，監聽 `snapshots`，用 `snapshot.positionMs` 呼叫 `SubtitleSynchronizer.at(...)`。cue loop 可呼叫 `setSentenceLoop(TimeRange(startMs, endMs))`。不得直接依賴 just_audio；本次沒有加入播放器 UI、學習 session、雲端或背景服務。
 
-建議下一個工作包：WP-05 LearningSession，依賴 WP-03 subtitle engine 與本 AudioEngine 契約。
+WP-05 LearningSession 已交付；下一個工作包建議為 WP-06 Player/Library/Settings UI，整合 `LearningSessionState` 與本 AudioEngine 契約。

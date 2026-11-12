@@ -28,6 +28,7 @@
 | ADR-020 | ACCEPTED | WP-02 以 owner namespace 隔離本機 DB/媒體；媒體按 SHA-256 去重，教材只對相同來源鍵與內容雜湊冪等 | 保留不同來源的獨立 materialId；來源鍵不得含原始路徑。孤兒媒體回收沿用 ADR-019，待後續工作包處理 |
 | ADR-021 | ACCEPTED | WP-03 SRT 配對以半開區間重疊判斷；有效重疊至少覆蓋較短 cue 的 25% | 依 T-SRT fixture 驗證多對一、一對多及邊界擦碰；保留門檻參數以便後續 fixture/產品決策調整 |
 | ADR-022 | ACCEPTED | WP-04 透過 `AudioPlayerPort` 隔離 just_audio；audio_session 固定 0.1.25 以保留 Android minSdk 21；iOS/Android 中斷暫停且不自動續播 | 0.2.4 實測宣告 minSdk 24；0.1.25 Android Gradle 設定 minSdk 19，且符合 just_audio 0.10.6 相依範圍。speech session 與事件依套件文件；loop 用原生 clip + LoopMode.one。真機精度仍待驗 |
+| ADR-023 | ACCEPTED | WP-05 LearningSession 綁定一個教材；replay 保留揭露，換 cue 重設遮蔽；句循環由獨立命令控制 | 對應精聽狀態機；無翻譯仍允許揭露並提示；跨教材 snapshot 不得誤操作播放器。T-LEARN-01..05 自動測試 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -71,6 +72,13 @@
 - iOS/Android session 配置為 speech；中斷開始（含 duck）及耳機拔除都暫停，結束事件不自動恢復。選此策略是因精聽播放不應在系統中斷結束後未經使用者操作突然續播。macOS 中斷、背景與媒體鍵不由本 ADR 宣稱支援，交 WP-10 實測。
 - 句循環用原生 clip + `LoopMode.one`，開啟/清除 loop 時恢復原本播放狀態；超出 loop 的 seek 與載入新音源會清除 clip。測試使用假 port 驗證命令順序與快照，不證明原生解碼器 ≤150ms 的邊界精度。真機裝置、三類媒體來源與誤差量測仍為 WP-10/WP-15 的必要驗證。
 - 證據：套件版本由 `pubspec.lock` 固定。首輪 Android build 證實 audio_session 0.2.4 因 manifest minSdk 24 與專案 minSdk 21 衝突；改用 Android Gradle minSdk 19 的 0.1.25 後，三平台 debug build 均通過。官方 changelog 記錄 Android minSdk 變更，just_audio 0.10.6 支援此 audio_session 相依範圍。`test/features/audio/just_audio_adapter_test.dart` 覆蓋 T-AUDIO-01..08、競態、取消、中斷及快照。詳見 [WP-04 交棒](agent/wp-04-handoff.md)。
+
+### ADR-023 — WP-05 LearningSession 狀態與 cue 操作
+
+- `LearningSession` 綁定 owner/material 一致的英文軌、可選中文軌及其 AudioEngine；若 AudioEngine 切到不同 material，session 清空目前 cue 並拒絕 replay/loop/next/playCue。這避免播放器切換後舊字幕命令作用到新教材。
+- 精聽揭露只允許 blind → English → bilingual。replay 不改 reveal phase；選取不同 cue 或 next cue 在 intensive 模式回到 blind，並清除不相符的現存 loop。句循環使用獨立 `setCueLoopEnabled` 命令；無中文 cue 時可進入 bilingualShown 並讓 View 顯示「未提供翻譯」，cue 空檔則不顯示此提示。
+- cue 起點/終點採 `SubtitleSynchronizer` 的 positive offset 顯示延遲方向，換成音訊位置後 clamp 至媒體 duration；Original SRT cue 保持不變。對齊仍由 WP-03 `SubtitleAligner` 負責，不在本 WP 修改字幕契約。
+- 證據：`test/features/learning/learning_session_test.dart` 覆蓋 T-LEARN-01..05、reveal 順序、缺失翻譯、換句重設、loop/replay、offset、播放 snapshot 與教材隔離；詳見 [WP-05 交棒](agent/wp-05-handoff.md)。
 
 ### ADR-012 — 進度衝突與回復
 
