@@ -149,6 +149,7 @@ void main() {
     () async {
       await repository.close();
       final versionOne = await storage.open(scope);
+      await versionOne.customStatement('DROP TABLE bookmarks');
       await versionOne.customStatement('DROP TABLE subtitle_cues');
       await versionOne.customStatement('DROP TABLE subtitle_tracks');
       await versionOne.customStatement('PRAGMA user_version = 1');

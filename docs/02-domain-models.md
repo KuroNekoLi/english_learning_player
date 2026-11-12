@@ -20,7 +20,7 @@
 | PlaylistEntry | playlistId, materialId, order | 同一教材可加入多清單 |
 | FolderBinding | id, playlistId, sourceKind, displayLabel, localGrantRef, scanCursor? | `localGrantRef` 本機專用；跨裝置只同步來源類型與顯示名稱 |
 | PlaybackProgress | ownerId, materialId, positionMs, state, sessionId, deviceId, sequence, serverUpdatedAt | 每個 user + material 一條 canonical 進度；衝突另有決策 |
-| Bookmark | id, ownerId, materialId, cueAnchor, createdAt, deletedAt? | cue 更換時 anchor 需可重定位 |
+| Bookmark | id, ownerId, materialId, trackId, trackRevision, languageTag, cueId, cueText, startMs, endMs, createdAt, deletedAt? | 保存 cue 原始快照；字幕更新時不丟棄，依文字與音訊時間重定位；歧義時保留未定位 |
 | SyncOperation | id, userId, entityType, entityId, operation, payloadHash, attempts, nextRetryAt, state | 至少一次投遞；服務端冪等處理 |
 
 ## 3. Local SQLite / Drift
@@ -63,4 +63,4 @@ users/{uid}/bookmarks/{bookmarkId}
 | Canonical 與候選 | `users/{uid}/progress/{materialId}` 保存 §2 進度欄位及遞增 `revision`。該文件下以 session stream 識別保存 high-water 與最新未決 checkpoint，候選有原 `baseRevision`，receipt 以 UID＋opId 唯一並記錄結果與 payload hash。沒有 canonical 時 revision 為 0。 |
 | Durable outbox | `(ownerId, opId)` 唯一，含 entity、operation、revision／baseRevision、版本化 payload 及其 hash、attempts、nextRetryAt、lease deadline、state、lastError。索引覆蓋 `(ownerId, state, nextRetryAt)`。初始 schema version 1，SQLite migration、rules、receipt 保存期限需在實作工作包驗證。 |
 
-Dart 骨架目前提供 `LearningMaterial`、`ProgressCheckpoint`、音訊狀態與資料夾 inventory。WP-02 建立 schema v1 的 Drift SQLite 邊界，實體化 `media_assets`、`materials`、`material_sources`；WP-03 升至 schema v2，透過 migration 加入 `subtitle_tracks`、`subtitle_cues`，保留原始 SRT bytes 與 cue 序號/時間/文字。每條字幕軌以 owner + material 外鍵關聯，選中軌每教材/語言至多一條；Firestore serializers 留在 WP-08／09。`material_sources` 以 `(ownerId, sourceKey, assetId)` 關聯匯入來源與教材，來源鍵不得保存原始路徑；細節見 [ADR-020／021](12-decisions-and-risks.md)。具體衝突、重試和刪除決策見 [ADR-009／012／014／019](12-decisions-and-risks.md)。
+Dart 骨架目前提供 `LearningMaterial`、`ProgressCheckpoint`、音訊狀態與資料夾 inventory。WP-02 建立 schema v1 的 Drift SQLite 邊界，實體化 `media_assets`、`materials`、`material_sources`；WP-03 升至 schema v2，透過 migration 加入 `subtitle_tracks`、`subtitle_cues`，保留原始 SRT bytes 與 cue 序號/時間/文字；WP-07 升至 schema v3，加入 owner/material scoped `bookmarks`，保留 track revision、cue text 與 offset-adjusted audio interval 快照。每條字幕軌以 owner + material 外鍵關聯，選中軌每教材/語言至多一條；Firestore serializers 留在 WP-08／09。`material_sources` 以 `(ownerId, sourceKey, assetId)` 關聯匯入來源與教材，來源鍵不得保存原始路徑；細節見 [ADR-020／021／025](12-decisions-and-risks.md)。具體衝突、重試和刪除決策見 [ADR-009／012／014／019](12-decisions-and-risks.md)。

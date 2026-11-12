@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/library/library_view_model.dart';
 import '../features/library/material_repository.dart';
 import '../features/library/services/audio_import_service.dart';
+import '../features/bookmarks/bookmarks_page.dart';
 import '../features/player/player_page.dart';
 
 class LibraryPage extends ConsumerWidget {
@@ -39,6 +40,13 @@ class LibraryPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('教材庫'),
         actions: [
+          IconButton(
+            tooltip: '我的收藏',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const BookmarksPage()),
+            ),
+            icon: const Icon(Icons.bookmarks_outlined),
+          ),
           IconButton(
             tooltip: '匯入音訊',
             onPressed: library.isLoading

@@ -63,3 +63,10 @@ bilingualShown
 - 一般字幕顯示模式只存在目前 Player session；變更時更新 LearningSession，不 Seek、不改播放位置。字幕軌選取及毫秒 offset 仍呼叫既有 `MaterialRepository.saveSubtitleTrack` 持久化；手動指定透過既有 `manual` 旗標，不覆寫 WP-03 的手動優先規則。套用軌道設定時重建 LearningSession，不重載或 Seek 音訊。
 - 缺少字幕、翻譯或音檔時顯示明確狀態；字幕缺席時播放器可繼續使用 AudioEngine。WP-06 不包含書籤、背景播放、雲端同步、進度保存及 iCloud 監控。
 - 驗收證據見 [WP-06 交棒](agent/wp-06-handoff.md)：Widget tests 驗證窄手機、桌面、大字體、點句只送一次播放命令及切換可見模式保留播放位置。
+
+## 9. WP-07 Bookmark 實作契約
+- 收藏目前英文 cue，anchor 保存 `trackId`、`trackRevision`、`languageTag`、`cueId`、原文及已套用 track offset 的音訊時間區間；anchor 是歷史快照，不因字幕匯入而被覆寫。
+- 收藏以 owner/material 範圍落在 SQLite `bookmarks` 表。移除採本機 tombstone，重開 app 後仍保留有效收藏；Favorites 依最新已選字幕軌計算播放目標。
+- 定位順序：相同 track/revision/cue identity；再用正規化文字匹配並以區間重疊、中心距離排序；文字改寫時以至少覆蓋較短區間 50% 的唯一時間重疊 cue 作 fallback。候選同分或沒有候選時標示 ambiguous/missing，收藏資料不刪除，也不自動 seek。
+- Favorites 的有效項目開啟 Player 並從定位後 cue 播放；無法定位的項目可保留及移除，不能猜測相近序號。WP-07 不同步雲端；同步墓碑/outbox 屬 WP-08 之後。
+- 詳細決策與測試證據見 ADR-025 及 [WP-07 交棒](agent/wp-07-handoff.md)。

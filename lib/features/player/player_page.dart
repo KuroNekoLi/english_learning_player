@@ -10,9 +10,10 @@ import '../../features/subtitles/domain/subtitle_models.dart';
 import 'player_view_model.dart';
 
 final class PlayerPage extends ConsumerStatefulWidget {
-  const PlayerPage({super.key, required this.material});
+  const PlayerPage({super.key, required this.material, this.initialCueId});
 
   final LearningMaterial material;
+  final String? initialCueId;
 
   @override
   ConsumerState<PlayerPage> createState() => _PlayerPageState();
@@ -25,7 +26,9 @@ final class _PlayerPageState extends ConsumerState<PlayerPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(
-          ref.read(playerViewModelProvider.notifier).open(widget.material),
+          ref
+              .read(playerViewModelProvider.notifier)
+              .open(widget.material, initialCueId: widget.initialCueId),
         );
       }
     });
@@ -47,6 +50,17 @@ final class _PlayerPageState extends ConsumerState<PlayerPage> {
           appBar: AppBar(
             title: Text(widget.material.title, maxLines: 1),
             actions: [
+              IconButton(
+                tooltip: state.isCurrentCueBookmarked ? '移除收藏' : '收藏本句',
+                onPressed: state.isReady && state.learning?.currentCue != null
+                    ? () => unawaited(viewModel.toggleBookmark())
+                    : null,
+                icon: Icon(
+                  state.isCurrentCueBookmarked
+                      ? Icons.bookmark
+                      : Icons.bookmark_border,
+                ),
+              ),
               IconButton(
                 tooltip: '字幕設定',
                 onPressed: state.isReady

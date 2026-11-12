@@ -7,7 +7,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -63,9 +63,11 @@ class LocalDatabase extends GeneratedDatabase {
         )
       ''');
       await _createSubtitleSchema();
+      await _createBookmarkSchema();
     },
     onUpgrade: (migrator, from, to) async {
       if (from < 2) await _createSubtitleSchema();
+      if (from < 3) await _createBookmarkSchema();
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -122,6 +124,37 @@ class LocalDatabase extends GeneratedDatabase {
     await customStatement(
       'CREATE INDEX subtitle_cues_timeline '
       'ON subtitle_cues (owner_id, track_id, start_ms, end_ms)',
+    );
+  }
+
+  Future<void> _createBookmarkSchema() async {
+    await customStatement('''
+      CREATE TABLE bookmarks (
+        owner_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        material_id TEXT NOT NULL,
+        track_id TEXT NOT NULL,
+        track_revision INTEGER NOT NULL CHECK (track_revision > 0),
+        language_tag TEXT NOT NULL,
+        cue_id TEXT NOT NULL,
+        cue_text TEXT NOT NULL,
+        start_ms INTEGER NOT NULL CHECK (start_ms >= 0),
+        end_ms INTEGER NOT NULL CHECK (end_ms > start_ms),
+        created_at_ms INTEGER NOT NULL,
+        deleted_at_ms INTEGER,
+        PRIMARY KEY (owner_id, id),
+        FOREIGN KEY (owner_id, material_id)
+          REFERENCES materials (owner_id, id)
+      )
+    ''');
+    await customStatement('''
+      CREATE UNIQUE INDEX bookmarks_active_anchor
+      ON bookmarks (owner_id, material_id, track_id, track_revision, cue_id)
+      WHERE deleted_at_ms IS NULL
+    ''');
+    await customStatement(
+      'CREATE INDEX bookmarks_material_created '
+      'ON bookmarks (owner_id, material_id, created_at_ms DESC)',
     );
   }
 

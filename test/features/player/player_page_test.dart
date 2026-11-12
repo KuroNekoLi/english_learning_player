@@ -4,18 +4,24 @@ import 'package:english_learning_player/features/library/material_repository.dar
 import 'package:english_learning_player/features/player/player_dependencies.dart';
 import 'package:english_learning_player/features/player/player_page.dart';
 import 'package:english_learning_player/features/player/services/material_playback_loader.dart';
+import 'package:english_learning_player/features/bookmarks/bookmark_dependencies.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
+import 'package:english_learning_player/features/bookmarks/bookmarks_page.dart';
+import 'package:english_learning_player/features/bookmarks/domain/bookmark.dart';
+import 'package:english_learning_player/features/library/library_view_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../fakes/fake_audio_engine.dart';
+import '../../fakes/fake_bookmark_repository.dart';
 
 void main() {
   late LearningMaterial material;
   late Uri mediaUri;
   late List<SubtitleTrack> tracks;
   late FakeAudioEngine audio;
+  late FakeBookmarkRepository bookmarks;
   late Widget Function({TextScaler textScaler}) buildApp;
 
   setUp(() {
@@ -60,10 +66,12 @@ void main() {
       ),
     ];
     audio = FakeAudioEngine({mediaUri: 60_000});
+    bookmarks = FakeBookmarkRepository();
     buildApp = ({TextScaler textScaler = TextScaler.noScaling}) =>
         ProviderScope(
           overrides: [
             audioEngineProvider.overrideWithValue(audio),
+            bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
             materialPlaybackLoaderProvider.overrideWith(
               (ref) async => _FixedLoader(
                 MaterialPlaybackBundle(
@@ -146,12 +154,98 @@ void main() {
     expect(find.text('一句練習句。'), findsNothing);
     expect(audio.seekCalls, 0);
   });
+
+  testWidgets('current cue can be bookmarked and removed', (tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    audio.advanceTo(1800);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('收藏本句'));
+    await tester.pumpAndSettle();
+    expect(await bookmarks.listBookmarks(), hasLength(1));
+    expect(find.byTooltip('移除收藏'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('移除收藏'));
+    await tester.pumpAndSettle();
+    expect(await bookmarks.listBookmarks(), isEmpty);
+  });
+
+  testWidgets('favorites resolve updated subtitles and start that cue', (
+    tester,
+  ) async {
+    const oldTrack = 'old-en-track';
+    final saved = await bookmarks.addBookmark(
+      Bookmark(
+        id: 'saved-bookmark',
+        ownerId: material.ownerId,
+        materialId: material.id,
+        anchor: const BookmarkCueAnchor(
+          trackId: oldTrack,
+          trackRevision: 1,
+          languageTag: 'en',
+          cueId: 'old-cue',
+          cueText: 'A sentence to learn.',
+          startMs: 1000,
+          endMs: 2500,
+        ),
+        createdAt: DateTime.utc(2026),
+      ),
+    );
+    expect(saved.id, 'saved-bookmark');
+    final latestTrack = _track(
+      id: 'current-en-track',
+      language: 'en',
+      selected: true,
+      revision: 2,
+      cues: const [
+        SubtitleCue(
+          id: 'current-cue',
+          sequence: 7,
+          startMs: 3000,
+          endMs: 4500,
+          text: 'A sentence to learn.',
+        ),
+      ],
+    );
+    final library = _FakeMaterialRepository(material, [latestTrack]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          audioEngineProvider.overrideWithValue(audio),
+          bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
+          materialRepositoryProvider.overrideWith((ref) async => library),
+          materialPlaybackLoaderProvider.overrideWith(
+            (ref) async => _FixedLoader(
+              MaterialPlaybackBundle(
+                material: material,
+                source: MediaSource(materialId: material.id, uri: mediaUri),
+                subtitleTracks: [latestTrack],
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: BookmarksPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('A sentence to learn.'), findsOneWidget);
+    expect(find.text(material.title), findsOneWidget);
+
+    await tester.tap(find.text('A sentence to learn.'));
+    await tester.pumpAndSettle();
+
+    expect(audio.seekCalls, 1);
+    expect(audio.playCalls, 1);
+    expect(audio.snapshot.positionMs, 3000);
+  });
 }
 
 SubtitleTrack _track({
   required String id,
   required String language,
   required bool selected,
+  int revision = 1,
   required List<SubtitleCue> cues,
 }) => SubtitleTrack(
   id: id,
@@ -160,7 +254,7 @@ SubtitleTrack _track({
   languageTag: language,
   sourceName: '$language.srt',
   originalBytes: const [],
-  revision: 1,
+  revision: revision,
   offsetMs: 0,
   selectionMode: SubtitleSelectionMode.automatic,
   isSelected: selected,
@@ -175,4 +269,37 @@ final class _FixedLoader implements MaterialPlaybackLoader {
   @override
   Future<MaterialPlaybackBundle> load(LearningMaterial material) async =>
       bundle;
+}
+
+final class _FakeMaterialRepository implements MaterialRepository {
+  const _FakeMaterialRepository(this.material, this.tracks);
+
+  final LearningMaterial material;
+  final List<SubtitleTrack> tracks;
+
+  @override
+  Future<StoredAudioAsset?> audioAssetForMaterial(String materialId) async =>
+      null;
+
+  @override
+  Future<InsertMaterialResult> insertAudio({
+    required StoredAudioAsset asset,
+    required String sourceKey,
+    required String title,
+    required String materialId,
+    required DateTime createdAt,
+  }) => throw UnsupportedError('Not needed in bookmark playback test.');
+
+  @override
+  Future<List<LearningMaterial>> listMaterials() async => [material];
+
+  @override
+  Future<List<SubtitleTrack>> listSubtitleTracks(String materialId) async =>
+      tracks;
+
+  @override
+  Future<SubtitleTrack> saveSubtitleTrack(
+    SubtitleTrack track, {
+    required bool manual,
+  }) => throw UnsupportedError('Not needed in bookmark playback test.');
 }

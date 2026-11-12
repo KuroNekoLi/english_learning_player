@@ -1,11 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/audio/audio_engine.dart';
 import '../../core/audio/audio_engine_provider.dart';
 import '../../features/learning/domain/learning_session.dart';
 import '../../features/learning/learning_session_provider.dart';
+import '../../features/bookmarks/bookmark_dependencies.dart';
+import '../../features/bookmarks/bookmark_list_view_model.dart';
+import '../../features/bookmarks/domain/bookmark.dart';
+import '../../features/bookmarks/domain/bookmark_resolver.dart';
 import '../library/library_view_model.dart';
 import '../library/material_repository.dart';
 import '../subtitles/domain/subtitle_models.dart';
@@ -23,6 +28,7 @@ final class PlayerViewState {
     this.englishTrack,
     this.subtitleTracks = const [],
     this.errorMessage,
+    this.isCurrentCueBookmarked = false,
   });
 
   final PlayerLoadStatus status;
@@ -32,6 +38,7 @@ final class PlayerViewState {
   final SubtitleTrack? englishTrack;
   final List<SubtitleTrack> subtitleTracks;
   final String? errorMessage;
+  final bool isCurrentCueBookmarked;
 
   bool get isLoading => status == PlayerLoadStatus.loading;
   bool get isReady => status == PlayerLoadStatus.ready;
@@ -47,6 +54,7 @@ final class PlayerViewState {
     bool clearLearning = false,
     bool clearEnglishTrack = false,
     bool clearError = false,
+    bool? isCurrentCueBookmarked,
   }) => PlayerViewState(
     status: status ?? this.status,
     material: material ?? this.material,
@@ -55,6 +63,8 @@ final class PlayerViewState {
     englishTrack: clearEnglishTrack ? null : englishTrack ?? this.englishTrack,
     subtitleTracks: subtitleTracks ?? this.subtitleTracks,
     errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
+    isCurrentCueBookmarked:
+        isCurrentCueBookmarked ?? this.isCurrentCueBookmarked,
   );
 }
 
@@ -68,6 +78,8 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   SubtitleVisibility _normalVisibility = SubtitleVisibility.bilingual;
   int _openGeneration = 0;
   bool _disposed = false;
+  final Map<String, Bookmark> _bookmarksByCueKey = {};
+  final BookmarkResolver _bookmarkResolver = const BookmarkResolver();
 
   @override
   PlayerViewState build() {
@@ -77,7 +89,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     return const PlayerViewState();
   }
 
-  Future<void> open(LearningMaterial material) async {
+  Future<void> open(LearningMaterial material, {String? initialCueId}) async {
     _ensureUsable();
     final generation = ++_openGeneration;
     state = PlayerViewState(
@@ -92,6 +104,8 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       _bundle = bundle;
       await _audioEngine.load(bundle.source);
       if (generation != _openGeneration) return;
+      await _loadBookmarkAnchors(material.id, bundle.subtitleTracks);
+      if (generation != _openGeneration) return;
       await _createSession();
       if (generation != _openGeneration) return;
       _playbackSubscription = _audioEngine.snapshots.listen(
@@ -104,7 +118,21 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
         learning: _session?.state,
         englishTrack: bundle.englishTrack,
         subtitleTracks: bundle.subtitleTracks,
+        isCurrentCueBookmarked:
+            initialCueId != null ||
+            _isBookmarked(_session?.state.currentCue, bundle.englishTrack),
       );
+      if (initialCueId != null) {
+        await _session?.playCue(initialCueId);
+        state = state.copyWith(
+          playback: _audioEngine.snapshot,
+          learning: _session?.state,
+          isCurrentCueBookmarked: _isBookmarked(
+            _session?.state.currentCue,
+            bundle.englishTrack,
+          ),
+        );
+      }
     } catch (error) {
       if (generation != _openGeneration) return;
       final message = error is MaterialPlaybackException
@@ -207,6 +235,45 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     );
   }
 
+  Future<void> toggleBookmark() async {
+    final material = state.material;
+    final track = state.englishTrack;
+    final cue = state.learning?.currentCue;
+    if (material == null || track == null || cue == null) return;
+    final key = _cueKey(track, cue);
+    try {
+      final repository = await ref.read(bookmarkRepositoryProvider.future);
+      final existing =
+          _bookmarksByCueKey[key] ??
+          await repository.findForAnchor(
+            materialId: material.id,
+            anchor: _anchorFor(track, cue),
+          );
+      if (existing != null) {
+        await repository.removeBookmark(existing.id);
+        _bookmarksByCueKey.remove(key);
+      } else {
+        final bookmark = await repository.addBookmark(
+          Bookmark(
+            id: const Uuid().v4(),
+            ownerId: material.ownerId,
+            materialId: material.id,
+            anchor: _anchorFor(track, cue),
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+        _bookmarksByCueKey[key] = bookmark;
+      }
+      ref.invalidate(bookmarkListViewModelProvider);
+      state = state.copyWith(
+        isCurrentCueBookmarked: _bookmarksByCueKey.containsKey(key),
+        clearError: true,
+      );
+    } catch (_) {
+      state = state.copyWith(errorMessage: '收藏儲存失敗，請重試。');
+    }
+  }
+
   Future<void> _saveSubtitleTrack(
     SubtitleTrack track, {
     required bool manual,
@@ -225,6 +292,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
         source: _bundle!.source,
         subtitleTracks: tracks,
       );
+      await _loadBookmarkAnchors(material.id, tracks);
       await _createSession(wasIntensive: wasIntensive);
       state = state.copyWith(
         learning: _session?.state,
@@ -232,6 +300,10 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
         subtitleTracks: tracks,
         clearLearning: _session == null,
         clearEnglishTrack: _bundle!.englishTrack == null,
+        isCurrentCueBookmarked: _isBookmarked(
+          _session?.state.currentCue,
+          _bundle!.englishTrack,
+        ),
       );
     } catch (_) {
       state = state.copyWith(errorMessage: '字幕設定儲存失敗');
@@ -260,7 +332,54 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
 
   void _syncLearningState(LearningSessionState learning) {
     if (_disposed || !state.isReady) return;
-    state = state.copyWith(learning: learning, clearLearning: false);
+    state = state.copyWith(
+      learning: learning,
+      clearLearning: false,
+      isCurrentCueBookmarked: _isBookmarked(
+        learning.currentCue,
+        state.englishTrack,
+      ),
+    );
+  }
+
+  Future<void> _loadBookmarkAnchors(
+    String materialId,
+    List<SubtitleTrack> tracks,
+  ) async {
+    _bookmarksByCueKey.clear();
+    final repository = await ref.read(bookmarkRepositoryProvider.future);
+    final bookmarks = await repository.listBookmarks();
+    for (final bookmark in bookmarks.where(
+      (item) => item.materialId == materialId,
+    )) {
+      final resolution = _bookmarkResolver.resolve(bookmark, tracks);
+      if (resolution.status == BookmarkResolutionStatus.resolved) {
+        _bookmarksByCueKey[_cueKey(resolution.track!, resolution.cue!)] =
+            bookmark;
+      }
+    }
+  }
+
+  bool _isBookmarked(SubtitleCue? cue, SubtitleTrack? track) =>
+      cue != null &&
+      track != null &&
+      _bookmarksByCueKey.containsKey(_cueKey(track, cue));
+
+  String _cueKey(SubtitleTrack track, SubtitleCue cue) =>
+      '${track.id}:${track.revision}:${cue.id}';
+
+  BookmarkCueAnchor _anchorFor(SubtitleTrack track, SubtitleCue cue) {
+    final startMs = cue.startMs + track.offsetMs;
+    final endMs = cue.endMs + track.offsetMs;
+    return BookmarkCueAnchor(
+      trackId: track.id,
+      trackRevision: track.revision,
+      languageTag: track.languageTag,
+      cueId: cue.id,
+      cueText: cue.text,
+      startMs: startMs < 0 ? 0 : startMs,
+      endMs: endMs,
+    );
   }
 
   Future<void> _runAudioCommand(Future<void> Function() command) async {
