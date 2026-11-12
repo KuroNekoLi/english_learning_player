@@ -27,4 +27,19 @@ final class AccountDatabaseService {
 
   Directory mediaDirectory(AccountScope scope) =>
       Directory(p.join(_supportDirectory.path, 'media', scope.storageKey));
+
+  File resolveMediaFile(AccountScope scope, String relativePath) {
+    final normalized = p.normalize(relativePath);
+    final parts = p.split(normalized);
+    if (p.isAbsolute(relativePath) ||
+        parts.length != 3 ||
+        parts[0] != 'media' ||
+        parts[1] != scope.storageKey ||
+        parts[2].isEmpty ||
+        parts[2] == '.' ||
+        parts[2] == '..') {
+      throw const FormatException('Media path is outside its account scope.');
+    }
+    return File(p.join(mediaDirectory(scope).path, parts[2]));
+  }
 }

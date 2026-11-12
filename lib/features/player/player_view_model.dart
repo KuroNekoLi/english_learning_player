@@ -1,0 +1,305 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/audio/audio_engine.dart';
+import '../../core/audio/audio_engine_provider.dart';
+import '../../features/learning/domain/learning_session.dart';
+import '../../features/learning/learning_session_provider.dart';
+import '../library/library_view_model.dart';
+import '../library/material_repository.dart';
+import '../subtitles/domain/subtitle_models.dart';
+import 'player_dependencies.dart';
+import 'services/material_playback_loader.dart';
+
+enum PlayerLoadStatus { idle, loading, ready, error }
+
+final class PlayerViewState {
+  const PlayerViewState({
+    this.status = PlayerLoadStatus.idle,
+    this.material,
+    this.playback,
+    this.learning,
+    this.englishTrack,
+    this.subtitleTracks = const [],
+    this.errorMessage,
+  });
+
+  final PlayerLoadStatus status;
+  final LearningMaterial? material;
+  final PlaybackSnapshot? playback;
+  final LearningSessionState? learning;
+  final SubtitleTrack? englishTrack;
+  final List<SubtitleTrack> subtitleTracks;
+  final String? errorMessage;
+
+  bool get isLoading => status == PlayerLoadStatus.loading;
+  bool get isReady => status == PlayerLoadStatus.ready;
+
+  PlayerViewState copyWith({
+    PlayerLoadStatus? status,
+    LearningMaterial? material,
+    PlaybackSnapshot? playback,
+    LearningSessionState? learning,
+    SubtitleTrack? englishTrack,
+    List<SubtitleTrack>? subtitleTracks,
+    String? errorMessage,
+    bool clearLearning = false,
+    bool clearEnglishTrack = false,
+    bool clearError = false,
+  }) => PlayerViewState(
+    status: status ?? this.status,
+    material: material ?? this.material,
+    playback: playback ?? this.playback,
+    learning: clearLearning ? null : learning ?? this.learning,
+    englishTrack: clearEnglishTrack ? null : englishTrack ?? this.englishTrack,
+    subtitleTracks: subtitleTracks ?? this.subtitleTracks,
+    errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
+  );
+}
+
+final class PlayerViewModel extends Notifier<PlayerViewState> {
+  late AudioEngine _audioEngine;
+  late LearningSessionFactory _sessionFactory;
+  LearningSession? _session;
+  MaterialPlaybackBundle? _bundle;
+  StreamSubscription<PlaybackSnapshot>? _playbackSubscription;
+  StreamSubscription<LearningSessionState>? _learningSubscription;
+  SubtitleVisibility _normalVisibility = SubtitleVisibility.bilingual;
+  int _openGeneration = 0;
+  bool _disposed = false;
+
+  @override
+  PlayerViewState build() {
+    _audioEngine = ref.watch(audioEngineProvider);
+    _sessionFactory = ref.watch(learningSessionFactoryProvider);
+    ref.onDispose(() => unawaited(_disposeResources()));
+    return const PlayerViewState();
+  }
+
+  Future<void> open(LearningMaterial material) async {
+    _ensureUsable();
+    final generation = ++_openGeneration;
+    state = PlayerViewState(
+      status: PlayerLoadStatus.loading,
+      material: material,
+    );
+    await _releaseSession();
+    try {
+      final loader = await ref.read(materialPlaybackLoaderProvider.future);
+      final bundle = await loader.load(material);
+      if (generation != _openGeneration) return;
+      _bundle = bundle;
+      await _audioEngine.load(bundle.source);
+      if (generation != _openGeneration) return;
+      await _createSession();
+      if (generation != _openGeneration) return;
+      _playbackSubscription = _audioEngine.snapshots.listen(
+        (snapshot) => _updatePlayback(snapshot, generation),
+      );
+      state = PlayerViewState(
+        status: PlayerLoadStatus.ready,
+        material: material,
+        playback: _audioEngine.snapshot,
+        learning: _session?.state,
+        englishTrack: bundle.englishTrack,
+        subtitleTracks: bundle.subtitleTracks,
+      );
+    } catch (error) {
+      if (generation != _openGeneration) return;
+      final message = error is MaterialPlaybackException
+          ? error.message
+          : '無法載入教材，請檢查本機音訊檔案。';
+      state = PlayerViewState(
+        status: PlayerLoadStatus.error,
+        material: material,
+        errorMessage: message,
+      );
+    }
+  }
+
+  Future<void> togglePlayback() async {
+    final playback = state.playback;
+    if (!state.isReady || playback == null) return;
+    await _runAudioCommand(
+      playback.playing ? _audioEngine.pause : _audioEngine.play,
+    );
+  }
+
+  Future<void> seekTo(int positionMs) => _runAudioCommand(
+    () => _audioEngine.seekTo(Duration(milliseconds: positionMs)),
+  );
+
+  Future<void> setSpeed(double speed) =>
+      _runAudioCommand(() => _audioEngine.setSpeed(speed));
+
+  Future<void> replay() async {
+    final session = _session;
+    if (session != null) {
+      await _runAudioCommand(session.replay);
+    }
+  }
+
+  Future<void> playCue(String cueId) async {
+    final session = _session;
+    if (session != null) {
+      await _runAudioCommand(() => session.playCue(cueId));
+    }
+  }
+
+  Future<void> nextCue() async {
+    final session = _session;
+    if (session != null) {
+      await _runAudioCommand(session.nextCue);
+    }
+  }
+
+  Future<void> toggleCueLoop() async {
+    final session = _session;
+    final loopIsActive = state.playback?.currentLoop != null;
+    if (session != null) {
+      await _runAudioCommand(() => session.setCueLoopEnabled(!loopIsActive));
+    }
+  }
+
+  void toggleIntensiveMode() {
+    final session = _session;
+    if (session == null) return;
+    if (session.state.mode == LearningMode.intensive) {
+      unawaited(_runAudioCommand(session.exitIntensive));
+    } else {
+      session.enterIntensive();
+      _syncLearningState(session.state);
+    }
+  }
+
+  void revealNext() {
+    final session = _session;
+    if (session == null) return;
+    switch (session.state.phase) {
+      case IntensivePhase.blindListening:
+        session.revealEnglish();
+      case IntensivePhase.englishShown:
+        session.revealChinese();
+      case IntensivePhase.bilingualShown:
+        session.resetCue();
+    }
+    _syncLearningState(session.state);
+  }
+
+  void setNormalVisibility(SubtitleVisibility visibility) {
+    _normalVisibility = visibility;
+    _session?.setNormalVisibility(visibility);
+    if (_session != null) _syncLearningState(_session!.state);
+  }
+
+  Future<void> selectSubtitleTrack(SubtitleTrack track) async {
+    final material = state.material;
+    if (material == null || track.materialId != material.id) return;
+    await _saveSubtitleTrack(track, manual: true);
+  }
+
+  Future<void> setSubtitleOffset(SubtitleTrack track, int offsetMs) async {
+    if (offsetMs == track.offsetMs) return;
+    await _saveSubtitleTrack(
+      track.copyWith(offsetMs: offsetMs),
+      manual: track.selectionMode == SubtitleSelectionMode.manual,
+    );
+  }
+
+  Future<void> _saveSubtitleTrack(
+    SubtitleTrack track, {
+    required bool manual,
+  }) async {
+    final generation = _openGeneration;
+    final material = state.material;
+    if (material == null || !state.isReady) return;
+    try {
+      final repository = await ref.read(materialRepositoryProvider.future);
+      await repository.saveSubtitleTrack(track, manual: manual);
+      final tracks = await repository.listSubtitleTracks(material.id);
+      if (generation != _openGeneration || _bundle == null) return;
+      final wasIntensive = _session?.state.mode == LearningMode.intensive;
+      _bundle = MaterialPlaybackBundle(
+        material: material,
+        source: _bundle!.source,
+        subtitleTracks: tracks,
+      );
+      await _createSession(wasIntensive: wasIntensive);
+      state = state.copyWith(
+        learning: _session?.state,
+        englishTrack: _bundle!.englishTrack,
+        subtitleTracks: tracks,
+        clearLearning: _session == null,
+        clearEnglishTrack: _bundle!.englishTrack == null,
+      );
+    } catch (_) {
+      state = state.copyWith(errorMessage: '字幕設定儲存失敗');
+    }
+  }
+
+  Future<void> _createSession({bool wasIntensive = false}) async {
+    await _releaseLearningSession();
+    final bundle = _bundle;
+    final english = bundle?.englishTrack;
+    if (bundle == null || english == null) return;
+    final session = _sessionFactory.create(
+      englishTrack: english,
+      chineseTrack: bundle.chineseTrack,
+      normalVisibility: _normalVisibility,
+    );
+    _session = session;
+    if (wasIntensive) session.enterIntensive();
+    _learningSubscription = session.states.listen(_syncLearningState);
+  }
+
+  void _updatePlayback(PlaybackSnapshot snapshot, int generation) {
+    if (_disposed || generation != _openGeneration) return;
+    state = state.copyWith(playback: snapshot, clearError: true);
+  }
+
+  void _syncLearningState(LearningSessionState learning) {
+    if (_disposed || !state.isReady) return;
+    state = state.copyWith(learning: learning, clearLearning: false);
+  }
+
+  Future<void> _runAudioCommand(Future<void> Function() command) async {
+    if (!state.isReady) return;
+    try {
+      await command();
+      state = state.copyWith(playback: _audioEngine.snapshot, clearError: true);
+    } catch (_) {
+      state = state.copyWith(errorMessage: '播放操作失敗，請重試。');
+    }
+  }
+
+  Future<void> _releaseSession() async {
+    await _playbackSubscription?.cancel();
+    _playbackSubscription = null;
+    await _releaseLearningSession();
+    _bundle = null;
+  }
+
+  Future<void> _releaseLearningSession() async {
+    await _learningSubscription?.cancel();
+    _learningSubscription = null;
+    final session = _session;
+    _session = null;
+    await session?.dispose();
+  }
+
+  Future<void> _disposeResources() async {
+    _disposed = true;
+    _openGeneration++;
+    await _releaseSession();
+  }
+
+  void _ensureUsable() {
+    if (_disposed) throw StateError('PlayerViewModel has been disposed.');
+  }
+}
+
+final playerViewModelProvider =
+    NotifierProvider.autoDispose<PlayerViewModel, PlayerViewState>(
+      PlayerViewModel.new,
+    );

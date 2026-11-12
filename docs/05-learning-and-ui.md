@@ -55,3 +55,11 @@ bilingualShown
 - 英文 cue 同步仍交由 `SubtitleSynchronizer.at`。句播放區間依既有 positive `offsetMs` 顯示延遲規則換算為 `[startMs + offsetMs, endMs + offsetMs)`，並限制在媒體 duration 內。無效/空區間不操作播放器。
 - Session 確認 AudioEngine snapshot 的 `materialId` 與字幕軌一致後才執行 cue 命令；會取消自己的 snapshot 訂閱，但不擁有或 dispose `AudioEngine`。`LearningSessionFactory` 透過 Riverpod 提供建立入口；使用者負責 dispose session。
 - T-LEARN-01..05 對應測試見 `test/features/learning/learning_session_test.dart`；具體驗收與未測項見 [WP-05 交棒](agent/wp-05-handoff.md)。
+
+## 8. WP-06 Player / Library 實作契約
+- `LibraryPage` 透過 `libraryViewModelProvider` 讀取帳號範圍內教材；使用既有匯入入口加入本機音訊，選取教材後進入 Player。寬度低於 900dp 使用單欄，否則顯示導覽側欄與受限寬度內容。
+- `PlayerPage` 只呼叫 Riverpod `PlayerViewModel`。ViewModel 經 `MaterialPlaybackLoader` 驗證教材 owner、查詢 app 私有音訊副本及字幕軌，再透過 `AudioEngine` 播放；Widget 不依賴 just_audio、檔案 API 或資料庫。
+- Player 的 mobile 版顯示單一目前字幕卡及固定底部控制；寬度至少 900dp 顯示教材摘要側欄。提供播放/暫停、Seek、倍速、重播、下一句、句循環、字幕可見模式及 WP-05 精聽揭露。Space 播放/暫停、右方向鍵下一句。
+- 一般字幕顯示模式只存在目前 Player session；變更時更新 LearningSession，不 Seek、不改播放位置。字幕軌選取及毫秒 offset 仍呼叫既有 `MaterialRepository.saveSubtitleTrack` 持久化；手動指定透過既有 `manual` 旗標，不覆寫 WP-03 的手動優先規則。套用軌道設定時重建 LearningSession，不重載或 Seek 音訊。
+- 缺少字幕、翻譯或音檔時顯示明確狀態；字幕缺席時播放器可繼續使用 AudioEngine。WP-06 不包含書籤、背景播放、雲端同步、進度保存及 iCloud 監控。
+- 驗收證據見 [WP-06 交棒](agent/wp-06-handoff.md)：Widget tests 驗證窄手機、桌面、大字體、點句只送一次播放命令及切換可見模式保留播放位置。

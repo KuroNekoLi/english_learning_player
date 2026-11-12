@@ -16,6 +16,9 @@ final class FakeAudioEngine implements AudioEngine {
   TimeRange? _loop;
   AudioProcessingState _processingState = AudioProcessingState.idle;
   AudioEngineException? _error;
+  int playCalls = 0;
+  int seekCalls = 0;
+  int loopCalls = 0;
 
   @override
   PlaybackSnapshot get snapshot => PlaybackSnapshot(
@@ -56,6 +59,7 @@ final class FakeAudioEngine implements AudioEngine {
   @override
   Future<void> play() async {
     _requireSource();
+    playCalls++;
     _playing = true;
     _events.add(snapshot);
   }
@@ -80,6 +84,7 @@ final class FakeAudioEngine implements AudioEngine {
   @override
   Future<void> seekTo(Duration position) async {
     _requireSource();
+    seekCalls++;
     _positionMs = position.inMilliseconds.clamp(0, _durationMs!);
     _events.add(snapshot);
   }
@@ -95,6 +100,7 @@ final class FakeAudioEngine implements AudioEngine {
 
   @override
   Future<void> setSentenceLoop(TimeRange? range) async {
+    loopCalls++;
     if (range != null) {
       _requireSource();
       if (range.endMs > _durationMs!) throw ArgumentError.value(range, 'range');

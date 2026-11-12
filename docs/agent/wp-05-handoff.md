@@ -39,4 +39,4 @@
 
 ## 下一個工作包
 
-建議 WP-06。Player UI/ViewModel 可用 Riverpod 建立 session，讀取 `LearningSession.states`，依 `subtitleVisibility` 決定顯示文字，將使用者點句/揭露/loop 操作轉給 session。不得在 Widget 直接呼叫 just_audio 或持久化學習進度。
+WP-06 已完成並記錄於 [WP-06 交棒](wp-06-handoff.md)。建議 WP-07 書籤，以 cue anchor 持久化教材收藏並驗證字幕更新後可重新定位；不得把書籤資料併入本 `LearningSession` 狀態。

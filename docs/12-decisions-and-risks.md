@@ -87,6 +87,15 @@
 3. 離線 checkpoint 留在本機，候選確認後 outbox 可完成，候選仍可供使用者選擇。若使用者選定候選或保留目前位置，用畫面當時的 canonical revision 和候選識別提交明確的解決操作，交易檢查兩者仍有效後更新 canonical 並標記已解決的候選。任一版本已改變則重新呈現，保留其他候選。後續本機 checkpoint 可以承接同 session 自己剛確認的寫入；只可在產生新未送出操作時使用該 revision，不能借用別台裝置的新版本覆蓋衝突。
 4. 裝置時鐘與播放位置大小都不能決定勝負，倒帶也能合法接受。進度的 server timestamp 用於呈現，遠端更新只影響下次開啟／明確續播選擇。依據：[時序測試](../test/unit/progress_policy_test.dart)、[Firestore 交易隔離](https://firebase.google.com/docs/firestore/transaction-data-contention)。WP-09／13 尚需驗證 receipt 重送、兩裝置併發、切帳號與播放中的 Seek 隔離。
 
+### ADR-024 — WP-06 播放器 UI 狀態與資料存取邊界
+狀態：ACCEPTED（WP-06 實作選擇）
+
+- 一般字幕可見模式屬於單次 Player session 的呈現狀態，不寫入教材或跨裝置同步。使用者選取的字幕軌與 offset 是教材設定，沿用 WP-03 `MaterialRepository.saveSubtitleTrack` 持久化，並尊重 manual track 保護。
+- `PlayerViewModel` 透過 `MaterialPlaybackLoader` 取出帳號範圍內教材的私有媒體副本與字幕，再呼叫 `AudioEngine` / `LearningSession`；UI 不直接操作資料庫、檔案或 just_audio。播放器準備失敗需呈現可重試錯誤。
+- 變更字幕顯示不 seek；變更字幕軌只重建 LearningSession、不重載媒體，確保播放位置不被字幕設定重置。這保持 View → ViewModel → Repository / Service 邊界，也避免 UI 狀態進入 WP-09 跨裝置進度同步。
+- 證據：`test/features/player/player_page_test.dart` 驗證點句只呼叫一次 cue replay、字幕可見模式切換保留 1800ms 播放位置，並在 320×700、1280×720、1.8 倍字體下無 Widget layout exception；`test/features/player/material_playback_service_test.dart` 驗證帳號限定的媒體解析與私有檔案載入。具體執行結果見 WP-06 handoff。
+- 影響工作包：WP-06；沒有新增 schema 或 migration。未包含字幕目錄即時監看、播放進度持久化與跨裝置偏好同步。
+
 ## 風險清單
 | 風險 | 嚴重度 | 失敗形態 | 降低方式 / 檢驗 |
 |---|---|---|---|

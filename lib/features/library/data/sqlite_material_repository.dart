@@ -53,6 +53,35 @@ final class SqliteMaterialRepository implements MaterialRepository {
   }
 
   @override
+  Future<StoredAudioAsset?> audioAssetForMaterial(String materialId) async {
+    final rows = await _database
+        .customSelect(
+          '''
+          SELECT a.id, a.sha256, a.byte_length, a.media_type, a.relative_path
+          FROM materials AS m
+          JOIN media_assets AS a
+            ON a.owner_id = m.owner_id AND a.id = m.audio_asset_id
+          WHERE m.owner_id = ? AND m.id = ?
+          LIMIT 1
+          ''',
+          variables: [
+            Variable.withString(_scope.ownerId),
+            Variable.withString(materialId),
+          ],
+        )
+        .get();
+    if (rows.isEmpty) return null;
+    final row = rows.single;
+    return StoredAudioAsset(
+      id: row.read<String>('id'),
+      sha256: row.read<String>('sha256'),
+      byteLength: row.read<int>('byte_length'),
+      mediaType: row.read<String>('media_type'),
+      relativePath: row.read<String>('relative_path'),
+    );
+  }
+
+  @override
   Future<InsertMaterialResult> insertAudio({
     required StoredAudioAsset asset,
     required String sourceKey,

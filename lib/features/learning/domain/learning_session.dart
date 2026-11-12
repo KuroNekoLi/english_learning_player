@@ -88,7 +88,7 @@ final class LearningSession {
   bool _sessionLoopEnabled = false;
   bool _disposed = false;
 
-  final SubtitleVisibility normalVisibility;
+  SubtitleVisibility normalVisibility;
 
   LearningSessionState get state => _state;
 
@@ -107,6 +107,12 @@ final class LearningSession {
     _mode = LearningMode.intensive;
     _phase = IntensivePhase.blindListening;
     _publish();
+  }
+
+  void setNormalVisibility(SubtitleVisibility visibility) {
+    _ensureUsable();
+    normalVisibility = visibility;
+    if (_mode == LearningMode.normal) _publish();
   }
 
   Future<void> exitIntensive() async {

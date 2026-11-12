@@ -33,6 +33,8 @@ final class LearningMaterial {
 abstract interface class MaterialRepository {
   Future<List<LearningMaterial>> listMaterials();
 
+  Future<StoredAudioAsset?> audioAssetForMaterial(String materialId);
+
   Future<InsertMaterialResult> insertAudio({
     required StoredAudioAsset asset,
     required String sourceKey,

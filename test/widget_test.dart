@@ -85,6 +85,10 @@ final class _FakeMaterialRepository implements MaterialRepository {
   }
 
   @override
+  Future<StoredAudioAsset?> audioAssetForMaterial(String materialId) async =>
+      null;
+
+  @override
   Future<InsertMaterialResult> insertAudio({
     required StoredAudioAsset asset,
     required String sourceKey,
