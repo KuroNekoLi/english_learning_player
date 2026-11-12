@@ -150,17 +150,25 @@ void main() {
       await repository.close();
       final versionOne = await storage.open(scope);
       await versionOne.customStatement('DROP TABLE bookmarks');
+      await versionOne.customStatement('DROP TABLE material_sync_state');
+      await versionOne.customStatement('DROP TABLE sync_outbox');
       await versionOne.customStatement('DROP TABLE subtitle_cues');
       await versionOne.customStatement('DROP TABLE subtitle_tracks');
       await versionOne.customStatement('PRAGMA user_version = 1');
       await versionOne.close();
 
-      repository = SqliteMaterialRepository(
-        scope: scope,
-        database: await storage.open(scope),
-      );
+      final upgraded = await storage.open(scope);
+      repository = SqliteMaterialRepository(scope: scope, database: upgraded);
       expect((await repository.listMaterials()).single.id, 'material-1');
       expect(await repository.listSubtitleTracks('material-1'), isEmpty);
+      final outboxRows = await upgraded
+          .customSelect(
+            "SELECT state, entity_id FROM sync_outbox WHERE entity_type = 'material'",
+          )
+          .get();
+      expect(outboxRows, hasLength(1));
+      expect(outboxRows.single.read<String>('state'), 'queued');
+      expect(outboxRows.single.read<String>('entity_id'), 'material-1');
     },
   );
 }

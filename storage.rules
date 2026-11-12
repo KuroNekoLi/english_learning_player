@@ -1,0 +1,33 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{uid}/assets/{assetId}/{sha256} {
+      function validUpload() {
+        return request.resource != null
+          && request.resource.size > 0
+          && request.resource.size <= 104857600
+          && request.resource.contentType in ['audio/mpeg', 'audio/mp4']
+          && request.resource.metadata.ownerId == uid
+          && request.resource.metadata.assetId == assetId
+          && request.resource.metadata.sha256 == sha256
+          && sha256.matches('^[a-f0-9]{64}$')
+          && request.resource.metadata.opId.size() > 0
+          && request.resource.metadata.payloadHash.matches('^[a-f0-9]{64}$');
+      }
+
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      allow read: if isOwner();
+      allow create: if isOwner() && resource == null && validUpload();
+      // Objects are immutable. A retry must verify the existing object before reuse.
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

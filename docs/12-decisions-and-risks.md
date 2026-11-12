@@ -31,6 +31,7 @@
 | ADR-023 | ACCEPTED | WP-05 LearningSession 綁定一個教材；replay 保留揭露，換 cue 重設遮蔽；句循環由獨立命令控制 | 對應精聽狀態機；無翻譯仍允許揭露並提示；跨教材 snapshot 不得誤操作播放器。T-LEARN-01..05 自動測試 |
 | ADR-024 | ACCEPTED | WP-06 一般字幕模式為 session 呈現狀態；字幕軌/offset 透過 repository 持久化 | 視窗測試證明切換不 Seek，播放進度保持；詳見 WP-06 handoff |
 | ADR-025 | ACCEPTED | WP-07 本機書籤保存不可變 cue anchor snapshot；字幕變更依文字與時間重定位，無唯一匹配時保留未定位 | WP-07 SQLite v2→v3 migration、重開 DB、subtitle revision relocation、ambiguous 與 account isolation tests |
+| ADR-026 | PROPOSED | WP-08 以 profile-scoped SQLite outbox + 注入式 Auth/Cloud transport；demo Firebase Emulator 驗證 Rules | 本機 transaction、fake transport 與三組 Emulator Rules 測試通過；FlutterFire 正式接線受 ADR-010/011/017/018 阻擋，SHA-256 read-back 成本未核定 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -89,6 +90,20 @@
 - 只有唯一最佳候選才能播放。最佳候選 overlap 與中心距離同分則標 ambiguous；找不到則標 missing。兩者都保留 bookmark 和原始 anchor，Favorites 不自動 seek，使用者可移除。此策略以避免錯播優先於猜測；修訂內容大幅改時且同時改寫文字可能需要使用者手動處理。
 - 本機刪除只寫 `deleted_at_ms` tombstone；雲端 outbox、墓碑 retention/sweep 留待 WP-08，故本機收藏不因字幕更新或未定位而被刪除。
 - 證據：`test/features/bookmarks/bookmark_repository_test.dart` 驗證 v2→v3 migration、DB 重開後保留並重定位到新 cue ID、account namespace 與 ambiguous/missing；Player widget tests 驗證收藏切換及 Favorites 從新 cue 開始播放。細節見 WP-07 handoff。
+
+### ADR-026 — WP-08 outbox 與 Firebase Emulator 邊界
+狀態：PROPOSED（Stage 2 可測實作；正式雲端接線未核准）
+
+- WP-02 的 `materials.status` 僅允許 `localReady`，不重建既有表。schema v4 新增 `material_sync_state` 作 UI 狀態 overlay，以及 `(owner_id, op_id)` 唯一的 `sync_outbox`。匯入教材與 outbox、sync state 在同一 SQLite transaction 建立；v1/v2/v3 舊教材升級時也建立待同步操作。
+- outbox payload 是版本化 canonical material metadata；其中只含教材/資產 ID、標題、SHA-256、位元組數及 MIME。App 私有相對路徑、授權 bookmark、原始路徑、登入 token、字幕全文不進雲端 payload 或日誌。asset object key 固定為 `users/{uid}/assets/{assetId}/{sha256}`，Firestore 路徑以 UID namespace 隔離。
+- 新匯入只排入本地佇列；派送前必須同時存在相符 Auth UID 與明確的 `SyncConsentProvider` 同步授權。授權未開啟時保持 localReady/outbox pending，不上傳。
+- `CloudSyncCoordinator` 僅接受 Auth UID 與 `AccountScope.ownerId` 完全相同的 session；上傳及每次 await 後重驗身分，帳號切換即暫停原 UID 操作。只有 Storage 回報的 SHA-256、大小、MIME 與預期 key 一致，且 asset/material metadata 發佈成功後才完成 outbox 並呈現 `cloudReady`。部分成功重送原 opId；暫時錯誤依 ADR-009 退避並於第 8 次進入待處理；同 UID 重新登入可續送，權限/資料錯誤須人工修復後以同一 opId 手動重試。
+- Firebase Rules 的媒體上限暫設 100 MiB，以限制 emulator 測試及可接受的媒體大小；此數值**不是產品上限核准**。ADR-011 的費率、區域與最大教材尺寸仍 OPEN，正式發布前須選定限制與成本政策。Rules 限制 owner、欄位 allowlist、音訊 MIME、path/UID 關聯、媒體 size 與不可公開存取；Rules 不驗證實際內容 SHA-256。
+- Storage object 建立後不可覆寫。冪等 adapter 重送時先讀取既有 object，核對 UID path、大小、MIME 及實際位元 SHA-256；完全一致才可回傳既有 receipt，否則回 integrity error。這避免相同 assetId/key 被不同位元替換。
+- 雲端 SHA-256 的「遠端驗證」必須由 transport 讀回物件並重算、或由經核准的可信後端計算。單靠 client metadata/custom metadata 是聲明值，不能作完整性證明；讀回會增加流量與費用。WP-08 只定義並以 Fake transport 驗證收據契約，尚未完成 FlutterFire adapter，因此不宣稱真實 Firebase Storage 上傳具 SHA-256 read-back 驗證。
+- 本地 Node Rules tests 使用 `demo-english-learning-player`，透過 `firebase emulators:exec --only auth,firestore,storage` 執行合成資料；demo ID 使未模擬雲端服務呼叫失敗。這些測試不建立 Firebase 專案、不觸發計費，也不驗證 FlutterFire 原生登入。Auth provider、UID/profile mapping、macOS Keychain entitlement、Apple SDK 套件管理及部署最低 OS 沿用 ADR-005/010/017/018 未決狀態。
+- 依據：[Firebase Emulator demo project](https://firebase.google.com/docs/emulator-suite/connect_firestore)、[Firestore Rules Emulator testing](https://firebase.google.com/docs/firestore/security/test-rules-emulator)、[Cloud Storage pricing transition](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024)。
+- 證據：`test/core/sync/cloud_sync_coordinator_test.dart` 覆蓋成功、重送、認證暫停、UID 切換、權限拒絕、損壞媒體、8 次退避及重試；`test/firebase/rules.test.cjs` 在 Firestore/Storage Emulator 覆蓋 owner allow、anonymous/cross-UID/錯欄位 deny。見 [WP-08 交棒](agent/wp-08-handoff.md)。
 
 ### ADR-012 — 進度衝突與回復
 

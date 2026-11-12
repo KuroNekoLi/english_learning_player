@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/db/account_scope.dart';
 import '../../../core/db/local_database.dart';
+import '../../../core/sync/sqlite_sync_outbox.dart';
 import '../material_repository.dart';
 import '../../subtitles/domain/subtitle_models.dart';
 
@@ -22,11 +23,14 @@ final class SqliteMaterialRepository implements MaterialRepository {
     final rows = await _database
         .customSelect(
           '''
-      SELECT m.id, m.owner_id, m.title, m.audio_asset_id, m.status,
+      SELECT m.id, m.owner_id, m.title, m.audio_asset_id,
+             COALESCE(ms.state, m.status) AS status,
              m.created_at_ms, a.byte_length
       FROM materials AS m
       JOIN media_assets AS a
         ON a.owner_id = m.owner_id AND a.id = m.audio_asset_id
+      LEFT JOIN material_sync_state AS ms
+        ON ms.owner_id = m.owner_id AND ms.material_id = m.id
       WHERE m.owner_id = ?
       ORDER BY m.created_at_ms DESC, m.id ASC
       ''',
@@ -169,6 +173,21 @@ final class SqliteMaterialRepository implements MaterialRepository {
       VALUES (?, ?, ?, ?)
       ''',
       [_scope.ownerId, sourceKey, assetId, materialId],
+    );
+    final payload = SqliteSyncOutbox.canonicalMaterialPayload(
+      materialId: materialId,
+      title: title,
+      assetId: assetId,
+      sha256: asset.sha256,
+      byteLength: asset.byteLength,
+      mediaType: asset.mediaType,
+    );
+    await SqliteSyncOutbox.enqueueMaterialInTransaction(
+      db: _database,
+      ownerId: _scope.ownerId,
+      materialId: materialId,
+      payloadJson: payload,
+      nowMs: storedCreatedAt.millisecondsSinceEpoch,
     );
     return InsertMaterialResult(
       material: LearningMaterial(

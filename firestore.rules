@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validAsset(uid, assetId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'schemaVersion', 'ownerId', 'assetId', 'sha256', 'byteLength',
+          'mediaType', 'storagePath', 'opId', 'payloadHash'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion', 'ownerId', 'assetId', 'sha256', 'byteLength',
+          'mediaType', 'storagePath', 'opId', 'payloadHash'
+        ])
+        && data.schemaVersion == 1
+        && data.ownerId == uid
+        && data.assetId == assetId
+        && data.sha256 is string && data.sha256.matches('^[a-f0-9]{64}$')
+        && data.byteLength is int && data.byteLength > 0
+        && data.byteLength <= 104857600
+        && data.mediaType in ['audio/mpeg', 'audio/mp4']
+        && data.storagePath == 'users/' + uid + '/assets/' + assetId + '/' + data.sha256
+        && data.opId is string && data.opId.size() > 0
+        && data.payloadHash is string && data.payloadHash.matches('^[a-f0-9]{64}$');
+    }
+
+    function validMaterial(uid, materialId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'schemaVersion', 'ownerId', 'materialId', 'title', 'audioAssetId',
+          'assetSha256', 'byteLength', 'mediaType', 'storagePath', 'opId',
+          'payloadHash', 'status'
+        ])
+        && data.keys().hasAll([
+          'schemaVersion', 'ownerId', 'materialId', 'title', 'audioAssetId',
+          'assetSha256', 'byteLength', 'mediaType', 'storagePath', 'opId',
+          'payloadHash', 'status'
+        ])
+        && data.schemaVersion == 1
+        && data.ownerId == uid
+        && data.materialId == materialId
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 500
+        && data.audioAssetId is string && data.audioAssetId.size() > 0
+        && data.assetSha256 is string && data.assetSha256.matches('^[a-f0-9]{64}$')
+        && data.byteLength is int && data.byteLength > 0
+        && data.byteLength <= 104857600
+        && data.mediaType in ['audio/mpeg', 'audio/mp4']
+        && data.storagePath == 'users/' + uid + '/assets/' + data.audioAssetId + '/' + data.assetSha256
+        && data.opId is string && data.opId.size() > 0
+        && data.payloadHash is string && data.payloadHash.matches('^[a-f0-9]{64}$')
+        && data.status == 'cloudReady';
+    }
+
+    match /users/{uid}/mediaAssets/{assetId} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && validAsset(uid, assetId);
+      allow update: if isOwner(uid) && validAsset(uid, assetId)
+        && request.resource.data == resource.data;
+      allow delete: if false;
+    }
+
+    match /users/{uid}/materials/{materialId} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && validMaterial(uid, materialId)
+        && exists(/databases/$(database)/documents/users/$(uid)/mediaAssets/$(request.resource.data.audioAssetId));
+      allow update: if isOwner(uid) && validMaterial(uid, materialId)
+        && request.resource.data == resource.data;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
