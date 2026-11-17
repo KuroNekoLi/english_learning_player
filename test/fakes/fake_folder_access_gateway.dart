@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:english_learning_player/core/platform/folder_access_gateway.dart';
+import 'package:english_learning_player/features/library/services/folder_import_reconciler.dart';
 
 final class FakeFolderAccessGateway implements FolderAccessGateway {
   FakeFolderAccessGateway(this.entries);
@@ -83,3 +84,17 @@ final class FakeFolderAccessGateway implements FolderAccessGateway {
     }
   }
 }
+
+Future<FolderReconciliationResult> ignoreFolderImport(
+  String bindingId,
+  List<FolderEntry> entries,
+) async => const FolderReconciliationResult(
+  importedAudio: 0,
+  renamedAudio: 0,
+  duplicateAudio: 0,
+  importedSubtitles: 0,
+  pendingDownload: 0,
+  ambiguousSubtitles: 0,
+  failures: 0,
+  missingSourceEntries: 0,
+);

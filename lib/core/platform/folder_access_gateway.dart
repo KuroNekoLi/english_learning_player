@@ -38,6 +38,7 @@ abstract interface class FolderAccessGateway {
   Stream<void> watch(String bindingId);
 
   /// Coordinates reading one available entry into an app-owned staging file.
+  /// Caller owns the returned copy and should delete it after use.
   /// Deletes partial staging data on failure. Source files are read-only.
   Future<Uri> stageFile(String bindingId, String relativePath);
 

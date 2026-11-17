@@ -38,10 +38,14 @@ final class FolderImportReconciler {
   final String playlistTitle;
   final SubtitleFilenameMatcher _matcher = const SubtitleFilenameMatcher();
 
-  Future<FolderReconciliationResult> reconcile() async {
+  Future<FolderReconciliationResult> reconcile() async =>
+      reconcileInventory(await _gateway.scan(bindingId));
+
+  Future<FolderReconciliationResult> reconcileInventory(
+    List<FolderEntry> inventory,
+  ) async {
     // A failed scan cannot imply source deletion. Mark absent only after a
     // complete inventory has been returned successfully.
-    final inventory = await _gateway.scan(bindingId);
     final previous = await _repository.listFolderSources(bindingId);
     final knownMaterials = {
       for (final material in await _materials.listMaterials())
@@ -67,6 +71,10 @@ final class FolderImportReconciler {
         )
         .toList();
 
+    final assignedMaterials = {
+      for (final record in previous)
+        if (currentAudioPaths.contains(record.relativePath)) record.materialId,
+    };
     var imported = 0;
     var renamed = 0;
     var duplicates = 0;
@@ -89,9 +97,11 @@ final class FolderImportReconciler {
         pending++;
         continue;
       }
+      File? stagedFile;
       try {
-        final staged = await _gateway.stageFile(bindingId, entry.relativePath);
-        final file = File.fromUri(staged);
+        final file = stagedFile = File.fromUri(
+          await _gateway.stageFile(bindingId, entry.relativePath),
+        );
         final digest = await sha256.bind(file.openRead()).first;
         final contentHash = digest.toString();
         LearningMaterial? material;
@@ -102,7 +112,8 @@ final class FolderImportReconciler {
           final renameCandidates = missingPrevious
               .where((record) => record.contentSha256 == contentHash)
               .toList();
-          if (renameCandidates.length == 1) {
+          if (renameCandidates.length == 1 &&
+              !assignedMaterials.contains(renameCandidates.single.materialId)) {
             material = knownMaterials[renameCandidates.single.materialId];
             if (material != null) renamed++;
           }
@@ -123,6 +134,7 @@ final class FolderImportReconciler {
             imported++;
           }
         }
+        assignedMaterials.add(material.id);
         materialByAudioPath[entry.relativePath] = material;
         await _repository.saveFolderSource(
           bindingId: bindingId,
@@ -137,6 +149,8 @@ final class FolderImportReconciler {
         );
       } catch (_) {
         failures++;
+      } finally {
+        await _deleteStaging(stagedFile);
       }
     }
 
@@ -155,9 +169,13 @@ final class FolderImportReconciler {
         final language = _language(track.languageTag);
         if (language != null) manualSelections[language] = track.sourceName;
       }
+      final nearbySubtitles = subtitleEntries.where(
+        (entry) =>
+            p.dirname(entry.relativePath) == p.dirname(audioEntry.relativePath),
+      );
       final matches = _matcher.match(
         audioFileName: audioEntry.relativePath,
-        subtitleFileNames: subtitleEntries.map((entry) => entry.relativePath),
+        subtitleFileNames: nearbySubtitles.map((entry) => entry.relativePath),
         manualSelections: manualSelections,
       );
       for (final language in SubtitleLanguage.values) {
@@ -169,12 +187,12 @@ final class FolderImportReconciler {
         final sourceName = match.selectedSourceName;
         if (sourceName == null ||
             (match.status == SubtitleMatchStatus.manual &&
-                !subtitleEntries.any(
+                !nearbySubtitles.any(
                   (entry) => p.basename(entry.relativePath) == sourceName,
                 ))) {
           continue;
         }
-        final subtitleEntry = subtitleEntries
+        final subtitleEntry = nearbySubtitles
             .where((entry) => p.basename(entry.relativePath) == sourceName)
             .firstOrNull;
         if (subtitleEntry == null ||
@@ -184,12 +202,14 @@ final class FolderImportReconciler {
           }
           continue;
         }
+        File? stagedFile;
         try {
           final staged = await _gateway.stageFile(
             bindingId,
             subtitleEntry.relativePath,
           );
-          final bytes = await File.fromUri(staged).readAsBytes();
+          final file = stagedFile = File.fromUri(staged);
+          final bytes = await file.readAsBytes();
           final languageTag = language == SubtitleLanguage.english
               ? 'en'
               : 'zh-TW';
@@ -210,6 +230,8 @@ final class FolderImportReconciler {
           subtitlesImported++;
         } catch (_) {
           failures++;
+        } finally {
+          await _deleteStaging(stagedFile);
         }
       }
     }
@@ -235,6 +257,14 @@ final class FolderImportReconciler {
           )
           .length,
     );
+  }
+
+  Future<void> _deleteStaging(File? file) async {
+    try {
+      await file?.delete();
+    } on FileSystemException {
+      // Staging cleanup must not undo a committed import.
+    }
   }
 
   String _sourceKey(String relativePath) =>

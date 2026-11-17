@@ -58,11 +58,6 @@ final class FolderSourcePanel extends ConsumerWidget {
                 child: Text(connected ? '重新掃描' : '選擇資料夾'),
               ),
               if (connected)
-                TextButton(
-                  onPressed: viewModel.reconcile,
-                  child: const Text('匯入並更新清單'),
-                ),
-              if (connected)
                 IconButton(
                   tooltip: '解除資料夾授權',
                   onPressed: viewModel.disconnect,

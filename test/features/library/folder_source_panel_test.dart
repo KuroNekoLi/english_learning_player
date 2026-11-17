@@ -1,6 +1,7 @@
 import 'package:english_learning_player/core/platform/folder_access_gateway.dart';
 import 'package:english_learning_player/core/platform/folder_access_gateway_provider.dart';
 import 'package:english_learning_player/features/library/folder_source_panel.dart';
+import 'package:english_learning_player/features/library/folder_source_view_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,7 +30,12 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [folderAccessGatewayProvider.overrideWithValue(gateway)],
+          overrides: [
+            folderAccessGatewayProvider.overrideWithValue(gateway),
+            reconcileFolderInventoryProvider.overrideWithValue(
+              ignoreFolderImport,
+            ),
+          ],
           child: const MaterialApp(home: Scaffold(body: FolderSourcePanel())),
         ),
       );

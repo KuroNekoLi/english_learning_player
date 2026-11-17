@@ -14,6 +14,10 @@ import 'package:english_learning_player/features/library/services/audio_import_s
 import 'package:english_learning_player/features/library/services/folder_import_reconciler.dart';
 import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:english_learning_player/core/platform/folder_access_gateway_provider.dart';
+import 'package:english_learning_player/features/library/folder_source_view_model.dart';
+import 'package:english_learning_player/features/library/library_view_model.dart';
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -33,6 +37,7 @@ void main() {
     database = await storage.open(scope);
     materials = SqliteMaterialRepository(scope: scope, database: database);
     gateway = _StagedFolderGateway(staging);
+    addTearDown(gateway.changes.close);
   });
 
   tearDown(() async {
@@ -50,6 +55,53 @@ void main() {
     ),
     subtitleImporter: SubtitleImportService(repository: materials),
     ownerId: scope.ownerId,
+  );
+
+  test(
+    'restored grant and watcher import into the normal library and outbox',
+    () async {
+      gateway.put('A/Lesson.mp3', [1, 2, 3]);
+      gateway.put('B/Lesson.mp3', [4, 5, 6]);
+      final container = ProviderContainer(
+        overrides: [
+          folderAccessGatewayProvider.overrideWithValue(gateway),
+          accountScopeProvider.overrideWithValue(scope),
+          accountDatabaseServiceProvider.overrideWith((ref) async => storage),
+          localDatabaseProvider.overrideWith((ref) async => database),
+        ],
+      );
+      addTearDown(container.dispose);
+      await usingState(
+        container,
+        () => container.read(folderSourceViewModelProvider),
+      );
+      expect(await materials.listMaterials(), hasLength(2));
+
+      gateway.put('B/Lesson.en.srt', _srt('Second folder only'));
+      final imported = usingState(container, gateway.notifyChange);
+      await imported;
+      final sources = await materials.listFolderSources(
+        '$macFolderBindingId-${scope.storageKey}',
+      );
+      final a = sources.singleWhere((it) => it.relativePath.startsWith('A/'));
+      final b = sources.singleWhere((it) => it.relativePath.startsWith('B/'));
+      expect(await materials.listSubtitleTracks(a.materialId), isEmpty);
+      expect(
+        (await materials.listSubtitleTracks(
+          b.materialId,
+        )).single.cues.single.text,
+        'Second folder only\n',
+      );
+      expect(await staging.list().toList(), isEmpty);
+      expect(
+        await database
+            .customSelect(
+              "SELECT op_id FROM sync_outbox WHERE entity_type = 'material'",
+            )
+            .get(),
+        hasLength(2),
+      );
+    },
   );
 
   test(
@@ -207,12 +259,33 @@ void main() {
 List<int> _srt(String text) =>
     '1\n00:00:01,000 --> 00:00:02,000\n$text\n'.codeUnits;
 
+Future<void> usingState(
+  ProviderContainer container,
+  void Function() trigger,
+) async {
+  final settled = Completer<void>();
+  var started = false;
+  final listener = container.listen(folderSourceViewModelProvider, (_, next) {
+    if (next.isBusy) started = true;
+    if (started && !next.isBusy && !settled.isCompleted) settled.complete();
+  }, fireImmediately: true);
+  try {
+    trigger();
+    await settled.future.timeout(const Duration(seconds: 5));
+    expect(container.read(folderSourceViewModelProvider).error, isNull);
+  } finally {
+    listener.close();
+  }
+}
+
 final class _StagedFolderGateway implements FolderAccessGateway {
   _StagedFolderGateway(this.directory);
 
   final Directory directory;
   final Map<String, List<int>> contents = {};
   final Set<String> pendingPaths = {};
+  final changes = StreamController<void>.broadcast();
+  void notifyChange() => changes.add(null);
   bool failScan = false;
 
   void put(String path, List<int> bytes) => contents[path] = bytes;
@@ -240,7 +313,7 @@ final class _StagedFolderGateway implements FolderAccessGateway {
   }
 
   @override
-  Stream<void> watch(String bindingId) => const Stream<void>.empty();
+  Stream<void> watch(String bindingId) => changes.stream;
   @override
   Future<Uri> stageFile(String bindingId, String relativePath) async {
     final bytes = contents[relativePath];

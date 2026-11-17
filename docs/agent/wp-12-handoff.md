@@ -48,3 +48,11 @@
 - `docs/11-work-packages.md`
 - `docs/12-decisions-and-risks.md`
 - `docs/README.md`
+
+## Stage 3 重驗
+
+- 啟動還原授權、重新掃描、FSEvents 防抖通知及 App 執行期間每五分鐘的補掃，均以完整 inventory 執行本機 reconcile。同一畫面的請求依序執行，解除授權會取消排隊的掃描並等待當輪結束。非預設帳號使用各自的授權鍵。
+- 字幕限定與音訊位於同一子目錄。暫存副本用畢會回收。相同教材在同一輪最多被一個新路徑當作改名來源。
+- 正常 Riverpod 入口的測試使用 SQLite、帳號私有媒體與 fake folder gateway。已驗證還原授權後自動匯入、監看後補字幕、同名子目錄隔離、兩筆教材各有一筆 outbox、暫存回收。
+- BLOCKED：現有 app 未接 Firebase transport，遠端 playlist／folder metadata 仍待 ADR-028 的資料契約及發佈路徑。缺少下載完成的合成 iCloud 教材供原生掃描到實際播放的驗收。
+- 重驗 PASS：Dart 格式、Flutter Analyze、Flutter Test 全量 115 項，其中 Library 專項 20 項均通過。

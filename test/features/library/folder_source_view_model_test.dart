@@ -12,7 +12,12 @@ void main() {
     () async {
       final gateway = FakeFolderAccessGateway(const []);
       final container = ProviderContainer(
-        overrides: [folderAccessGatewayProvider.overrideWithValue(gateway)],
+        overrides: [
+          folderAccessGatewayProvider.overrideWithValue(gateway),
+          reconcileFolderInventoryProvider.overrideWithValue(
+            ignoreFolderImport,
+          ),
+        ],
       );
       addTearDown(container.dispose);
       addTearDown(gateway.dispose);
@@ -44,7 +49,12 @@ void main() {
         ),
       ]);
       final container = ProviderContainer(
-        overrides: [folderAccessGatewayProvider.overrideWithValue(gateway)],
+        overrides: [
+          folderAccessGatewayProvider.overrideWithValue(gateway),
+          reconcileFolderInventoryProvider.overrideWithValue(
+            ignoreFolderImport,
+          ),
+        ],
       );
       addTearDown(container.dispose);
       addTearDown(gateway.dispose);
@@ -63,7 +73,10 @@ void main() {
     final gateway = FakeFolderAccessGateway(const []);
     gateway.denyGrant = true;
     final container = ProviderContainer(
-      overrides: [folderAccessGatewayProvider.overrideWithValue(gateway)],
+      overrides: [
+        folderAccessGatewayProvider.overrideWithValue(gateway),
+        reconcileFolderInventoryProvider.overrideWithValue(ignoreFolderImport),
+      ],
     );
     addTearDown(container.dispose);
     addTearDown(gateway.dispose);
@@ -85,7 +98,10 @@ void main() {
       ),
     ]);
     final container = ProviderContainer(
-      overrides: [folderAccessGatewayProvider.overrideWithValue(gateway)],
+      overrides: [
+        folderAccessGatewayProvider.overrideWithValue(gateway),
+        reconcileFolderInventoryProvider.overrideWithValue(ignoreFolderImport),
+      ],
     );
     addTearDown(container.dispose);
     addTearDown(gateway.dispose);
@@ -116,7 +132,10 @@ void main() {
       ),
     ]);
     final container = ProviderContainer(
-      overrides: [folderAccessGatewayProvider.overrideWithValue(gateway)],
+      overrides: [
+        folderAccessGatewayProvider.overrideWithValue(gateway),
+        reconcileFolderInventoryProvider.overrideWithValue(ignoreFolderImport),
+      ],
     );
     addTearDown(container.dispose);
     addTearDown(gateway.dispose);

@@ -11,6 +11,28 @@ import 'library_view_model.dart';
 
 const macFolderBindingId = 'primary-icloud-source';
 
+final reconcileFolderInventoryProvider =
+    Provider<
+      Future<FolderReconciliationResult> Function(String, List<FolderEntry>)
+    >(
+      (ref) => (bindingId, entries) async {
+        final gateway = ref.read(folderAccessGatewayProvider);
+        final scope = ref.read(accountScopeProvider);
+        final materials = ref.read(materialRepositoryProvider.future);
+        final importer = ref.read(audioImportServiceProvider.future);
+        final repository = await materials;
+        return FolderImportReconciler(
+          gateway: gateway,
+          repository: repository as FolderReconciliationRepository,
+          materials: repository,
+          audioImporter: await importer,
+          subtitleImporter: SubtitleImportService(repository: repository),
+          ownerId: scope.ownerId,
+          bindingId: bindingId,
+        ).reconcileInventory(entries);
+      },
+    );
+
 final folderSourceViewModelProvider =
     NotifierProvider<FolderSourceViewModel, FolderSourceState>(
       FolderSourceViewModel.new,
@@ -48,13 +70,16 @@ final class FolderSourceState {
     String? error,
     bool clearError = false,
     String? reconciliationSummary,
+    bool clearSummary = false,
   }) => FolderSourceState(
     grantStatus: grantStatus ?? this.grantStatus,
     displayLabel: displayLabel ?? this.displayLabel,
     entries: entries ?? this.entries,
     isBusy: isBusy ?? this.isBusy,
     error: clearError ? null : error ?? this.error,
-    reconciliationSummary: reconciliationSummary ?? this.reconciliationSummary,
+    reconciliationSummary:
+        reconciliationSummary ??
+        (clearSummary ? null : this.reconciliationSummary),
   );
 }
 
@@ -62,22 +87,32 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
   late FolderAccessGateway _gateway;
   StreamSubscription<void>? _watchSubscription;
   Timer? _rescanTimer;
+  Timer? _periodicScan;
+  late String _bindingId;
+  Future<void>? _refreshing;
+  bool _rescanRequested = false;
+  bool _disconnecting = false;
 
   @override
   FolderSourceState build() {
     _gateway = ref.watch(folderAccessGatewayProvider);
+    final scope = ref.watch(accountScopeProvider);
+    _bindingId = scope.ownerId == 'local-default'
+        ? macFolderBindingId
+        : '$macFolderBindingId-${scope.storageKey}';
     ref.onDispose(() {
       _rescanTimer?.cancel();
+      _periodicScan?.cancel();
       unawaited(_watchSubscription?.cancel());
     });
     unawaited(_restore());
-    return const FolderSourceState();
+    return const FolderSourceState(isBusy: true);
   }
 
   Future<void> connect() async {
     state = state.copyWith(isBusy: true, clearError: true);
     try {
-      final folder = await _gateway.pickFolder(macFolderBindingId);
+      final folder = await _gateway.pickFolder(_bindingId);
       if (folder == null) {
         state = state.copyWith(isBusy: false);
         return;
@@ -86,8 +121,8 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         grantStatus: GrantStatus.valid,
         displayLabel: folder.displayLabel,
       );
-      await _refresh();
-      if (state.grantStatus != GrantStatus.denied) await _startWatching();
+      await _startWatching();
+      await refresh();
     } on FolderAccessException catch (error) {
       state = state.copyWith(isBusy: false, error: _message(error.failure));
     } catch (_) {
@@ -95,66 +130,56 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
     }
   }
 
-  Future<void> refresh() async {
-    state = state.copyWith(isBusy: true, clearError: true);
-    await _refresh();
+  Future<void> refresh() {
+    if (!ref.mounted || _disconnecting) return Future.value();
+    _rescanRequested = true;
+    return _refreshing ??= _drainScans().whenComplete(() => _refreshing = null);
+  }
+
+  Future<void> _drainScans() async {
+    while (_rescanRequested && !_disconnecting && ref.mounted) {
+      _rescanRequested = false;
+      state = state.copyWith(isBusy: true, clearError: true);
+      await _refresh();
+    }
   }
 
   Future<void> disconnect() async {
+    if (_disconnecting) return;
+    _disconnecting = true;
+    _rescanRequested = false;
+    _rescanTimer?.cancel();
+    _periodicScan?.cancel();
     state = state.copyWith(isBusy: true, clearError: true);
-    await _watchSubscription?.cancel();
-    _watchSubscription = null;
     try {
-      await _gateway.disconnect(macFolderBindingId);
+      await _watchSubscription?.cancel();
+      _watchSubscription = null;
+      await _refreshing;
+      await _gateway.disconnect(_bindingId);
       state = const FolderSourceState();
     } on FolderAccessException catch (error) {
       state = state.copyWith(isBusy: false, error: _message(error.failure));
     } catch (_) {
       state = state.copyWith(isBusy: false, error: '無法解除資料夾授權');
-    }
-  }
-
-  Future<void> reconcile() async {
-    if (state.grantStatus != GrantStatus.valid) return;
-    state = state.copyWith(isBusy: true, clearError: true);
-    try {
-      final repository = await ref.read(materialRepositoryProvider.future);
-      final importService = await ref.read(audioImportServiceProvider.future);
-      final scope = ref.read(accountScopeProvider);
-      final result = await FolderImportReconciler(
-        gateway: _gateway,
-        repository: repository as FolderReconciliationRepository,
-        materials: repository,
-        audioImporter: importService,
-        subtitleImporter: SubtitleImportService(repository: repository),
-        ownerId: scope.ownerId,
-      ).reconcile();
-      state = state.copyWith(
-        isBusy: false,
-        reconciliationSummary:
-            '新增音訊 ${result.importedAudio}、改名沿用 ${result.renamedAudio}、'
-            '字幕 ${result.importedSubtitles}；待下載 ${result.pendingDownload}、'
-            '歧義 ${result.ambiguousSubtitles}、失敗 ${result.failures}',
-      );
-      ref.invalidate(libraryViewModelProvider);
-      await _refresh();
-    } catch (_) {
-      state = state.copyWith(isBusy: false, error: '資料夾匯入與清單更新失敗');
+    } finally {
+      _disconnecting = false;
     }
   }
 
   Future<void> _restore() async {
     try {
-      final status = await _gateway.restoreGrant(macFolderBindingId);
+      final status = await _gateway.restoreGrant(_bindingId);
+      if (!ref.mounted) return;
+      final connected =
+          status == GrantStatus.valid || status == GrantStatus.stale;
       state = state.copyWith(
         grantStatus: status,
-        displayLabel: status == GrantStatus.valid || status == GrantStatus.stale
-            ? '已授權資料夾'
-            : null,
+        displayLabel: connected ? '已授權資料夾' : null,
+        isBusy: connected,
       );
-      if (status == GrantStatus.valid || status == GrantStatus.stale) {
-        await _refresh();
-        if (state.grantStatus != GrantStatus.denied) await _startWatching();
+      if (connected) {
+        await _startWatching();
+        await refresh();
       }
     } on FolderAccessException catch (error) {
       final status = switch (error.failure) {
@@ -164,6 +189,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
       };
       state = state.copyWith(
         grantStatus: status,
+        isBusy: false,
         error: switch (error.failure) {
           FolderFailure.notFound => null,
           FolderFailure.permissionDenied => '資料夾授權已撤銷，請重新選取',
@@ -176,6 +202,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
     } catch (_) {
       state = state.copyWith(
         grantStatus: GrantStatus.denied,
+        isBusy: false,
         error: '資料夾授權無法恢復，請重新選取',
       );
     }
@@ -183,14 +210,35 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
 
   Future<void> _refresh() async {
     try {
-      final entries = await _gateway.scan(macFolderBindingId);
+      final binding = _bindingId;
+      final entries = await _gateway.scan(binding);
+      if (_disconnecting || !ref.mounted || binding != _bindingId) return;
+      final result = await ref.read(reconcileFolderInventoryProvider)(
+        binding,
+        entries,
+      );
+      if (_disconnecting || !ref.mounted || binding != _bindingId) return;
+      ref.invalidate(libraryViewModelProvider);
       state = state.copyWith(
         grantStatus: GrantStatus.valid,
         entries: entries,
+        reconciliationSummary:
+            result.importedAudio +
+                    result.importedSubtitles +
+                    result.renamedAudio +
+                    result.failures +
+                    result.ambiguousSubtitles >
+                0
+            ? '新增音訊 ${result.importedAudio}、字幕 ${result.importedSubtitles}、'
+                  '改名沿用 ${result.renamedAudio}、歧義 ${result.ambiguousSubtitles}、'
+                  '失敗 ${result.failures}'
+            : null,
+        clearSummary: true,
         isBusy: false,
         clearError: true,
       );
     } on FolderAccessException catch (error) {
+      if (_disconnecting || !ref.mounted) return;
       state = state.copyWith(
         grantStatus: error.failure == FolderFailure.permissionDenied
             ? GrantStatus.denied
@@ -199,19 +247,26 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         error: _message(error.failure),
       );
     } catch (_) {
-      state = state.copyWith(isBusy: false, error: '資料夾掃描失敗');
+      if (!_disconnecting && ref.mounted) {
+        state = state.copyWith(isBusy: false, error: '資料夾掃描或匯入失敗');
+      }
     }
   }
 
   Future<void> _startWatching() async {
     await _watchSubscription?.cancel();
+    if (!ref.mounted) return;
+    _periodicScan?.cancel();
+    _periodicScan = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (state.grantStatus == GrantStatus.valid) unawaited(refresh());
+    });
     _watchSubscription = _gateway
-        .watch(macFolderBindingId)
+        .watch(_bindingId)
         .listen(
           (_) {
             _rescanTimer?.cancel();
             _rescanTimer = Timer(const Duration(milliseconds: 350), () {
-              unawaited(_refresh());
+              unawaited(refresh());
             });
           },
           onError: (_) {

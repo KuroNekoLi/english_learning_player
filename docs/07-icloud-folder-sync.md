@@ -36,7 +36,7 @@ MVP iOS 只同步 Firebase 教材，不要求 iPhone 自己監控 iCloud 資料�
 
 Channel 錯誤需區分 permissionDenied、providerUnavailable、fileNotDownloaded、notFound、transientIo。授權細節見 [ADR-007／008](12-decisions-and-risks.md)。
 
-WP-11 實作由 `MethodChannelFolderAccessGateway` 對應 Swift `FolderAccessPlugin`。原生只將 bookmark data 存在 App container 的 UserDefaults，不回傳或記錄絕對來源路徑；每次掃描/複製以 start/stop 成對管理 security scope。掃描只回傳相對路徑、檔案大小、修改時間與 available/pendingDownload，不表示教材已匯入。只有 `notDownloaded` 算待下載；`downloaded` 表示本機有較舊副本，仍可唯讀取用。FSEvents 事件僅作 inventory invalidation，Flutter 以 350ms debounce 後重做完整掃描。檔案複製時驗證相對路徑、拒絕路徑穿越與任一路徑元件 symlink，使用 NSFileCoordinator 讀取並複製到 app-owned staging。
+WP-11 實作由 `MethodChannelFolderAccessGateway` 對應 Swift `FolderAccessPlugin`。原生只將 bookmark data 存在 App container 的 UserDefaults，不回傳或記錄絕對來源路徑；每次掃描/複製以 start/stop 成對管理 security scope。掃描只回傳相對路徑、檔案大小、修改時間與 available/pendingDownload，不表示教材已匯入。只有 `notDownloaded` 算待下載；`downloaded` 表示本機有較舊副本，仍可唯讀取用。FSEvents 事件僅作 inventory invalidation，Flutter 以 350ms 合併事件後重做完整掃描與本機匯入。已授權期間啟動、手動重掃與每五分鐘補掃亦走同一路徑。檔案複製時驗證相對路徑、拒絕路徑穿越與任一路徑元件 symlink，使用 NSFileCoordinator 讀取並複製到 app-owned staging。
 
 ## 5. 掃描與去重政策
 - 先依檔案名稱、大小、修改日期判別候選，穩定後讀取 hash；未完整下載不視為刪除。
