@@ -17,7 +17,7 @@
 | ADR-010 | OPEN | Auth providers（Google/Apple/Email） | 需看 App Store 登入規則與使用者偏好 |
 | ADR-011 | OPEN | Firebase 所有權、費率預算、最大單檔限制 | 不能擅自建立付費資源 |
 | ADR-012 | ACCEPTED | 以 canonical revision 和 session sequence 判斷進度寫入；落後版本保留候選 | 純 Dart 時序已測；伺服器交易及規則由 WP-08／09／13 驗證 |
-| ADR-013 | OPEN | macOS 背景播放與 Media key 控制方案 | 實測 just_audio_background / audio_service plugin support |
+| ADR-013 | ACCEPTED | WP-10 使用 `audio_service` 0.18.19 將 AudioEngine 狀態與系統媒體控制橋接；macOS 支援範圍限官方列出的 Now Playing/Control Center，不宣稱鎖定畫面控制 | Android/iOS 使用原生背景媒體服務配置；Android 暫停時維持 foreground service 以符合 Android 12+ 背景限制；平台 build 已核驗，真機控制列 smoke 尚待具備裝置 |
 | ADR-014 | OPEN | 登出時保留／移除快取的產品選項 | 強制 UID 隔離與暫停舊 UID outbox；實際保留期限與磁碟政策待定 |
 | ADR-015 | OPEN | 音訊外再支援 MP4 的里程碑 | 使用者主要使用音訊，影片之後擴充 |
 | ADR-016 | OPEN | SRT encoding fallback 與語言偵測套件 | UTF-8 優先；需平台與授權評估 |
@@ -112,6 +112,15 @@
 2. 提交時先讀 opId receipt，重送回傳既有結果。交易內讀取該 session 的 sequence high-water 與 canonical。sequence 已見過或較舊就忽略。baseRevision 等於 canonical 才接受並遞增 revision。否則保留該 session 最新候選及原 baseRevision。交易同時寫入結果 receipt、高水位與適用的 canonical／候選，避免併發與回覆遺失造成重複效果。
 3. 離線 checkpoint 留在本機，候選確認後 outbox 可完成，候選仍可供使用者選擇。若使用者選定候選或保留目前位置，用畫面當時的 canonical revision 和候選識別提交明確的解決操作，交易檢查兩者仍有效後更新 canonical 並標記已解決的候選。任一版本已改變則重新呈現，保留其他候選。後續本機 checkpoint 可以承接同 session 自己剛確認的寫入；只可在產生新未送出操作時使用該 revision，不能借用別台裝置的新版本覆蓋衝突。
 4. 裝置時鐘與播放位置大小都不能決定勝負，倒帶也能合法接受。進度的 server timestamp 用於呈現，遠端更新只影響下次開啟／明確續播選擇。依據：[時序測試](../test/unit/progress_policy_test.dart)、[Firestore 交易隔離](https://firebase.google.com/docs/firestore/transaction-data-contention)。WP-09／13 尚需驗證 receipt 重送、兩裝置併發、切帳號與播放中的 Seek 隔離。
+
+### ADR-013 — WP-10 系統媒體控制
+
+- 以 `audio_service` 0.18.19 的 `AudioHandler` 作為 OS media session adapter；handler 命令只呼叫現有 `AudioEngine`，不另建播放器或讓 UI 直接呼叫平台 plugin。教材 metadata 由 Player ViewModel 在成功載入後發布，handler 訂閱 engine snapshot 更新 playback state。
+- `audio_service` 官方支援矩陣列出 Android、iOS、macOS；macOS 有 Now Playing / Control Center 媒體控制能力，沒有 Lock Screen control。選用直接 `audio_service` 是因其官方文件定位為可擴充的 background audio service；`just_audio_background` 文件將自身定位為較簡單的單播放器封裝，並建議需要更多服務控制時直接使用 `audio_service`。依據：[audio_service 支援矩陣](https://pub.dev/packages/audio_service)、[audio_service API](https://pub.dev/documentation/audio_service/latest/index.html)、[just_audio_background 文件](https://pub.dev/packages/just_audio_background)。
+- 已在本專案 Flutter 3.32.2 / Dart 3.8.1 上由 `flutter pub get` 實際解析 `audio_service` 0.18.19；Dart handler 與 metadata/state 測試通過。Android Manifest 設定 media playback foreground service 與 media button receiver，iOS 設定 `UIBackgroundModes=audio`；不得推論這些 build 結果等同真機鎖屏/耳機 smoke。
+- Android 設定 `androidStopForegroundOnPause: false` 以保持 Android 12+ 背景服務可恢復；`androidNotificationOngoing` 必須為 false。暫停時 OS 通知/foreground service 可能持續存在，使用者可透過 Stop 結束。此行為是 Android resume 相容性與通知持續時間的明確取捨。
+- 啟動時若平台 service 初始化失敗，保留前景本機播放並使用 no-op media session；不得因此阻擋播放。macOS 只承諾官方列出的媒體中心控制能力，尚無 Mac 實機媒體鍵/背景實測。Android/iOS 真機 smoke 需在接上/準備測試裝置後補做。
+- 證據：`test/features/audio/english_audio_handler_test.dart` 驗證系統 pause/seek/stop/speed 命令經 `AudioEngine` 執行及狀態/metadata 發布；Player widget tests 覆蓋教材載入後發布 metadata。`flutter analyze`、93 個 Flutter tests、iOS Simulator/macOS/Android APK build 均通過。Android/iOS 實際背景播放控制未測；Android build 有現用 NDK 26.3 與 plugin 建議 NDK 27.0 的 warning，但 APK 成功產出且本 WP 未更動 NDK。詳見 [WP-10 交棒](agent/wp-10-handoff.md)。
 
 ### ADR-027 — WP-09 進度持久化與播放器邊界
 狀態：ACCEPTED（本機與 adapter 契約）；OPEN（正式 Firebase transaction）

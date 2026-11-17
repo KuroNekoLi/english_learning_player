@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/audio/audio_engine.dart';
 import '../../core/audio/audio_engine_provider.dart';
+import '../../core/audio/audio_media_session_provider.dart';
 import '../../core/sync/progress_policy.dart';
 import '../../features/learning/domain/learning_session.dart';
 import '../../features/learning/learning_session_provider.dart';
@@ -107,6 +108,8 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       if (generation != _openGeneration) return;
       _bundle = bundle;
       await _audioEngine.load(bundle.source);
+      if (generation != _openGeneration) return;
+      await _publishMediaItem(material);
       if (generation != _openGeneration) return;
       final progressRepository = await ref.read(
         progressRepositoryProvider.future,
@@ -406,6 +409,19 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
         _bookmarksByCueKey[_cueKey(resolution.track!, resolution.cue!)] =
             bookmark;
       }
+    }
+  }
+
+  Future<void> _publishMediaItem(LearningMaterial material) async {
+    try {
+      final mediaSession = await ref.read(audioMediaSessionProvider.future);
+      await mediaSession.publishMediaItem(
+        id: material.id,
+        title: material.title,
+        durationMs: _audioEngine.snapshot.durationMs,
+      );
+    } catch (_) {
+      // Keep foreground playback available if a platform media session fails.
     }
   }
 

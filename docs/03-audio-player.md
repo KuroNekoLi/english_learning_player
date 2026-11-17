@@ -30,9 +30,10 @@
 驗收精度：在 3 個不同來源媒體、不同手機及 Mac 上測量邊界行為。暫定重播起點誤差 ≤ 150ms（若 AAC/MP3 平台限制超出需記錄觀測、向使用者確認容許值）。不宣稱 sample-accurate loop。
 
 ## 5. 背景音訊
-- `audio_session` 處理 interruption/noisy event；Android MediaSession、iOS audio background capability；macOS 控制/媒體按鍵支持需 Spike。
-- `just_audio_background` 與 `audio_service` 選型需檢查當前 plugin platform support；允許 macOS 先用普通播放+生命周期策略，不把手機 API 支持推論成桌面支持。
-- 鎖屏/藍牙/來電後須依平台事件保存進度，明確避免自動錯誤恢復。
+- `audio_session` 處理 interruption/noisy event；`audio_service` 0.18.19 將唯一 `AudioEngine` 的狀態/命令橋接至系統媒體 session。metadata 由 Player ViewModel 發布，系統命令不得繞過 AudioEngine。
+- Android 使用 foreground media playback service 與 MediaButtonReceiver，iOS 使用 audio background capability。Android 暫停時維持 foreground service 是 resume 相容性選擇，通知可持續到 Stop。
+- `audio_service` 官方支援矩陣列出 macOS Now Playing/Control Center 控制，但不支援 macOS Lock Screen 控制；真機媒體鍵及背景播放仍須裝置 smoke，不將平台支援宣告當成執行證據。詳見 ADR-013 與 [WP-10 handoff](agent/wp-10-handoff.md)。
+- 鎖屏/藍牙/來電後依平台事件保存進度；中斷結束不自動恢復，避免未經使用者操作突然續播。
 
 ## 6. 測試
 `FakeAudioEngine` 可手動推進時間、模擬 buffered/error/interruption；測試 load race、seek racing、loop 清理、速度、狀態轉移、重啟恢復。真機測 Android/iOS/macOS 及 M4A/MP3；未執行的真機測試要標 BLOCKED。

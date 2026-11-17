@@ -1,5 +1,6 @@
 import 'package:english_learning_player/core/audio/audio_engine_provider.dart';
 import 'package:english_learning_player/core/audio/audio_engine.dart';
+import 'package:english_learning_player/core/audio/audio_media_session_provider.dart';
 import 'package:english_learning_player/core/sync/progress_policy.dart';
 import 'package:english_learning_player/features/progress/domain/progress_models.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
@@ -17,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../fakes/fake_audio_engine.dart';
+import '../../fakes/fake_audio_media_session.dart';
 import '../../fakes/fake_bookmark_repository.dart';
 import '../../fakes/fake_progress_repository.dart';
 
@@ -27,6 +29,7 @@ void main() {
   late FakeAudioEngine audio;
   late FakeBookmarkRepository bookmarks;
   late FakeProgressRepository progress;
+  late FakeAudioMediaSession mediaSession;
   late Widget Function({TextScaler textScaler}) buildApp;
 
   setUp(() {
@@ -73,12 +76,14 @@ void main() {
     audio = FakeAudioEngine({mediaUri: 60_000});
     bookmarks = FakeBookmarkRepository();
     progress = FakeProgressRepository();
+    mediaSession = FakeAudioMediaSession();
     buildApp = ({TextScaler textScaler = TextScaler.noScaling}) =>
         ProviderScope(
           overrides: [
             audioEngineProvider.overrideWithValue(audio),
             bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
             progressRepositoryProvider.overrideWith((ref) async => progress),
+            audioMediaSessionProvider.overrideWith((ref) async => mediaSession),
             materialPlaybackLoaderProvider.overrideWith(
               (ref) async => _FixedLoader(
                 MaterialPlaybackBundle(
@@ -167,6 +172,8 @@ void main() {
     );
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
+    expect(mediaSession.id, material.id);
+    expect(mediaSession.title, material.title);
     expect(audio.snapshot.positionMs, 12000);
     expect(audio.seekCalls, 1);
     await progress.mergeRemoteCanonical(
@@ -269,6 +276,7 @@ void main() {
           audioEngineProvider.overrideWithValue(audio),
           bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
           progressRepositoryProvider.overrideWith((ref) async => progress),
+          audioMediaSessionProvider.overrideWith((ref) async => mediaSession),
           materialRepositoryProvider.overrideWith((ref) async => library),
           materialPlaybackLoaderProvider.overrideWith(
             (ref) async => _FixedLoader(
