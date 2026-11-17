@@ -100,7 +100,9 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
   late String _bindingId;
   Future<void>? _refreshing;
   bool _rescanRequested = false;
+  bool _showScanProgress = false;
   bool _disconnecting = false;
+  DateTime? _lastAutomaticScan;
 
   @override
   FolderSourceState build() {
@@ -141,17 +143,29 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
     }
   }
 
-  Future<void> refresh() {
+  Future<void> refresh({bool showProgress = true}) {
     if (!ref.mounted || _disconnecting) return Future.value();
+    if (!showProgress) {
+      final now = DateTime.now();
+      final lastScan = _lastAutomaticScan;
+      _showScanProgress =
+          _showScanProgress ||
+          lastScan == null ||
+          now.difference(lastScan) >= const Duration(seconds: 3);
+      _lastAutomaticScan = now;
+    }
     _rescanRequested = true;
+    _showScanProgress = _showScanProgress || showProgress;
     return _refreshing ??= _drainScans().whenComplete(() => _refreshing = null);
   }
 
   Future<void> _drainScans() async {
     while (_rescanRequested && !_disconnecting && ref.mounted) {
       _rescanRequested = false;
-      state = state.copyWith(isBusy: true, clearError: true);
-      await _refresh();
+      final showProgress = _showScanProgress;
+      _showScanProgress = false;
+      if (showProgress) state = state.copyWith(isBusy: true, clearError: true);
+      await _refresh(showProgress: showProgress);
     }
   }
 
@@ -226,7 +240,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
     }
   }
 
-  Future<void> _refresh() async {
+  Future<void> _refresh({required bool showProgress}) async {
     final binding = _bindingId;
     try {
       final entries = await _gateway.scan(binding);
@@ -252,7 +266,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
                   '失敗 ${result.failures}'
             : null,
         clearSummary: true,
-        isBusy: false,
+        isBusy: showProgress ? false : state.isBusy,
         clearError: true,
       );
     } on FolderAccessException catch (error) {
@@ -261,12 +275,15 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         grantStatus: error.failure == FolderFailure.permissionDenied
             ? GrantStatus.denied
             : state.grantStatus,
-        isBusy: false,
+        isBusy: showProgress ? false : state.isBusy,
         error: _message(error.failure),
       );
     } catch (_) {
       if (!_disconnecting && _ownsBinding(binding)) {
-        state = state.copyWith(isBusy: false, error: '資料夾掃描或匯入失敗');
+        state = state.copyWith(
+          isBusy: showProgress ? false : state.isBusy,
+          error: '資料夾掃描或匯入失敗',
+        );
       }
     }
   }
@@ -277,7 +294,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
     _periodicScan?.cancel();
     _periodicScan = Timer.periodic(const Duration(minutes: 5), (_) {
       if (_ownsBinding(binding) && state.grantStatus == GrantStatus.valid) {
-        unawaited(refresh());
+        unawaited(refresh(showProgress: false));
       }
     });
     _watchSubscription = _gateway
@@ -287,7 +304,9 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
             if (!_ownsBinding(binding)) return;
             _rescanTimer?.cancel();
             _rescanTimer = Timer(const Duration(milliseconds: 350), () {
-              if (_ownsBinding(binding)) unawaited(refresh());
+              if (_ownsBinding(binding)) {
+                unawaited(refresh(showProgress: false));
+              }
             });
           },
           onError: (_) {

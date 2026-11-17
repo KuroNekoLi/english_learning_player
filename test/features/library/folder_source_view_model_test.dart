@@ -109,6 +109,12 @@ void main() {
 
     await viewModel.connect();
     await Future<void>.delayed(Duration.zero);
+    final busyTransitions = <bool>[];
+    final subscription = container.listen(
+      folderSourceViewModelProvider,
+      (previous, next) => busyTransitions.add(next.isBusy),
+    );
+    addTearDown(subscription.close);
     gateway.entries.add((
       relativePath: 'lesson.zh.srt',
       status: FolderEntryStatus.pendingDownload,
@@ -120,6 +126,7 @@ void main() {
 
     expect(gateway.scanCount, 2);
     expect(container.read(folderSourceViewModelProvider).pendingCount, 1);
+    expect(busyTransitions.where((busy) => busy), hasLength(1));
   });
 
   test('T-FOLDER-09 disconnect cancels source and drops inventory', () async {

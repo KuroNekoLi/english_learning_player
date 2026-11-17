@@ -2,6 +2,7 @@ import 'package:english_learning_player/features/library/library_view_model.dart
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/main.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -45,6 +46,37 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('合成教材'), findsOneWidget);
+  });
+
+  testWidgets('library exposes add actions and filters its local materials', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          materialRepositoryProvider.overrideWith(
+            (ref) async => _FakeMaterialRepository([material]),
+          ),
+        ],
+        child: const EnglishLearningPlayer(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('新增'));
+    await tester.pumpAndSettle();
+    expect(find.text('匯入媒體'), findsOneWidget);
+    expect(find.text('匯入資料夾'), findsOneWidget);
+    expect(find.text('從相簿匯入（尚未提供）'), findsOneWidget);
+
+    await tester.tap(find.text('從相簿匯入（尚未提供）'));
+    await tester.pumpAndSettle();
+    expect(find.text('合成教材'), findsOneWidget);
+    await tester.tap(find.byTooltip('搜尋'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'missing');
+    await tester.pumpAndSettle();
+    expect(find.text('目前沒有教材'), findsOneWidget);
   });
 
   testWidgets('a read failure can be retried through the same repository', (
