@@ -5,7 +5,8 @@ import '../features/library/library_view_model.dart';
 import '../features/library/folder_source_panel.dart';
 import '../features/library/folder_source_view_model.dart';
 import '../features/library/material_repository.dart';
-import '../features/library/services/audio_import_service.dart';
+import '../features/library/services/media_selection_import_service.dart';
+import '../features/subtitles/services/subtitle_import_service.dart';
 import '../features/bookmarks/bookmarks_page.dart';
 import '../features/player/player_page.dart';
 import '../features/sync/firebase_sync_dependencies.dart';
@@ -32,23 +33,41 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   Future<void> _importAudio(BuildContext context) async {
     final owner = ref.read(accountScopeProvider).ownerId;
     final picker = ref.read(audioFilePickerProvider);
-    final source = await picker.pickAudio();
-    if (source == null ||
+    final files = await picker.pickMediaFiles();
+    if (files.isEmpty ||
         !context.mounted ||
         ref.read(accountScopeProvider).ownerId != owner) {
       return;
     }
     try {
       final importer = await ref.read(audioImportServiceProvider.future);
+      final repository = await ref.read(materialRepositoryProvider.future);
       if (!context.mounted || ref.read(accountScopeProvider).ownerId != owner) {
         return;
       }
-      final ImportResult result = await importer.importAudio(source);
+      final result = await MediaSelectionImportService(
+        ownerId: owner,
+        repository: repository,
+        audioImporter: importer,
+        subtitleImporter: SubtitleImportService(repository: repository),
+      ).importFiles(files);
       ref.invalidate(libraryViewModelProvider);
-      if (context.mounted && result.wasDuplicate) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('此音訊已在教材庫')));
+      if (!context.mounted) return;
+      if (result.audioFailures > 0 || result.subtitleFailures > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '音訊失敗 ${result.audioFailures}，字幕失敗 ${result.subtitleFailures}，'
+              '字幕歧義 ${result.ambiguousSubtitles}',
+            ),
+          ),
+        );
+      } else if (result.ambiguousSubtitles > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('字幕檔名有歧義 ${result.ambiguousSubtitles} 組，未自動匯入'),
+          ),
+        );
       }
     } catch (_) {
       if (context.mounted) {

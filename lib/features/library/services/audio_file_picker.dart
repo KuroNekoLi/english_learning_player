@@ -6,25 +6,30 @@ import 'package:file_selector/file_selector.dart';
 import '../domain/audio_import_source.dart';
 
 abstract interface class AudioFilePicker {
-  Future<AudioImportSource?> pickAudio();
+  Future<List<AudioImportSource>> pickMediaFiles();
 }
 
 final class NativeAudioFilePicker implements AudioFilePicker {
   static const _audioFiles = XTypeGroup(
-    label: 'Audio',
-    extensions: ['m4a', 'mp3'],
-    mimeTypes: ['audio/mp4', 'audio/mpeg'],
-    uniformTypeIdentifiers: ['public.mpeg-4-audio', 'public.mp3'],
+    label: 'Media and subtitles',
+    extensions: ['m4a', 'mp3', 'srt'],
+    mimeTypes: ['audio/mp4', 'audio/mpeg', 'application/x-subrip'],
+    uniformTypeIdentifiers: [
+      'public.mpeg-4-audio',
+      'public.mp3',
+      'com.subrip.subrip',
+    ],
   );
 
   @override
-  Future<AudioImportSource?> pickAudio() async {
-    final file = await openFile(acceptedTypeGroups: [_audioFiles]);
-    if (file == null) return null;
-    return AudioImportSource(
-      sourceKey: sha256.convert(utf8.encode(file.path)).toString(),
-      name: file.name,
-      openRead: file.openRead,
-    );
-  }
+  Future<List<AudioImportSource>> pickMediaFiles() async =>
+      (await openFiles(acceptedTypeGroups: [_audioFiles]))
+          .map(
+            (file) => AudioImportSource(
+              sourceKey: sha256.convert(utf8.encode(file.path)).toString(),
+              name: file.name,
+              openRead: file.openRead,
+            ),
+          )
+          .toList(growable: false);
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -8,6 +9,8 @@ import 'package:english_learning_player/features/library/data/sqlite_material_re
 import 'package:english_learning_player/features/library/domain/audio_import_source.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
+import 'package:english_learning_player/features/library/services/media_selection_import_service.dart';
+import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -89,6 +92,59 @@ void main() {
       final mediaFiles = storage.mediaDirectory(accountA).listSync();
       expect(mediaFiles.whereType<File>(), hasLength(1));
       expect(await mediaFiles.whereType<File>().single.length(), 5);
+    },
+  );
+
+  test(
+    'imports selected audio with matching English and Chinese SRT files',
+    () async {
+      final audio = service(accountA, repositoryA);
+      final selection = MediaSelectionImportService(
+        ownerId: accountA.ownerId,
+        repository: repositoryA,
+        audioImporter: audio,
+        subtitleImporter: SubtitleImportService(repository: repositoryA),
+      );
+      final result = await selection.importFiles([
+        bytes('lesson.m4a', [1, 2, 3]),
+        bytes('lesson.en.srt', _srt('Hello')),
+        bytes('lesson.zh-TW.srt', _srt('你好')),
+      ]);
+
+      expect(result.importedMaterials, hasLength(1));
+      expect(result.subtitlesImported, 2);
+      final tracks = await repositoryA.listSubtitleTracks(
+        result.importedMaterials.single.id,
+      );
+      expect(tracks.map((track) => track.languageTag), ['en', 'zh-TW']);
+      expect(tracks.map((track) => track.cues.single.text), [
+        'Hello\n',
+        '你好\n',
+      ]);
+    },
+  );
+
+  test(
+    'subtitle-only selection attaches to an existing matching lesson',
+    () async {
+      final lesson = await service(
+        accountA,
+        repositoryA,
+      ).importAudio(bytes('lesson.mp3', [1, 2, 3]));
+      final result = await MediaSelectionImportService(
+        ownerId: accountA.ownerId,
+        repository: repositoryA,
+        audioImporter: service(accountA, repositoryA),
+        subtitleImporter: SubtitleImportService(repository: repositoryA),
+      ).importFiles([bytes('lesson.en.srt', _srt('Late subtitle'))]);
+
+      expect(result.subtitlesImported, 1);
+      expect(
+        (await repositoryA.listSubtitleTracks(
+          lesson.material.id,
+        )).single.cues.single.text,
+        'Late subtitle\n',
+      );
     },
   );
 
@@ -181,3 +237,6 @@ void main() {
     expect(AccountScope('../user').storageKey, isNot('../user'));
   });
 }
+
+List<int> _srt(String text) =>
+    utf8.encode('1\n00:00:01,000 --> 00:00:02,000\n$text\n');
