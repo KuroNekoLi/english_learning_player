@@ -2,6 +2,7 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../../library/material_repository.dart';
+import '../domain/bilingual_subtitle_splitter.dart';
 import '../domain/srt_parser.dart';
 import '../domain/subtitle_models.dart';
 
@@ -53,6 +54,59 @@ final class SubtitleImportService {
     );
     final saved = await _repository.saveSubtitleTrack(track, manual: manual);
     return SubtitleImportResult(track: saved, warnings: document.warnings);
+  }
+
+  /// Imports a mixed English/Chinese SRT as two selectable tracks.
+  /// Returns null when the file is not consistently bilingual.
+  Future<List<SubtitleTrack>?> importBilingualBytes({
+    required String ownerId,
+    required String materialId,
+    required String sourceName,
+    required List<int> bytes,
+    required bool manual,
+    int revision = 1,
+    int offsetMs = 0,
+  }) async {
+    final document = _parser.parse(bytes);
+    final pair = const BilingualSubtitleSplitter().split(document.cues);
+    if (pair == null) return null;
+    final basename = p.basename(sourceName);
+    final mode = manual
+        ? SubtitleSelectionMode.manual
+        : SubtitleSelectionMode.automatic;
+    final tracks = [
+      SubtitleTrack(
+        id: _uuid.v4(),
+        ownerId: ownerId,
+        materialId: materialId,
+        languageTag: 'en',
+        sourceName: '$basename · EN',
+        originalBytes: document.originalBytes,
+        revision: revision,
+        offsetMs: offsetMs,
+        selectionMode: mode,
+        isSelected: false,
+        cues: pair.english,
+      ),
+      SubtitleTrack(
+        id: _uuid.v4(),
+        ownerId: ownerId,
+        materialId: materialId,
+        languageTag: 'zh-TW',
+        sourceName: '$basename · 繁中',
+        originalBytes: document.originalBytes,
+        revision: revision,
+        offsetMs: offsetMs,
+        selectionMode: mode,
+        isSelected: false,
+        cues: pair.chinese,
+      ),
+    ];
+    final saved = <SubtitleTrack>[];
+    for (final track in tracks) {
+      saved.add(await _repository.saveSubtitleTrack(track, manual: manual));
+    }
+    return List.unmodifiable(saved);
   }
 }
 

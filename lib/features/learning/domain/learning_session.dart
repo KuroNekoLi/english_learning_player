@@ -221,6 +221,22 @@ final class LearningSession {
     return playCue(next.id);
   }
 
+  /// Plays the previous English cue in audio-time order.
+  Future<bool> previousCue() async {
+    _ensureUsable();
+    if (!_isActiveMaterial || _sortedCues.isEmpty) return false;
+    final currentIndex = _currentCue == null
+        ? _sortedCues.indexWhere(
+            (cue) => _audioStart(cue) >= _audioEngine.snapshot.positionMs,
+          )
+        : _sortedCues.indexWhere((cue) => cue.id == _currentCue!.id);
+    final previousIndex = currentIndex < 0
+        ? _sortedCues.length - 1
+        : currentIndex - 1;
+    if (previousIndex < 0 || previousIndex >= _sortedCues.length) return false;
+    return playCue(_sortedCues[previousIndex].id);
+  }
+
   /// Plays a selected English cue. Selecting another cue returns intensive
   /// mode to blind listening; selecting the active cue preserves its reveal.
   Future<bool> playCue(String cueId) async {

@@ -118,8 +118,47 @@ void main() {
     expect(find.byTooltip('AI 語音辨識（尚未提供）'), findsOneWidget);
     expect(find.byTooltip('手動匯入 SRT'), findsOneWidget);
     expect(find.byTooltip('字幕樣式（尚未提供）'), findsOneWidget);
-    expect(find.text('英文'), findsOneWidget);
-    expect(find.text('中文'), findsOneWidget);
+    expect(find.text('英文'), findsWidgets);
+    expect(find.text('中文'), findsWidgets);
+  });
+
+  testWidgets(
+    'shows the full bilingual transcript before the first cue plays',
+    (tester) async {
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+
+      expect(find.text('逐句雙語字幕'), findsOneWidget);
+      expect(find.text('A sentence to learn.'), findsOneWidget);
+      expect(find.text('一句練習句。'), findsOneWidget);
+      expect(find.byKey(const ValueKey('activeSubtitleCard')), findsNothing);
+    },
+  );
+
+  testWidgets('renders an already-imported bilingual cue from one SRT track', (
+    tester,
+  ) async {
+    tracks = [
+      _track(
+        id: 'bilingual-track',
+        language: 'en',
+        selected: true,
+        cues: const [
+          SubtitleCue(
+            id: 'bilingual-1',
+            sequence: 1,
+            startMs: 0,
+            endMs: 2000,
+            text: 'So, imagine this scenario.\n我想請你想像這個情境。',
+          ),
+        ],
+      ),
+    ];
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('So, imagine this scenario.'), findsOneWidget);
+    expect(find.text('我想請你想像這個情境。'), findsOneWidget);
   });
 
   for (final scenario in [
@@ -220,7 +259,7 @@ void main() {
     audio.advanceTo(1800);
     await tester.pump();
 
-    await tester.tap(find.byTooltip('字幕'));
+    await tester.tap(find.byTooltip('字幕設定'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('只顯示英文'));
     await tester.pumpAndSettle();

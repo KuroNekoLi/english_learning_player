@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/learning/domain/learning_session.dart';
 import '../../features/library/material_repository.dart';
+import '../../features/subtitles/domain/subtitle_aligner.dart';
+import '../../features/subtitles/domain/bilingual_subtitle_splitter.dart';
 import '../../features/subtitles/domain/subtitle_models.dart';
 import '../../features/subtitles/services/subtitle_file_picker.dart';
 import 'player_view_model.dart';
@@ -22,6 +24,7 @@ final class PlayerPage extends ConsumerStatefulWidget {
 
 final class _PlayerPageState extends ConsumerState<PlayerPage>
     with WidgetsBindingObserver {
+  SubtitleVisibility _transcriptVisibility = SubtitleVisibility.bilingual;
   @override
   void initState() {
     super.initState();
@@ -65,52 +68,8 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: AppBar(
-            title: Text(widget.material.title, maxLines: 1),
-            actions: [
-              IconButton(
-                tooltip: state.isCurrentCueBookmarked ? '移除收藏' : '收藏本句',
-                onPressed: state.isReady && state.learning?.currentCue != null
-                    ? () => unawaited(viewModel.toggleBookmark())
-                    : null,
-                icon: Icon(
-                  state.isCurrentCueBookmarked
-                      ? Icons.bookmark
-                      : Icons.bookmark_border,
-                ),
-              ),
-              IconButton(
-                tooltip: '字幕設定',
-                onPressed: state.isReady
-                    ? () => _showSubtitleSettings(context, state, viewModel)
-                    : null,
-                icon: const Icon(Icons.subtitles_outlined),
-              ),
-            ],
-          ),
-          body: LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth >= 900) {
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: 280,
-                      child: _MaterialSummary(material: widget.material),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(child: _subtitleContent(state, viewModel)),
-                  ],
-                );
-              }
-              return _subtitleContent(state, viewModel);
-            },
-          ),
-          bottomNavigationBar: _PlaybackControls(
-            state: state,
-            viewModel: viewModel,
-            onSubtitleSettings: () =>
-                _showSubtitleSettings(context, state, viewModel),
-          ),
+          appBar: AppBar(title: Text(widget.material.title, maxLines: 1)),
+          body: _subtitleContent(state, viewModel),
         ),
       ),
     );
@@ -141,17 +100,65 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
       );
     }
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: _ActiveSubtitleCard(
-          state: state,
-          onTap: state.learning?.currentCue == null
-              ? null
-              : () => unawaited(
-                  viewModel.playCue(state.learning!.currentCue!.id),
+    return SafeArea(
+      child: Column(
+        children: [
+          _PlayerTransportCard(
+            state: state,
+            viewModel: viewModel,
+            onSubtitleSettings: () =>
+                _showSubtitleSettings(context, state, viewModel),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              runSpacing: 8,
+              children: [
+                Text('逐句雙語字幕', style: Theme.of(context).textTheme.titleLarge),
+                SegmentedButton<SubtitleVisibility>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: SubtitleVisibility.englishOnly,
+                      label: Text('英文'),
+                    ),
+                    ButtonSegment(
+                      value: SubtitleVisibility.chineseOnly,
+                      label: Text('中文'),
+                    ),
+                    ButtonSegment(
+                      value: SubtitleVisibility.bilingual,
+                      label: Text('雙語'),
+                    ),
+                  ],
+                  selected: {_transcriptVisibility},
+                  onSelectionChanged: (selection) =>
+                      setState(() => _transcriptVisibility = selection.first),
                 ),
-        ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: state.englishTrack == null
+                ? _SubtitleEmptyState(
+                    onImport: () =>
+                        _showSubtitleSettings(context, state, viewModel),
+                  )
+                : _SubtitleTranscript(
+                    key: ValueKey(
+                      '${state.englishTrack!.id}:${state.englishTrack!.revision}:${state.subtitleTracks.length}',
+                    ),
+                    state: state,
+                    visibility: _transcriptVisibility,
+                    onPlayCue: viewModel.playCue,
+                    onBookmark: viewModel.toggleBookmark,
+                    onRepeatCue: viewModel.replay,
+                    onNextCue: viewModel.nextCue,
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -172,7 +179,12 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
         child: SubtitleSettingsSheet(
           tracks: state.subtitleTracks,
           visibility: viewModel.normalVisibility,
-          onVisibilityChanged: viewModel.setNormalVisibility,
+          onVisibilityChanged: (visibility) {
+            viewModel.setNormalVisibility(visibility);
+            if (visibility != SubtitleVisibility.hidden && mounted) {
+              setState(() => _transcriptVisibility = visibility);
+            }
+          },
           onImport: () async {
             final source = await SubtitleFilePicker().pickSubtitle();
             if (source == null || !context.mounted) return;
@@ -215,135 +227,32 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
   );
 }
 
-final class _MaterialSummary extends StatelessWidget {
-  const _MaterialSummary({required this.material});
+final class _SubtitleEmptyState extends StatelessWidget {
+  const _SubtitleEmptyState({required this.onImport});
 
-  final LearningMaterial material;
+  final VoidCallback onImport;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(24),
+  Widget build(BuildContext context) => Center(
     child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        CircleAvatar(
-          radius: 32,
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: const Icon(Icons.headphones_rounded, size: 32),
+        const Icon(Icons.subtitles_off_outlined, size: 40),
+        const SizedBox(height: 12),
+        const Text('尚未載入字幕'),
+        const SizedBox(height: 12),
+        FilledButton.tonalIcon(
+          onPressed: onImport,
+          icon: const Icon(Icons.playlist_add),
+          label: const Text('匯入 SRT 字幕'),
         ),
-        const SizedBox(height: 20),
-        Text(material.title, style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        const Text('本機教材 · 可離線播放'),
       ],
     ),
   );
 }
 
-final class _ActiveSubtitleCard extends StatelessWidget {
-  const _ActiveSubtitleCard({required this.state, this.onTap});
-
-  final PlayerViewState state;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final learning = state.learning;
-    final cue = learning?.currentCue;
-    if (learning == null || cue == null) {
-      final message = state.englishTrack == null ? '尚未提供英文字幕' : '播放至字幕時會在此顯示';
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Semantics(
-          liveRegion: true,
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-      );
-    }
-
-    final visibility = learning.subtitleVisibility;
-    final showEnglish =
-        visibility == SubtitleVisibility.bilingual ||
-        visibility == SubtitleVisibility.englishOnly;
-    final showChinese =
-        visibility == SubtitleVisibility.bilingual ||
-        visibility == SubtitleVisibility.chineseOnly;
-
-    return Card(
-      key: const ValueKey('activeSubtitleCard'),
-      margin: const EdgeInsets.all(24),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Text('目前句子', style: Theme.of(context).textTheme.labelLarge),
-                  const Spacer(),
-                  const Icon(Icons.touch_app_outlined, size: 18),
-                  const SizedBox(width: 6),
-                  const Text('點一下重播'),
-                ],
-              ),
-              const SizedBox(height: 24),
-              if (visibility == SubtitleVisibility.hidden)
-                Text(
-                  '字幕已遮蔽',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge,
-                )
-              else ...[
-                if (showEnglish)
-                  Semantics(
-                    label: '英文字幕',
-                    child: Text(
-                      cue.text,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                  ),
-                if (showChinese) ...[
-                  if (showEnglish) const SizedBox(height: 20),
-                  if (learning.translationCues.isEmpty)
-                    Text(
-                      '未提供翻譯',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    )
-                  else
-                    for (final translation in learning.translationCues)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Semantics(
-                          label: '中文字幕',
-                          child: Text(
-                            translation.text,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                      ),
-                ],
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-final class _PlaybackControls extends StatefulWidget {
-  const _PlaybackControls({
+final class _PlayerTransportCard extends StatefulWidget {
+  const _PlayerTransportCard({
     required this.state,
     required this.viewModel,
     required this.onSubtitleSettings,
@@ -354,10 +263,10 @@ final class _PlaybackControls extends StatefulWidget {
   final VoidCallback onSubtitleSettings;
 
   @override
-  State<_PlaybackControls> createState() => _PlaybackControlsState();
+  State<_PlayerTransportCard> createState() => _PlayerTransportCardState();
 }
 
-final class _PlaybackControlsState extends State<_PlaybackControls> {
+final class _PlayerTransportCardState extends State<_PlayerTransportCard> {
   double? _dragPosition;
 
   @override
@@ -365,163 +274,417 @@ final class _PlaybackControlsState extends State<_PlaybackControls> {
     final state = widget.state;
     final viewModel = widget.viewModel;
     final playback = state.playback;
-    final learning = state.learning;
     final duration = playback?.durationMs;
     final position = playback?.positionMs ?? 0;
     final canSeek = state.isReady && duration != null && duration > 0;
-    return Material(
-      color: Theme.of(context).colorScheme.surfaceContainer,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (state.errorMessage != null)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    state.errorMessage!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+    final learning = state.learning;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1440),
+        child: Card(
+          margin: const EdgeInsets.fromLTRB(18, 16, 18, 4),
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.graphic_eq_rounded, size: 34),
+                const SizedBox(height: 8),
+                Text(
+                  state.material?.title ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_timeLabel(position)} / ${duration == null ? '--:--' : _timeLabel(duration)}',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-              Row(
-                children: [
-                  Text(_timeLabel(position)),
-                  Expanded(
-                    child: Slider(
-                      key: const ValueKey('playbackPositionSlider'),
-                      min: 0,
-                      max: (duration ?? 1).toDouble(),
-                      value: canSeek
-                          ? (_dragPosition ?? position.toDouble()).clamp(
-                              0,
-                              duration.toDouble(),
-                            )
-                          : 0,
-                      onChanged: canSeek
-                          ? (value) => setState(() => _dragPosition = value)
-                          : null,
-                      onChangeEnd: canSeek
-                          ? (value) {
-                              setState(() => _dragPosition = null);
-                              unawaited(viewModel.seekTo(value.round()));
-                            }
-                          : null,
+                Row(
+                  children: [
+                    Text(_timeLabel(position)),
+                    Expanded(
+                      child: Slider(
+                        key: const ValueKey('playbackPositionSlider'),
+                        min: 0,
+                        max: (duration ?? 1).toDouble(),
+                        value: canSeek
+                            ? (_dragPosition ?? position.toDouble()).clamp(
+                                0,
+                                duration.toDouble(),
+                              )
+                            : 0,
+                        onChanged: canSeek
+                            ? (value) => setState(() => _dragPosition = value)
+                            : null,
+                        onChangeEnd: canSeek
+                            ? (value) {
+                                setState(() => _dragPosition = null);
+                                unawaited(viewModel.seekTo(value.round()));
+                              }
+                            : null,
+                      ),
                     ),
-                  ),
-                  Text(duration == null ? '--:--' : _timeLabel(duration)),
-                ],
-              ),
-              Wrap(
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 4,
-                runSpacing: 0,
-                children: [
-                  IconButton(
-                    tooltip: '重播本句',
-                    onPressed: learning?.currentCue == null
-                        ? null
-                        : () => unawaited(viewModel.replay()),
-                    icon: const Icon(Icons.replay_rounded),
-                  ),
-                  IconButton.filledTonal(
-                    tooltip: playback?.playing == true ? '暫停' : '播放',
-                    onPressed: state.isReady
-                        ? () => unawaited(viewModel.togglePlayback())
-                        : null,
-                    icon: Icon(
-                      playback?.playing == true
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: '下一句',
-                    onPressed: learning?.currentCue == null
-                        ? null
-                        : () => unawaited(viewModel.nextCue()),
-                    icon: const Icon(Icons.skip_next_rounded),
-                  ),
-                  IconButton(
-                    tooltip: playback?.currentLoop == null ? '循環本句' : '取消循環',
-                    onPressed: learning?.currentCue == null
-                        ? null
-                        : () => unawaited(viewModel.toggleCueLoop()),
-                    color: playback?.currentLoop == null
-                        ? null
-                        : Theme.of(context).colorScheme.primary,
-                    icon: const Icon(Icons.repeat_one_rounded),
-                  ),
-                  PopupMenuButton<double>(
-                    tooltip: '播放速度',
-                    initialValue: playback?.speed ?? 1,
-                    onSelected: (speed) => unawaited(viewModel.setSpeed(speed)),
-                    itemBuilder: (context) => [
-                      for (final speed in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0])
-                        PopupMenuItem(value: speed, child: Text('$speed×')),
-                    ],
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text('${playback?.speed ?? 1}×'),
-                    ),
-                  ),
-                  if (learning?.mode != LearningMode.intensive)
+                    Text(duration == null ? '--:--' : _timeLabel(duration)),
+                  ],
+                ),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  children: [
                     IconButton(
-                      tooltip: '字幕',
+                      tooltip: '上一句',
+                      onPressed: state.englishTrack == null
+                          ? null
+                          : () => unawaited(viewModel.previousCue()),
+                      icon: const Icon(Icons.skip_previous_rounded),
+                    ),
+                    IconButton.filledTonal(
+                      tooltip: playback?.playing == true ? '暫停' : '播放',
+                      onPressed: state.isReady
+                          ? () => unawaited(viewModel.togglePlayback())
+                          : null,
+                      icon: Icon(
+                        playback?.playing == true
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '下一句',
+                      onPressed: state.englishTrack == null
+                          ? null
+                          : () => unawaited(viewModel.nextCue()),
+                      icon: const Icon(Icons.skip_next_rounded),
+                    ),
+                  ],
+                ),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  children: [
+                    PopupMenuButton<double>(
+                      tooltip: '播放速度',
+                      initialValue: playback?.speed ?? 1,
+                      onSelected: (speed) =>
+                          unawaited(viewModel.setSpeed(speed)),
+                      itemBuilder: (context) => [
+                        for (final speed in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0])
+                          PopupMenuItem(value: speed, child: Text('$speed×')),
+                      ],
+                      child: Chip(label: Text('${playback?.speed ?? 1}×')),
+                    ),
+                    ActionChip(
+                      label: const Text('單句循環'),
+                      avatar: const Icon(Icons.repeat_one_rounded, size: 18),
+                      onPressed: learning?.currentCue == null
+                          ? null
+                          : () => unawaited(viewModel.toggleCueLoop()),
+                    ),
+                    const Tooltip(
+                      message: 'AB 循環尚未提供',
+                      child: Chip(
+                        avatar: Icon(Icons.repeat_rounded, size: 18),
+                        label: Text('AB 循環'),
+                      ),
+                    ),
+                    if (learning != null &&
+                        learning.mode != LearningMode.intensive)
+                      ActionChip(
+                        avatar: const Icon(Icons.school_outlined, size: 18),
+                        label: const Text('精聽'),
+                        onPressed: viewModel.toggleIntensiveMode,
+                      )
+                    else if (learning?.mode == LearningMode.intensive)
+                      ActionChip(
+                        label: Text(switch (learning!.phase) {
+                          IntensivePhase.blindListening => '顯示英文',
+                          IntensivePhase.englishShown => '顯示中文',
+                          IntensivePhase.bilingualShown => '重新遮蔽',
+                        }),
+                        onPressed: viewModel.revealNext,
+                      ),
+                    IconButton(
+                      tooltip: '字幕設定',
                       onPressed: state.isReady
                           ? widget.onSubtitleSettings
                           : null,
                       icon: const Icon(Icons.closed_caption_outlined),
                     ),
-                  _learningAction(learning, viewModel),
-                ],
-              ),
-            ],
+                  ],
+                ),
+                if (state.errorMessage != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      state.errorMessage!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _learningAction(
-    LearningSessionState? learning,
-    PlayerViewModel viewModel,
-  ) {
-    if (learning == null) {
-      return const Tooltip(
-        message: '需要英文字幕才能使用精聽模式',
-        child: Icon(Icons.school_outlined),
-      );
-    }
-    if (learning.mode != LearningMode.intensive) {
-      return TextButton.icon(
-        onPressed: viewModel.toggleIntensiveMode,
-        icon: const Icon(Icons.school_outlined),
-        label: const Text('精聽'),
-      );
-    }
-    final label = switch (learning.phase) {
-      IntensivePhase.blindListening => '顯示英文',
-      IntensivePhase.englishShown => '顯示中文',
-      IntensivePhase.bilingualShown => '重新遮蔽',
-    };
-    return FilledButton.tonal(
-      onPressed: viewModel.revealNext,
-      child: Text(label),
+final class _SubtitleTranscript extends StatefulWidget {
+  const _SubtitleTranscript({
+    super.key,
+    required this.state,
+    required this.visibility,
+    required this.onPlayCue,
+    required this.onBookmark,
+    required this.onRepeatCue,
+    required this.onNextCue,
+  });
+
+  final PlayerViewState state;
+  final SubtitleVisibility visibility;
+  final Future<void> Function(String cueId) onPlayCue;
+  final Future<void> Function() onBookmark;
+  final Future<void> Function() onRepeatCue;
+  final Future<void> Function() onNextCue;
+
+  @override
+  State<_SubtitleTranscript> createState() => _SubtitleTranscriptState();
+}
+
+final class _SubtitleTranscriptState extends State<_SubtitleTranscript> {
+  String? _alignmentKey;
+  Map<String, List<SubtitleCue>> _translations = const {};
+
+  @override
+  void didUpdateWidget(covariant _SubtitleTranscript oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _ensureAlignment();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _ensureAlignment();
+    final english = widget.state.englishTrack!;
+    final cues = english.cues.toList()
+      ..sort((a, b) {
+        final byStart = a.startMs.compareTo(b.startMs);
+        return byStart != 0 ? byStart : a.id.compareTo(b.id);
+      });
+    return ListView.builder(
+      key: const ValueKey('subtitleTranscriptList'),
+      padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+      itemCount: cues.length,
+      itemBuilder: (context, index) {
+        final cue = cues[index];
+        final active = widget.state.learning?.currentCue?.id == cue.id;
+        final translations = _translations[cue.id] ?? const <SubtitleCue>[];
+        final inlinePair = const BilingualSubtitleSplitter().split([cue]);
+        final englishText = inlinePair?.english.single.text ?? cue.text;
+        final inlineChinese = inlinePair?.chinese.single.text;
+        final showEnglish =
+            widget.visibility == SubtitleVisibility.bilingual ||
+            widget.visibility == SubtitleVisibility.englishOnly;
+        final showChinese =
+            widget.visibility == SubtitleVisibility.bilingual ||
+            widget.visibility == SubtitleVisibility.chineseOnly;
+        final intensive = widget.state.learning?.mode == LearningMode.intensive;
+        final visibility = widget.state.learning?.subtitleVisibility;
+        final conceal =
+            intensive && (!active || visibility == SubtitleVisibility.hidden);
+        return Card(
+          key: ValueKey(
+            active ? 'activeSubtitleCard' : 'subtitleRow-${cue.id}',
+          ),
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          color: active
+              ? Theme.of(context).colorScheme.surfaceContainerHigh
+              : Theme.of(context).colorScheme.surface,
+          child: InkWell(
+            onTap: () => unawaited(widget.onPlayCue(cue.id)),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          active
+                              ? '正在播放 · ${_timeRange(cue, english.offsetMs)}'
+                              : _timeRange(cue, english.offsetMs),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ),
+                      if (active)
+                        IconButton(
+                          tooltip: widget.state.isCurrentCueBookmarked
+                              ? '移除收藏'
+                              : '收藏本句',
+                          onPressed: () => unawaited(widget.onBookmark()),
+                          icon: Icon(
+                            widget.state.isCurrentCueBookmarked
+                                ? Icons.bookmark
+                                : Icons.bookmark_border,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (conceal)
+                    const Text('字幕已遮蔽')
+                  else ...[
+                    if (showEnglish)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          englishText,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontWeight: active
+                                    ? FontWeight.w700
+                                    : FontWeight.normal,
+                              ),
+                        ),
+                      ),
+                    if (showChinese && inlineChinese != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          inlineChinese,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: active
+                                    ? Theme.of(context).colorScheme.onSurface
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      )
+                    else if (showChinese)
+                      if (translations.isEmpty)
+                        if (widget.state.subtitleTracks.any(
+                          (track) =>
+                              track.languageTag.toLowerCase().startsWith(
+                                'zh',
+                              ) &&
+                              track.isSelected,
+                        ))
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text('未找到對應中文字幕'),
+                          )
+                        else
+                          const SizedBox.shrink()
+                      else
+                        for (final translation in translations)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              translation.text,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    color: active
+                                        ? Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface
+                                        : Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                  ],
+                  if (active)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 4,
+                        children: [
+                          IconButton(
+                            tooltip: '重播本句',
+                            onPressed: () => unawaited(widget.onRepeatCue()),
+                            icon: const Icon(Icons.replay_rounded),
+                          ),
+                          IconButton(
+                            tooltip: '下一句',
+                            onPressed: () => unawaited(widget.onNextCue()),
+                            icon: const Icon(Icons.skip_next_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  String _timeLabel(int milliseconds) {
-    final seconds = milliseconds ~/ 1000;
-    final minutes = seconds ~/ 60;
-    final remaining = seconds % 60;
-    return '$minutes:${remaining.toString().padLeft(2, '0')}';
+  void _ensureAlignment() {
+    final english = widget.state.englishTrack;
+    if (english == null) return;
+    final chinese = widget.state.subtitleTracks
+        .where(
+          (track) =>
+              track.isSelected &&
+              track.languageTag.toLowerCase().startsWith('zh'),
+        )
+        .firstOrNull;
+    final key =
+        '${english.id}:${english.revision}:${english.offsetMs}:${chinese?.id}:${chinese?.revision}:${chinese?.offsetMs}';
+    if (key == _alignmentKey) return;
+    _alignmentKey = key;
+    if (chinese == null) {
+      _translations = const {};
+      return;
+    }
+    final alignments = const SubtitleAligner().align(
+      sourceCues: english.cues,
+      targetCues: chinese.cues,
+      sourceOffsetMs: english.offsetMs,
+      targetOffsetMs: chinese.offsetMs,
+    );
+    final chineseById = {for (final cue in chinese.cues) cue.id: cue};
+    _translations = {
+      for (final item in alignments)
+        item.sourceCueId: List.unmodifiable(
+          item.targetCueIds
+              .map((id) => chineseById[id])
+              .whereType<SubtitleCue>(),
+        ),
+    };
   }
+
+  String _timeRange(SubtitleCue cue, int offsetMs) =>
+      '${_timeLabel((cue.startMs + offsetMs).clamp(0, 0x7fffffffffffffff))} – '
+      '${_timeLabel((cue.endMs + offsetMs).clamp(0, 0x7fffffffffffffff))}';
+}
+
+String _timeLabel(int milliseconds) {
+  final seconds = milliseconds ~/ 1000;
+  final minutes = seconds ~/ 60;
+  final remaining = seconds % 60;
+  return '$minutes:${remaining.toString().padLeft(2, '0')}';
 }
 
 final class SubtitleSettingsSheet extends StatefulWidget {

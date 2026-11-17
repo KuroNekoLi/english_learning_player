@@ -115,6 +115,61 @@ void main() {
   });
 
   test(
+    'splits a bilingual SRT into selectable English and Chinese tracks',
+    () async {
+      final bytes = utf8.encode(
+        '1\n00:00:00,070 --> 00:00:02,470\n'
+        'So, I want you to imagine this scenario.\n'
+        '我想請你想像這樣一個情境。\n\n'
+        '2\n00:00:02,920 --> 00:00:04,310\n'
+        'You step out your front door.\n'
+        '你走出家門。',
+      );
+      final tracks = await _importer(repository).importBilingualBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'Why_We_Refuse_to_Double_Back.srt',
+        bytes: bytes,
+        manual: true,
+      );
+
+      expect(tracks, hasLength(2));
+      final savedTracks = tracks!;
+      final english = savedTracks.singleWhere(
+        (track) => track.languageTag == 'en',
+      );
+      final chinese = savedTracks.singleWhere(
+        (track) => track.languageTag == 'zh-TW',
+      );
+      expect(english.cues.map((cue) => cue.text), [
+        'So, I want you to imagine this scenario.',
+        'You step out your front door.',
+      ]);
+      expect(chinese.cues.map((cue) => cue.text), ['我想請你想像這樣一個情境。', '你走出家門。']);
+      expect(english.isSelected, isTrue);
+      expect(chinese.isSelected, isTrue);
+      expect(english.originalBytes, bytes);
+      expect(chinese.originalBytes, bytes);
+      expect(await repository.listSubtitleTracks('material-1'), hasLength(2));
+    },
+  );
+
+  test(
+    'leaves ordinary multiline subtitle files as a single language track',
+    () async {
+      final result = await _importer(repository).importBilingualBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'lesson.srt',
+        bytes: _srt('A long subtitle line\ncontinues on the next line'),
+        manual: true,
+      );
+      expect(result, isNull);
+      expect(await repository.listSubtitleTracks('material-1'), isEmpty);
+    },
+  );
+
+  test(
     'a language track can be imported after initially being absent',
     () async {
       final importer = _importer(repository);

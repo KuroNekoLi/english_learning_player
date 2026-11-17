@@ -226,6 +226,13 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     }
   }
 
+  Future<void> previousCue() async {
+    final session = _session;
+    if (session != null) {
+      await _runAudioCommand(session.previousCue, persistProgress: true);
+    }
+  }
+
   Future<void> toggleCueLoop() async {
     final session = _session;
     final loopIsActive = state.playback?.currentLoop != null;
@@ -280,16 +287,27 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     if (material == null || !state.isReady) return;
     try {
       final repository = await ref.read(materialRepositoryProvider.future);
-      final imported = await SubtitleImportService(repository: repository)
-          .importBytes(
-            ownerId: material.ownerId,
-            materialId: material.id,
-            languageTag: languageTag,
-            sourceName: sourceName,
-            bytes: bytes,
-            manual: true,
-          );
-      await _saveSubtitleTrack(imported.track, manual: true);
+      final importer = SubtitleImportService(repository: repository);
+      final bilingualTracks = await importer.importBilingualBytes(
+        ownerId: material.ownerId,
+        materialId: material.id,
+        sourceName: sourceName,
+        bytes: bytes,
+        manual: true,
+      );
+      if (bilingualTracks != null) {
+        await _saveSubtitleTrack(bilingualTracks.first, manual: true);
+      } else {
+        final imported = await importer.importBytes(
+          ownerId: material.ownerId,
+          materialId: material.id,
+          languageTag: languageTag,
+          sourceName: sourceName,
+          bytes: bytes,
+          manual: true,
+        );
+        await _saveSubtitleTrack(imported.track, manual: true);
+      }
     } catch (_) {
       state = state.copyWith(errorMessage: '字幕匯入失敗，請確認 SRT 格式。');
     }
