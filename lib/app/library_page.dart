@@ -68,6 +68,16 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             content: Text('字幕檔名有歧義 ${result.ambiguousSubtitles} 組，未自動匯入'),
           ),
         );
+      } else if (result.unmatchedSubtitles > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('音訊已匯入，${result.unmatchedSubtitles} 個 SRT 未能依檔名配對。'),
+          ),
+        );
+      } else if (result.subtitlesImported > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('音訊與 ${result.subtitlesImported} 條字幕軌已匯入。')),
+        );
       }
     } catch (_) {
       if (context.mounted) {

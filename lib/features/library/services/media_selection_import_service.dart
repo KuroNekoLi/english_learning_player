@@ -32,12 +32,13 @@ final class MediaSelectionImportService {
     final audioFiles = files.where(_isAudio).toList();
     final subtitleFiles = files.where(_isSubtitle).toList();
     final importedMaterials = <LearningMaterial>[];
+    final sourceNamesByMaterial = <String, String>{};
     var audioFailures = 0;
     for (final file in audioFiles) {
       try {
-        importedMaterials.add(
-          (await _audioImporter.importAudio(file)).material,
-        );
+        final material = (await _audioImporter.importAudio(file)).material;
+        importedMaterials.add(material);
+        sourceNamesByMaterial[material.id] = file.name;
       } catch (_) {
         audioFailures++;
       }
@@ -50,6 +51,7 @@ final class MediaSelectionImportService {
     var subtitlesImported = 0;
     var ambiguousSubtitles = 0;
     var subtitleFailures = 0;
+    final matchedSubtitles = <String>{};
     for (final material in candidates) {
       final tracks = await _repository.listSubtitleTracks(material.id);
       final manual = <SubtitleLanguage, String>{
@@ -60,7 +62,8 @@ final class MediaSelectionImportService {
               language: track.sourceName,
       };
       final matches = _matcher.match(
-        audioFileName: '${material.title}.m4a',
+        audioFileName:
+            sourceNamesByMaterial[material.id] ?? '${material.title}.m4a',
         subtitleFileNames: subtitleFiles.map((file) => file.name),
         manualSelections: manual,
       );
@@ -81,7 +84,10 @@ final class MediaSelectionImportService {
               track.sourceName == fileName &&
               listEquals(track.originalBytes, bytes),
         );
-        if (existing) continue;
+        if (existing) {
+          matchedSubtitles.add(fileName);
+          continue;
+        }
         try {
           await _subtitleImporter.importBytes(
             ownerId: ownerId,
@@ -92,11 +98,15 @@ final class MediaSelectionImportService {
             manual: false,
           );
           subtitlesImported++;
+          matchedSubtitles.add(fileName);
         } catch (_) {
           subtitleFailures++;
         }
       }
     }
+    final unmatchedSubtitles = subtitleFiles
+        .where((file) => !matchedSubtitles.contains(p.basename(file.name)))
+        .length;
 
     return MediaSelectionImportResult(
       importedMaterials: importedMaterials,
@@ -104,6 +114,7 @@ final class MediaSelectionImportService {
       ambiguousSubtitles: ambiguousSubtitles,
       audioFailures: audioFailures,
       subtitleFailures: subtitleFailures,
+      unmatchedSubtitles: unmatchedSubtitles,
     );
   }
 
@@ -132,6 +143,7 @@ final class MediaSelectionImportResult {
     required this.ambiguousSubtitles,
     required this.audioFailures,
     required this.subtitleFailures,
+    required this.unmatchedSubtitles,
   }) : importedMaterials = List.unmodifiable(importedMaterials);
 
   final List<LearningMaterial> importedMaterials;
@@ -139,4 +151,5 @@ final class MediaSelectionImportResult {
   final int ambiguousSubtitles;
   final int audioFailures;
   final int subtitleFailures;
+  final int unmatchedSubtitles;
 }
