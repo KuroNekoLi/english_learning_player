@@ -92,10 +92,14 @@ final class JustAudioPlayerPort implements AudioPlayerPort {
   Future<void> setSpeed(double speed) => _player.setSpeed(speed);
 
   @override
-  Future<void> setClip(TimeRange? range) => _player.setClip(
-    start: range == null ? null : Duration(milliseconds: range.startMs),
-    end: range == null ? null : Duration(milliseconds: range.endMs),
-  );
+  Future<void> setClip(TimeRange? range) async {
+    // Clearing a clip before the first load is already satisfied.
+    if (range == null && _player.audioSource == null) return;
+    await _player.setClip(
+      start: range == null ? null : Duration(milliseconds: range.startMs),
+      end: range == null ? null : Duration(milliseconds: range.endMs),
+    );
+  }
 
   @override
   Future<void> setLoopEnabled(bool enabled) =>

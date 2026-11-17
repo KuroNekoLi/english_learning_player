@@ -1,12 +1,28 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart' as ja;
+import 'package:english_learning_player/core/audio/just_audio_player_port.dart';
 import 'package:english_learning_player/core/audio/audio_engine.dart';
 import 'package:english_learning_player/core/audio/audio_player_port.dart';
 import 'package:english_learning_player/core/audio/just_audio_adapter.dart';
 import '../../fakes/fake_audio_player_port.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'the real just_audio port can clear a clip before its first source',
+    () async {
+      final backingPlayer = ja.AudioPlayer(handleInterruptions: false);
+      final port = JustAudioPlayerPort(player: backingPlayer);
+      addTearDown(port.dispose);
+      expect(backingPlayer.audioSource, isNull);
+      await port.setClip(null);
+      expect(backingPlayer.audioSource, isNull);
+    },
+  );
+
   group('JustAudioAdapter', () {
     late FakeAudioPlayerPort player;
     late JustAudioAdapter engine;

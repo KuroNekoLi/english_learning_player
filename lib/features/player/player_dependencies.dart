@@ -3,13 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../library/library_view_model.dart';
 import 'services/material_playback_loader.dart';
 
-final materialPlaybackLoaderProvider =
-    FutureProvider.autoDispose<MaterialPlaybackLoader>((ref) async {
-      final repository = await ref.watch(materialRepositoryProvider.future);
-      final storage = await ref.watch(accountDatabaseServiceProvider.future);
-      return MaterialPlaybackService(
-        repository: repository,
-        storage: storage,
-        scope: ref.watch(accountScopeProvider),
-      );
-    }, retry: (_, _) => null);
+final materialPlaybackLoaderProvider = FutureProvider<MaterialPlaybackLoader>((
+  ref,
+) async {
+  final scope = ref.watch(accountScopeProvider);
+  final repository = ref.watch(materialRepositoryProvider.future);
+  final storage = ref.watch(accountDatabaseServiceProvider.future);
+  return MaterialPlaybackService(
+    repository: await repository,
+    storage: await storage,
+    scope: scope,
+  );
+}, retry: (_, _) => null);

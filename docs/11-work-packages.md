@@ -1,6 +1,6 @@
 # 可拆派 Work Packages（WP）與驗收契約
 
-**單位原則**：每 WP 含「接收 → 處理 → 輸出 → 驗證」，代碼與測試一起提交。依賴完成才開始下一 WP。下列狀態均為 `TODO`，不代表現有專案已實作。
+**單位原則**：每 WP 含「接收 → 處理 → 輸出 → 驗證」，代碼與測試一起提交。依賴完成才開始下一 WP。目前的交付與驗收以各工作包交棒及 Gate 紀錄為準。
 
 | ID | 階段/模型 | 依賴 | 輸入 → 處理 → 輸出 | 最低驗收 |
 |---|---|---|---|---|
@@ -18,7 +18,7 @@
 | WP-11 | S3 Sol High | 01,02,08 | Mac 用戶 folder 授權 → bookmark/scan events → Gateway result | 權限恢復/撤銷、部分下載、sandbox package |
 | WP-12 | S3 Sol High | 03,08,11 | folder scan → reconcile playlist + import/outbox → remote metadata | 本機掃描重整／清單／素材 outbox 已完成；遠端 playlist metadata BLOCKED，列為後續整合項（不納 WP-13）。現有 outbox 只派送 material，Firebase adapter 未接線。晚到 SRT、rename、刪來源不刪收藏已自動測試 |
 | WP-13 | S3 Sol High | 08,09 | 多裝置離線操作 → conflict/auth/queued writes → safe merge | 本機 fake ledger 交錯寫、consent 後/claim 後切帳號、提交後切帳號同 opId 回放、權限拒絕均已測；Firebase/實機跨裝置 BLOCKED |
-| WP-14 | S3 Sol High | 06,10-13 | Mac iCloud folder → Firebase → iPhone / Android → 播放續播 | 實機 E2E 證據，缺設備標 BLOCKED |
+| WP-14 | S3 Sol High | 06,10-13 | Mac iCloud folder → Firebase → iPhone / Android → 播放續播 | 實機 E2E 證據。Mac 原生匯入、Emulator 下載和本機雙 profile 接收已驗；iPhone／Android 完整鏈路 BLOCKED，見 [WP-14 交棒](agent/wp-14-handoff.md) |
 | WP-15 | S4 Luna High | 02-14 | FR/fixtures → 回歸與失敗注入 → QA 報告 | docs/08 Gate D 的測試面向；各 FR 有結果 |
 | WP-16 | S4 Sol High | 15 | code/data flow → 架構/安全審查 → findings + release decision | P0/P1 無隱藏 blocker，風險與決策可追 |
 

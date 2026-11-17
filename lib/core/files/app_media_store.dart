@@ -18,7 +18,10 @@ final class AppMediaStore {
   final AccountDatabaseService _storage;
   final AccountScope _scope;
 
-  Future<ImportedAudio> copyAndHash(AudioImportSource source) async {
+  Future<ImportedAudio> copyAndHash(
+    AudioImportSource source, {
+    Future<void> Function(ImportedAudio)? verifyBeforePublish,
+  }) async {
     final type = AudioFileType.fromName(source.name);
     final directory = _storage.mediaDirectory(_scope);
     await directory.create(recursive: true);
@@ -45,6 +48,13 @@ final class AppMediaStore {
         _scope.storageKey,
         '$digest.${type.extension}',
       );
+      final result = ImportedAudio(
+        sha256: digest,
+        byteLength: byteLength,
+        mediaType: type.mimeType,
+        relativePath: relativePath,
+      );
+      await verifyBeforePublish?.call(result);
       final destination = File(
         p.join(directory.path, '$digest.${type.extension}'),
       );
@@ -61,12 +71,7 @@ final class AppMediaStore {
       } else {
         await temporary.rename(destination.path);
       }
-      return ImportedAudio(
-        sha256: digest,
-        byteLength: byteLength,
-        mediaType: type.mimeType,
-        relativePath: relativePath,
-      );
+      return result;
     } catch (_) {
       converter.close();
       await output.close();

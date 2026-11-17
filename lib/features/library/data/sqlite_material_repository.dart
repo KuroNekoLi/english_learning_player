@@ -7,7 +7,10 @@ import '../material_repository.dart';
 import '../../subtitles/domain/subtitle_models.dart';
 
 final class SqliteMaterialRepository
-    implements MaterialRepository, FolderReconciliationRepository {
+    implements
+        MaterialRepository,
+        FolderReconciliationRepository,
+        CloudMaterialCacheRepository {
   const SqliteMaterialRepository({
     required AccountScope scope,
     required LocalDatabase database,
@@ -268,36 +271,7 @@ final class SqliteMaterialRepository
       );
     }
 
-    final assets = await _database
-        .customSelect(
-          'SELECT id FROM media_assets WHERE owner_id = ? AND sha256 = ?',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(asset.sha256),
-          ],
-        )
-        .get();
-    final assetId = assets.isEmpty
-        ? asset.id
-        : assets.single.read<String>('id');
-    if (assets.isEmpty) {
-      await _database.customStatement(
-        '''
-        INSERT INTO media_assets
-          (owner_id, id, sha256, byte_length, media_type, relative_path, created_at_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''',
-        [
-          _scope.ownerId,
-          asset.id,
-          asset.sha256,
-          asset.byteLength,
-          asset.mediaType,
-          asset.relativePath,
-          storedCreatedAt.millisecondsSinceEpoch,
-        ],
-      );
-    }
+    final assetId = await _ensureAsset(asset, storedCreatedAt);
     await _database.customStatement(
       '''
       INSERT INTO materials
@@ -344,6 +318,119 @@ final class SqliteMaterialRepository
         createdAt: storedCreatedAt,
       ),
       wasDuplicate: false,
+    );
+  });
+
+  Future<String> _ensureAsset(
+    StoredAudioAsset asset,
+    DateTime createdAt, {
+    bool requireMatchingMetadata = false,
+  }) async {
+    final assets = await _database
+        .customSelect(
+          '''SELECT id, byte_length, media_type, relative_path FROM media_assets
+             WHERE owner_id = ? AND sha256 = ?''',
+          variables: [
+            Variable.withString(_scope.ownerId),
+            Variable.withString(asset.sha256),
+          ],
+        )
+        .get();
+    if (assets.isNotEmpty) {
+      final existing = assets.single;
+      if (requireMatchingMetadata &&
+          (existing.read<int>('byte_length') != asset.byteLength ||
+              existing.read<String>('media_type') != asset.mediaType ||
+              existing.read<String>('relative_path') != asset.relativePath)) {
+        throw StateError('Downloaded asset conflicts with local media.');
+      }
+      return existing.read<String>('id');
+    }
+    await _database.customStatement(
+      '''
+        INSERT INTO media_assets
+          (owner_id, id, sha256, byte_length, media_type, relative_path, created_at_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''',
+      [
+        _scope.ownerId,
+        asset.id,
+        asset.sha256,
+        asset.byteLength,
+        asset.mediaType,
+        asset.relativePath,
+        createdAt.millisecondsSinceEpoch,
+      ],
+    );
+    return asset.id;
+  }
+
+  @override
+  Future<LearningMaterial> cacheCloudAudio({
+    required String materialId,
+    required StoredAudioAsset asset,
+    required String title,
+    required DateTime cachedAt,
+  }) => _database.transaction(() async {
+    final existing = await _database
+        .customSelect(
+          '''
+      SELECT m.id, m.owner_id, m.title, m.audio_asset_id, m.created_at_ms,
+             COALESCE(ms.state, m.status) AS status,
+             a.sha256, a.byte_length, a.media_type
+      FROM materials m JOIN media_assets a
+        ON a.owner_id = m.owner_id AND a.id = m.audio_asset_id
+      LEFT JOIN material_sync_state ms
+        ON ms.owner_id = m.owner_id AND ms.material_id = m.id
+      WHERE m.owner_id = ? AND m.id = ?
+      ''',
+          variables: [
+            Variable.withString(_scope.ownerId),
+            Variable.withString(materialId),
+          ],
+        )
+        .getSingleOrNull();
+    if (existing != null) {
+      if (existing.read<String>('sha256') != asset.sha256 ||
+          existing.read<int>('byte_length') != asset.byteLength ||
+          existing.read<String>('media_type') != asset.mediaType) {
+        throw StateError('Downloaded material conflicts with local media.');
+      }
+      return _materialFromRow(existing);
+    }
+
+    final assetId = await _ensureAsset(
+      asset,
+      cachedAt,
+      requireMatchingMetadata: true,
+    );
+    await _database.customStatement(
+      '''
+      INSERT INTO materials (owner_id, id, audio_asset_id, title, status, created_at_ms)
+      VALUES (?, ?, ?, ?, 'localReady', ?)
+      ''',
+      [
+        _scope.ownerId,
+        materialId,
+        assetId,
+        title,
+        cachedAt.millisecondsSinceEpoch,
+      ],
+    );
+    await _database.customStatement(
+      '''
+      INSERT INTO material_sync_state (owner_id, material_id, state, last_synced_at_ms)
+      VALUES (?, ?, 'cloudReady', ?)
+      ''',
+      [_scope.ownerId, materialId, cachedAt.millisecondsSinceEpoch],
+    );
+    return LearningMaterial(
+      id: materialId,
+      ownerId: _scope.ownerId,
+      title: title,
+      audioAssetId: assetId,
+      status: MaterialStatus.cloudReady,
+      createdAt: cachedAt,
     );
   });
 

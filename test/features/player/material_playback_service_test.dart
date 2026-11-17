@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:english_learning_player/core/db/account_database_service.dart';
@@ -8,6 +9,9 @@ import 'package:english_learning_player/features/library/domain/audio_import_sou
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
 import 'package:english_learning_player/features/player/services/material_playback_loader.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:english_learning_player/features/library/library_view_model.dart';
+import 'package:english_learning_player/features/player/player_dependencies.dart';
 
 void main() {
   late Directory root;
@@ -59,6 +63,27 @@ void main() {
     expect(bundle.subtitleTracks, isEmpty);
     expect(bundle.englishTrack, isNull);
   });
+
+  test(
+    'one-shot player read survives async dependencies without a listener',
+    () async {
+      final pendingRepository = Completer<SqliteMaterialRepository>();
+      final container = ProviderContainer(
+        overrides: [
+          accountScopeProvider.overrideWithValue(scope),
+          materialRepositoryProvider.overrideWith(
+            (ref) => pendingRepository.future,
+          ),
+          accountDatabaseServiceProvider.overrideWith((ref) async => storage),
+        ],
+      );
+      addTearDown(container.dispose);
+      final loader = container.read(materialPlaybackLoaderProvider.future);
+      await container.pump();
+      pendingRepository.complete(repository);
+      expect(await loader, isA<MaterialPlaybackService>());
+    },
+  );
 
   test('rejects a media path outside the account namespace', () {
     expect(

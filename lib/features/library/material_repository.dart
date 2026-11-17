@@ -114,3 +114,13 @@ final class InsertMaterialResult {
   final LearningMaterial material;
   final bool wasDuplicate;
 }
+
+/// Persists verified downloaded media without creating a new upload operation.
+abstract interface class CloudMaterialCacheRepository {
+  Future<LearningMaterial> cacheCloudAudio({
+    required String materialId,
+    required StoredAudioAsset asset,
+    required String title,
+    required DateTime cachedAt,
+  });
+}

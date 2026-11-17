@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const { createHash } = require('node:crypto');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const test = require('node:test');
@@ -8,7 +9,7 @@ const {
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing');
 const { doc, getDoc, runTransaction, setDoc } = require('firebase/firestore');
-const { ref, getMetadata, uploadBytes } = require('firebase/storage');
+const { ref, getBytes, getMetadata, uploadBytes } = require('firebase/storage');
 
 const projectId = 'demo-english-learning-player';
 let environment;
@@ -165,28 +166,31 @@ function commitProgress(db, { uid, materialId, streamId, sequence, baseRevision,
 }
 
 test('Firestore transaction preserves an offline conflict and a replay receipt', async () => {
-  await environment.withSecurityRulesDisabled(async (context) => {
-    const firstDevice = context.firestore();
-    const secondDevice = context.firestore();
-    const base = { uid: 'progress-owner', materialId: 'lesson', sequence: 1, baseRevision: 0 };
-    const mac = { ...base, streamId: 'mac', positionMs: 5000, opId: 'mac-op', hash: 'mac-hash' };
-    const phone = { ...base, streamId: 'phone', positionMs: 20000, opId: 'phone-op', hash: 'phone-hash' };
-    const results = await Promise.all([commitProgress(firstDevice, mac), commitProgress(secondDevice, phone)]);
-    assert.deepEqual(results.map((result) => result.status).sort(), ['accepted', 'conflict']);
-    const accepted = results.find((result) => result.status === 'accepted');
-    const conflict = results.find((result) => result.status === 'conflict');
-    const losingRequest = [mac, phone].find((request) => request.streamId === conflict.candidateId);
-    assert.deepEqual(conflict.canonical, accepted.canonical);
+  await environment.withSecurityRulesDisabled(async (firstContext) => {
+    await environment.withSecurityRulesDisabled(async (secondContext) => {
+      const firstDevice = firstContext.firestore();
+      const secondDevice = secondContext.firestore();
+      assert.notEqual(firstDevice, secondDevice);
+      const base = { uid: 'progress-owner', materialId: 'lesson', sequence: 1, baseRevision: 0 };
+      const mac = { ...base, streamId: 'mac', positionMs: 5000, opId: 'mac-op', hash: 'mac-hash' };
+      const phone = { ...base, streamId: 'phone', positionMs: 20000, opId: 'phone-op', hash: 'phone-hash' };
+      const results = await Promise.all([commitProgress(firstDevice, mac), commitProgress(secondDevice, phone)]);
+      assert.deepEqual(results.map((result) => result.status).sort(), ['accepted', 'conflict']);
+      const accepted = results.find((result) => result.status === 'accepted');
+      const conflict = results.find((result) => result.status === 'conflict');
+      const losingRequest = [mac, phone].find((request) => request.streamId === conflict.candidateId);
+      assert.deepEqual(conflict.canonical, accepted.canonical);
 
-    const parent = doc(firstDevice, 'users/progress-owner/progress/lesson');
-    const candidate = doc(parent, 'candidates', losingRequest.streamId);
-    assert.equal((await getDoc(parent)).data().revision, 1);
-    assert.equal((await getDoc(candidate)).data().positionMs, losingRequest.positionMs);
-    assert.deepEqual(await commitProgress(firstDevice, losingRequest), conflict);
-    await assert.rejects(commitProgress(firstDevice, { ...losingRequest, hash: 'mutated' }), /payload changed/);
-    const stale = await commitProgress(firstDevice, { ...losingRequest, opId: 'stale-op', hash: 'stale-hash' });
-    assert.equal(stale.status, 'ignoredStale');
-    assert.equal((await getDoc(parent)).data().revision, 1);
+      const parent = doc(firstDevice, 'users/progress-owner/progress/lesson');
+      const candidate = doc(parent, 'candidates', losingRequest.streamId);
+      assert.equal((await getDoc(parent)).data().revision, 1);
+      assert.equal((await getDoc(candidate)).data().positionMs, losingRequest.positionMs);
+      assert.deepEqual(await commitProgress(firstDevice, losingRequest), conflict);
+      await assert.rejects(commitProgress(firstDevice, { ...losingRequest, hash: 'mutated' }), /payload changed/);
+      const stale = await commitProgress(firstDevice, { ...losingRequest, opId: 'stale-op', hash: 'stale-hash' });
+      assert.equal(stale.status, 'ignoredStale');
+      assert.equal((await getDoc(parent)).data().revision, 1);
+    });
   });
 
   // The deployed rule source deliberately leaves progress disabled until its
@@ -202,4 +206,36 @@ test('Firestore transaction preserves an offline conflict and a replay receipt',
     await assertFails(setDoc(canonical, { revision: 99 }));
     await assertFails(setDoc(doc(db, 'users/progress-owner/progressReceipts/fake'), { hash: 'fake' }));
   }
+});
+
+test('receiver can download and verify the published object only under the same UID', async () => {
+  const sender = environment.authenticatedContext('alice');
+  const receiver = environment.authenticatedContext('alice');
+  const unauthorized = environment.authenticatedContext('someone-else');
+  const fixture = Uint8Array.from([9, 7, 5, 3]);
+  const digest = createHash('sha256').update(fixture).digest('hex');
+  const assetId = 'wp14-asset';
+  const materialId = 'wp14-material';
+  const storagePath = `users/alice/assets/${assetId}/${digest}`;
+
+  await uploadBytes(ref(sender.storage(), storagePath), fixture, {
+    contentType: 'audio/mpeg',
+    customMetadata: { ownerId: 'alice', assetId, sha256: digest, opId: assetDocument.opId, payloadHash },
+  });
+  await setDoc(doc(sender.firestore(), `users/alice/mediaAssets/${assetId}`), {
+    ...assetDocument, assetId, sha256: digest, storagePath,
+  });
+  const documentPath = `users/alice/materials/${materialId}`;
+  await setDoc(doc(sender.firestore(), documentPath), {
+    ...materialDocument, materialId, audioAssetId: assetId, assetSha256: digest, storagePath,
+  });
+
+  const published = (await getDoc(doc(receiver.firestore(), documentPath))).data();
+  const remote = ref(receiver.storage(), published.storagePath);
+  const downloaded = Buffer.from(await getBytes(remote));
+  assert.equal((await getMetadata(remote)).contentType, published.mediaType);
+  assert.equal(downloaded.length, published.byteLength);
+  assert.equal(createHash('sha256').update(downloaded).digest('hex'), published.assetSha256);
+  await assertFails(getDoc(doc(unauthorized.firestore(), documentPath)));
+  await assertFails(getBytes(ref(unauthorized.storage(), storagePath)));
 });
