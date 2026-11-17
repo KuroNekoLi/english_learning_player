@@ -461,8 +461,18 @@ final class _SubtitleTranscript extends StatefulWidget {
 }
 
 final class _SubtitleTranscriptState extends State<_SubtitleTranscript> {
+  final ScrollController _scrollController = ScrollController();
+  final Map<String, GlobalKey> _rowKeys = {};
   String? _alignmentKey;
+  String? _lastAutoScrolledCueId;
+  double _averageRowExtent = 176;
   Map<String, List<SubtitleCue>> _translations = const {};
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant _SubtitleTranscript oldWidget) {
@@ -479,8 +489,10 @@ final class _SubtitleTranscriptState extends State<_SubtitleTranscript> {
         final byStart = a.startMs.compareTo(b.startMs);
         return byStart != 0 ? byStart : a.id.compareTo(b.id);
       });
+    _keepCurrentCueVisible(cues);
     return ListView.builder(
       key: const ValueKey('subtitleTranscriptList'),
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
       itemCount: cues.length,
       itemBuilder: (context, index) {
@@ -501,14 +513,13 @@ final class _SubtitleTranscriptState extends State<_SubtitleTranscript> {
         final conceal =
             intensive && (!active || visibility == SubtitleVisibility.hidden);
         return Card(
-          key: ValueKey(
-            active ? 'activeSubtitleCard' : 'subtitleRow-${cue.id}',
-          ),
+          key: _rowKeys.putIfAbsent(cue.id, GlobalKey.new),
           margin: const EdgeInsets.symmetric(vertical: 6),
           color: active
               ? Theme.of(context).colorScheme.surfaceContainerHigh
               : Theme.of(context).colorScheme.surface,
           child: InkWell(
+            key: active ? const ValueKey('activeSubtitleCard') : null,
             onTap: () => unawaited(widget.onPlayCue(cue.id)),
             borderRadius: BorderRadius.circular(12),
             child: Padding(
@@ -638,6 +649,82 @@ final class _SubtitleTranscriptState extends State<_SubtitleTranscript> {
         );
       },
     );
+  }
+
+  void _keepCurrentCueVisible(List<SubtitleCue> cues) {
+    final activeCueId = widget.state.learning?.currentCue?.id;
+    if (activeCueId == null || activeCueId == _lastAutoScrolledCueId) return;
+    _lastAutoScrolledCueId = activeCueId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _refreshAverageRowExtent();
+      final targetKey = _rowKeys[activeCueId];
+      final targetContext = targetKey?.currentContext;
+      if (targetContext != null) {
+        unawaited(
+          Scrollable.ensureVisible(
+            targetContext,
+            alignment: 0.42,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+          ),
+        );
+        return;
+      }
+
+      // A seek can jump to a cue that has never been built by the lazy list.
+      // Estimate its position, then the next frame can ensure it precisely.
+      final index = cues.indexWhere((cue) => cue.id == activeCueId);
+      if (index < 0) return;
+      _scrollToEstimatedIndex(index, activeCueId, attemptsRemaining: 4);
+    });
+  }
+
+  void _scrollToEstimatedIndex(
+    int targetIndex,
+    String cueId, {
+    required int attemptsRemaining,
+  }) {
+    if (!mounted || !_scrollController.hasClients) return;
+    final targetContext = _rowKeys[cueId]?.currentContext;
+    if (targetContext != null) {
+      unawaited(
+        Scrollable.ensureVisible(
+          targetContext,
+          alignment: 0.42,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+        ),
+      );
+      return;
+    }
+    if (attemptsRemaining == 0) return;
+    final position = _scrollController.position;
+    final estimatedIndex = position.pixels / _averageRowExtent;
+    final correction = (targetIndex - estimatedIndex) * _averageRowExtent;
+    _scrollController.jumpTo(
+      (position.pixels + correction).clamp(0, position.maxScrollExtent),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshAverageRowExtent();
+      _scrollToEstimatedIndex(
+        targetIndex,
+        cueId,
+        attemptsRemaining: attemptsRemaining - 1,
+      );
+    });
+  }
+
+  void _refreshAverageRowExtent() {
+    final heights = _rowKeys.values
+        .map((key) => key.currentContext?.findRenderObject())
+        .whereType<RenderBox>()
+        .where((box) => box.hasSize)
+        .map((box) => box.size.height)
+        .toList(growable: false);
+    if (heights.isEmpty) return;
+    _averageRowExtent =
+        heights.reduce((total, height) => total + height) / heights.length + 12;
   }
 
   void _ensureAlignment() {

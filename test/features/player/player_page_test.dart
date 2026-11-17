@@ -161,6 +161,59 @@ void main() {
     expect(find.text('我想請你想像這個情境。'), findsOneWidget);
   });
 
+  testWidgets('keeps the playing sentence inside the transcript viewport', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 700);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tracks = [
+      _track(
+        id: 'long-track',
+        language: 'en',
+        selected: true,
+        cues: [
+          for (var index = 0; index < 40; index++)
+            SubtitleCue(
+              id: 'long-$index',
+              sequence: index + 1,
+              startMs: (index + 1) * 1000,
+              endMs: (index + 1) * 1000 + 900,
+              text: 'Sentence number $index.',
+            ),
+        ],
+      ),
+    ];
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    audio.advanceTo(28000);
+    await tester.pumpAndSettle();
+
+    final activeRect = tester.getRect(
+      find.byKey(const ValueKey('activeSubtitleCard')),
+    );
+    final viewportRect = tester.getRect(
+      find.byKey(const ValueKey('subtitleTranscriptList')),
+    );
+    expect(viewportRect.contains(activeRect.topLeft), isTrue);
+    expect(viewportRect.contains(activeRect.bottomRight), isTrue);
+    expect(find.text('Sentence number 27.'), findsOneWidget);
+
+    audio.advanceTo(39000);
+    await tester.pumpAndSettle();
+    final nextActiveRect = tester.getRect(
+      find.byKey(const ValueKey('activeSubtitleCard')),
+    );
+    final nextViewportRect = tester.getRect(
+      find.byKey(const ValueKey('subtitleTranscriptList')),
+    );
+    expect(nextViewportRect.contains(nextActiveRect.topLeft), isTrue);
+    expect(nextViewportRect.contains(nextActiveRect.bottomRight), isTrue);
+    expect(find.text('Sentence number 38.'), findsOneWidget);
+  });
+
   for (final scenario in [
     (name: 'narrow phone', size: const Size(320, 700), scale: 1.0),
     (name: 'wide desktop', size: const Size(1280, 720), scale: 1.0),
