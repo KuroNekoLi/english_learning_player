@@ -37,6 +37,7 @@ final class FolderSourcePanel extends ConsumerWidget {
                   ),
                   Text(
                     state.error ??
+                        state.reconciliationSummary ??
                         (connected
                             ? '可讀取 ${state.availableCount} 個檔案，'
                                   '${state.pendingCount} 個仍在下載'
@@ -56,6 +57,11 @@ final class FolderSourcePanel extends ConsumerWidget {
                 onPressed: connected ? viewModel.refresh : viewModel.connect,
                 child: Text(connected ? '重新掃描' : '選擇資料夾'),
               ),
+              if (connected)
+                TextButton(
+                  onPressed: viewModel.reconcile,
+                  child: const Text('匯入並更新清單'),
+                ),
               if (connected)
                 IconButton(
                   tooltip: '解除資料夾授權',

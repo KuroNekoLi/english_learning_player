@@ -16,7 +16,7 @@
 | WP-09 | S2 Luna High | 04,08 | progress events → local checkpoint/outbox/merge → canonical progress | T-SYNC-01..10；不可遠端強制 seek |
 | WP-10 | S2 Luna High | 04 | 音訊事件 → platform media session → background controls | Android/iOS smoke + Mac 限制清單 |
 | WP-11 | S3 Sol High | 01,02,08 | Mac 用戶 folder 授權 → bookmark/scan events → Gateway result | 權限恢復/撤銷、部分下載、sandbox package |
-| WP-12 | S3 Sol High | 03,08,11 | folder scan → reconcile playlist + import/outbox → remote metadata | 晚到 SRT、rename、刪來源不刪收藏 |
+| WP-12 | S3 Sol High | 03,08,11 | folder scan → reconcile playlist + import/outbox → remote metadata | 本機掃描重整／清單／素材 outbox 已完成；遠端 playlist metadata BLOCKED（現有 outbox 只派送 material，Firebase adapter 未接線）。晚到 SRT、rename、刪來源不刪收藏已自動測試 |
 | WP-13 | S3 Sol High | 08,09 | 多裝置離線操作 → conflict/auth/queued writes → safe merge | 測試交錯寫、登出切帳號、權限拒絕 |
 | WP-14 | S3 Sol High | 06,10-13 | Mac iCloud folder → Firebase → iPhone / Android → 播放續播 | 實機 E2E 證據，缺設備標 BLOCKED |
 | WP-15 | S4 Luna High | 02-14 | FR/fixtures → 回歸與失敗注入 → QA 報告 | docs/08 Gate D 的測試面向；各 FR 有結果 |

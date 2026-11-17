@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/platform/folder_access_gateway.dart';
 import '../../core/platform/folder_access_gateway_provider.dart';
+import '../subtitles/services/subtitle_import_service.dart';
+import 'material_repository.dart';
+import 'services/folder_import_reconciler.dart';
+import 'library_view_model.dart';
 
 const macFolderBindingId = 'primary-icloud-source';
 
@@ -19,6 +23,7 @@ final class FolderSourceState {
     this.entries = const [],
     this.isBusy = false,
     this.error,
+    this.reconciliationSummary,
   });
 
   final GrantStatus grantStatus;
@@ -26,6 +31,7 @@ final class FolderSourceState {
   final List<FolderEntry> entries;
   final bool isBusy;
   final String? error;
+  final String? reconciliationSummary;
 
   int get availableCount => entries
       .where((entry) => entry.status == FolderEntryStatus.available)
@@ -41,12 +47,14 @@ final class FolderSourceState {
     bool? isBusy,
     String? error,
     bool clearError = false,
+    String? reconciliationSummary,
   }) => FolderSourceState(
     grantStatus: grantStatus ?? this.grantStatus,
     displayLabel: displayLabel ?? this.displayLabel,
     entries: entries ?? this.entries,
     isBusy: isBusy ?? this.isBusy,
     error: clearError ? null : error ?? this.error,
+    reconciliationSummary: reconciliationSummary ?? this.reconciliationSummary,
   );
 }
 
@@ -103,6 +111,35 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
       state = state.copyWith(isBusy: false, error: _message(error.failure));
     } catch (_) {
       state = state.copyWith(isBusy: false, error: '無法解除資料夾授權');
+    }
+  }
+
+  Future<void> reconcile() async {
+    if (state.grantStatus != GrantStatus.valid) return;
+    state = state.copyWith(isBusy: true, clearError: true);
+    try {
+      final repository = await ref.read(materialRepositoryProvider.future);
+      final importService = await ref.read(audioImportServiceProvider.future);
+      final scope = ref.read(accountScopeProvider);
+      final result = await FolderImportReconciler(
+        gateway: _gateway,
+        repository: repository as FolderReconciliationRepository,
+        materials: repository,
+        audioImporter: importService,
+        subtitleImporter: SubtitleImportService(repository: repository),
+        ownerId: scope.ownerId,
+      ).reconcile();
+      state = state.copyWith(
+        isBusy: false,
+        reconciliationSummary:
+            '新增音訊 ${result.importedAudio}、改名沿用 ${result.renamedAudio}、'
+            '字幕 ${result.importedSubtitles}；待下載 ${result.pendingDownload}、'
+            '歧義 ${result.ambiguousSubtitles}、失敗 ${result.failures}',
+      );
+      ref.invalidate(libraryViewModelProvider);
+      await _refresh();
+    } catch (_) {
+      state = state.copyWith(isBusy: false, error: '資料夾匯入與清單更新失敗');
     }
   }
 

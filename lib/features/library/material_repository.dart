@@ -51,6 +51,44 @@ abstract interface class MaterialRepository {
   Future<List<SubtitleTrack>> listSubtitleTracks(String materialId);
 }
 
+/// Local source catalog used to make full folder scans idempotent. Paths stay
+/// inside the account's local database and are never part of cloud metadata.
+abstract interface class FolderReconciliationRepository {
+  Future<List<FolderSourceRecord>> listFolderSources(String bindingId);
+
+  Future<void> finishFolderScan({
+    required String bindingId,
+    required Set<String> inventoryPaths,
+  });
+
+  Future<void> saveFolderSource({
+    required String bindingId,
+    required String relativePath,
+    required String materialId,
+    required String contentSha256,
+  });
+
+  Future<void> addToFolderPlaylist({
+    required String bindingId,
+    required String materialId,
+    required String title,
+  });
+}
+
+final class FolderSourceRecord {
+  const FolderSourceRecord({
+    required this.relativePath,
+    required this.materialId,
+    required this.contentSha256,
+    required this.present,
+  });
+
+  final String relativePath;
+  final String materialId;
+  final String contentSha256;
+  final bool present;
+}
+
 final class StoredAudioAsset {
   const StoredAudioAsset({
     required this.id,

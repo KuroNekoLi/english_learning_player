@@ -10,7 +10,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -69,6 +69,7 @@ class LocalDatabase extends GeneratedDatabase {
       await _createBookmarkSchema();
       await _createSyncSchema();
       await _createProgressSchema();
+      await _createFolderLibrarySchema();
     },
     onUpgrade: (migrator, from, to) async {
       if (from < 2) await _createSubtitleSchema();
@@ -78,6 +79,7 @@ class LocalDatabase extends GeneratedDatabase {
         await _backfillMaterialSyncOperations();
       }
       if (from < 5) await _createProgressSchema();
+      if (from < 6) await _createFolderLibrarySchema();
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -272,6 +274,52 @@ class LocalDatabase extends GeneratedDatabase {
     await customStatement('''
       CREATE INDEX IF NOT EXISTS progress_outbox_due
       ON sync_outbox (owner_id, entity_type, state, next_retry_at_ms, created_at_ms)
+    ''');
+  }
+
+  Future<void> _createFolderLibrarySchema() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS playlists (
+        owner_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source_binding_id TEXT,
+        created_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (owner_id, id),
+        UNIQUE (owner_id, source_binding_id)
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS playlist_entries (
+        owner_id TEXT NOT NULL,
+        playlist_id TEXT NOT NULL,
+        material_id TEXT NOT NULL,
+        position INTEGER NOT NULL CHECK (position >= 0),
+        PRIMARY KEY (owner_id, playlist_id, material_id),
+        FOREIGN KEY (owner_id, playlist_id)
+          REFERENCES playlists (owner_id, id),
+        FOREIGN KEY (owner_id, material_id)
+          REFERENCES materials (owner_id, id)
+      )
+    ''');
+    // Source paths are private local metadata and must never enter sync payloads.
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS folder_source_entries (
+        owner_id TEXT NOT NULL,
+        binding_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        material_id TEXT NOT NULL,
+        content_sha256 TEXT NOT NULL,
+        present INTEGER NOT NULL CHECK (present IN (0, 1)),
+        updated_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (owner_id, binding_id, relative_path),
+        FOREIGN KEY (owner_id, material_id)
+          REFERENCES materials (owner_id, id)
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS folder_source_rename_candidates
+      ON folder_source_entries (owner_id, binding_id, content_sha256, present)
     ''');
   }
 

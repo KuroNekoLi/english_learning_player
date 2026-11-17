@@ -45,6 +45,10 @@ WP-11 實作由 `MethodChannelFolderAccessGateway` 對應 Swift `FolderAccessPlu
 - 清單 sourceMissing 是非破壞性狀態。只有明確「從 App 雲端移除」才提交刪除操作。
 - 大量檔案分批，提供掃描進度，尊重 Mac 電量、網路及儲存空間限制。
 
+WP-12 已實作本機第一條 reconciliation vertical slice：完整 inventory 成功返回後才將舊來源目錄標為缺席；available 音訊複製到帳號私有媒體並經 WP-02 importer 建立 material/outbox；本機 playlist entry 與來源目錄在 account DB 保存。pendingDownload 視為仍存在，不推導刪除。來源相對路徑只留在本機資料庫，不進雲端 payload。rename 只在同 binding 下找到唯一「本次未見的舊來源 + 相同 SHA-256」時沿用 material；多個候選保留為獨立教材，避免違反 ADR-020。字幕候選由 WP-03 matcher 精確 stem 比對，歧義不自動選；手動選取優先，字幕晚到的下一次 reconcile 會匯入，重複 bytes 不重複建立 track。來源缺席只標記 source catalog，不刪教材、playlist entry、bookmark 或 progress。
+
+限制：本機 `sync_outbox` 與 `CloudSyncCoordinator` 目前只領取／發布 material 操作，故 playlist/folder binding 遠端 metadata 尚未建立傳輸契約；WP-12 不把此限制包裝成已同步。需要獨立核准 playlist metadata schema 和雲端 adapter 後再做遠端驗證。
+
 ## 6. macOS 常駐 Agent
 可獨立規劃 `SMAppService` Login Item/Background Agent，但不納入最先端到端驗收。沒有 Login Item 時只有 App 程序正在運作才可能持續監控。Mac 必須開機、有網路、授權仍有效，才可能同步新檔。
 
