@@ -10,6 +10,7 @@ final class FakeFolderAccessGateway implements FolderAccessGateway {
   String? _bindingId;
   bool cancelPick = false;
   bool denyGrant = false;
+  int scanCount = 0;
 
   @override
   Future<FolderHandle?> pickFolder(String bindingId) async {
@@ -27,6 +28,7 @@ final class FakeFolderAccessGateway implements FolderAccessGateway {
   @override
   Future<List<FolderEntry>> scan(String bindingId) async {
     await _checkGrant(bindingId);
+    scanCount++;
     return List.unmodifiable(entries);
   }
 
@@ -62,7 +64,12 @@ final class FakeFolderAccessGateway implements FolderAccessGateway {
     }
   }
 
-  Future<void> dispose() => _changes.close();
+  Future<void> dispose() =>
+      _changes.isClosed ? Future<void>.value() : _changes.close();
+
+  void notifyChange() {
+    if (!_changes.isClosed) _changes.add(null);
+  }
 
   Future<void> _checkGrant(String bindingId) async {
     switch (await restoreGrant(bindingId)) {

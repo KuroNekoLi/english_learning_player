@@ -36,6 +36,8 @@ MVP iOS 只同步 Firebase 教材，不要求 iPhone 自己監控 iCloud 資料�
 
 Channel 錯誤需區分 permissionDenied、providerUnavailable、fileNotDownloaded、notFound、transientIo。授權細節見 [ADR-007／008](12-decisions-and-risks.md)。
 
+WP-11 實作由 `MethodChannelFolderAccessGateway` 對應 Swift `FolderAccessPlugin`。原生只將 bookmark data 存在 App container 的 UserDefaults，不回傳或記錄絕對來源路徑；每次掃描/複製以 start/stop 成對管理 security scope。掃描只回傳相對路徑、檔案大小、修改時間與 available/pendingDownload，不表示教材已匯入。只有 `notDownloaded` 算待下載；`downloaded` 表示本機有較舊副本，仍可唯讀取用。FSEvents 事件僅作 inventory invalidation，Flutter 以 350ms debounce 後重做完整掃描。檔案複製時驗證相對路徑、拒絕路徑穿越與任一路徑元件 symlink，使用 NSFileCoordinator 讀取並複製到 app-owned staging。
+
 ## 5. 掃描與去重政策
 - 先依檔案名稱、大小、修改日期判別候選，穩定後讀取 hash；未完整下載不視為刪除。
 - 音檔先到、字幕後到：建立 provisional material，後補雙語 subtitle tracks。
@@ -52,3 +54,5 @@ Channel 錯誤需區分 permissionDenied、providerUnavailable、fileNotDownload
 - FSEvents 漏失時全量掃描可補回。
 - App 強制結束後不宣稱即時同步；重開後完成補掃。
 - 使用 sandboxed macOS 實際簽章包測，而非只測 debug 模式。
+
+WP-11 測試 ID T-FOLDER-01..10 覆蓋授權取消、grant 狀態與失敗映射、部分下載保留、watch invalidation/rescan、初次空狀態、解除授權及 Mac panel 顯示。macOS Release app 已建置並檢查到 app-sandbox + user-selected.read-only entitlement；實際 folder 授權、重啟恢復、撤銷以及 iCloud placeholder hydration 尚未在實際選取的測試資料夾中執行，不能以 fake 或 build 代替。

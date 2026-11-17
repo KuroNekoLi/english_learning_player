@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/library/library_view_model.dart';
+import '../features/library/folder_source_panel.dart';
 import '../features/library/material_repository.dart';
 import '../features/library/services/audio_import_service.dart';
 import '../features/bookmarks/bookmarks_page.dart';
@@ -59,7 +60,13 @@ class LibraryPage extends ConsumerWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final content = _libraryContent(context, ref, library);
-          if (constraints.maxWidth < 900) return content;
+          final body = Column(
+            children: [
+              const FolderSourcePanel(),
+              Expanded(child: content),
+            ],
+          );
+          if (constraints.maxWidth < 900) return body;
           return Row(
             children: [
               SizedBox(
@@ -89,7 +96,7 @@ class LibraryPage extends ConsumerWidget {
                 ),
               ),
               const VerticalDivider(width: 1),
-              Expanded(child: content),
+              Expanded(child: body),
             ],
           );
         },
