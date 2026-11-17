@@ -49,3 +49,10 @@
 - `docs/12-decisions-and-risks.md`
 - `docs/README.md`
 - `docs/agent/wp-13-handoff.md`
+
+## Stage 3 重驗
+
+- SQLite 在同一交易中先驗證回覆的 owner、教材、revision。不符時寫入待處理原因 `invalid_progress_receipt`，canonical 和候選維持原狀。衝突回覆僅能更新同一來源串流中序號較舊的候選。
+- PASS：Dart 格式、Flutter Analyze、Flutter Test（116 項）。
+- PASS：`npm run test:rules`（Corretto 21，demo project，4 項）。以本機 Firestore Emulator 的兩個 SDK client 執行參考交易，驗證同時提交形成一筆 canonical 與一筆候選、同 opId 回放、hash 變更拒絕、過期 sequence 不覆寫。以測試工具提供的規則停用 context 模擬受信任寫入者，並另用實際規則驗證一般 owner、其他 UID、匿名都無法直接改寫進度及 receipt。
+- BLOCKED：通往受信任寫入者的正式 Flutter Auth／Firestore transport、正式規則與部署，以及 iPhone／Android 的實際離線交錯仍待整合。

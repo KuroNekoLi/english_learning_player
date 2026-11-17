@@ -510,6 +510,65 @@ void main() {
     },
   );
 
+  test('a receipt naming another owner or material is never merged', () async {
+    for (final remoteStream in [
+      (
+        ownerId: 'other',
+        materialId: materialId,
+        deviceId: 'server',
+        sessionId: 'remote',
+      ),
+      (
+        ownerId: scope.ownerId,
+        materialId: 'other-material',
+        deviceId: 'server',
+        sessionId: 'remote',
+      ),
+    ]) {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 3000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      final transport = _FixedReceiptTransport(
+        ProgressCommitResult(
+          status: ProgressCommitStatus.conflict,
+          candidateId: 'candidate',
+          canonicalRevision: 1,
+          canonicalCheckpoint: ProgressCheckpoint(
+            stream: remoteStream,
+            positionMs: 4000,
+            state: CheckpointState.paused,
+            sequence: 1,
+            baseRevision: 0,
+          ),
+        ),
+      );
+      final runner = ProgressSyncCoordinator(
+        scope: scope,
+        repository: progress,
+        identityProvider: identity,
+        consentProvider: consent,
+        transport: transport,
+        clock: () => now,
+        random: () => 0.5,
+      );
+      expect(await runner.runOne(), ProgressSyncRunResult.needsAttention);
+    }
+    expect(await progress.canonical(materialId), isNull);
+    expect(await progress.unresolvedCandidates(materialId), isEmpty);
+    final operations = await database
+        .customSelect(
+          "SELECT last_error FROM sync_outbox WHERE entity_type = 'progress' AND state = 'needsAttention'",
+        )
+        .get();
+    expect(operations.map((row) => row.read<String>('last_error')), [
+      'invalid_progress_receipt',
+      'invalid_progress_receipt',
+    ]);
+  });
+
   test(
     'permission denial needs attention without retrying or changing canonical',
     () async {
@@ -779,4 +838,19 @@ final class _SwitchAccountAfterCommit implements ProgressSyncTransport {
     }
     return result;
   }
+}
+
+final class _FixedReceiptTransport implements ProgressSyncTransport {
+  const _FixedReceiptTransport(this.receipt);
+
+  final ProgressCommitResult receipt;
+
+  @override
+  Future<ProgressCommitResult> commit({
+    required String uid,
+    required String opId,
+    required String payloadHash,
+    required ProgressCheckpoint checkpoint,
+    ProgressResolution? resolution,
+  }) async => receipt;
 }

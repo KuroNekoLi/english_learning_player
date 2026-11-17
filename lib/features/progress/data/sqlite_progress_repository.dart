@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/db/account_scope.dart';
 import '../../../core/db/local_database.dart';
 import '../../../core/sync/progress_policy.dart';
+import '../../../core/sync/sync_contracts.dart';
 import '../domain/progress_models.dart';
 import 'progress_repository.dart';
 
@@ -383,6 +384,21 @@ final class SqliteProgressRepository implements ProgressRepository {
         throw StateError('Progress operation payload hash mismatch.');
       }
       final checkpoint = _decodeCheckpoint(payload);
+      final snapshot = result.canonicalCheckpoint;
+      if (checkpoint.stream.ownerId != _scope.ownerId ||
+          checkpoint.stream.materialId != row.read<String>('entity_id') ||
+          result.canonicalRevision < 0 ||
+          (result.status == ProgressCommitStatus.accepted &&
+              result.canonicalRevision == 0) ||
+          (snapshot != null &&
+              (snapshot.stream.ownerId != _scope.ownerId ||
+                  snapshot.stream.materialId !=
+                      checkpoint.stream.materialId))) {
+        throw const SyncFailure(
+          SyncFailureKind.invalidData,
+          'invalid_progress_receipt',
+        );
+      }
       switch (result.status) {
         case ProgressCommitStatus.accepted:
           await _upsertCanonical(checkpoint, result.canonicalRevision, nowMs);
@@ -438,6 +454,10 @@ final class SqliteProgressRepository implements ProgressRepository {
               sequence = excluded.sequence, base_revision = excluded.base_revision,
               position_ms = excluded.position_ms, state = excluded.state,
               created_at_ms = excluded.created_at_ms, resolved_at_ms = NULL
+            WHERE progress_conflicts.material_id = excluded.material_id
+              AND progress_conflicts.device_id = excluded.device_id
+              AND progress_conflicts.session_id = excluded.session_id
+              AND excluded.sequence > progress_conflicts.sequence
           ''',
               [
                 _scope.ownerId,

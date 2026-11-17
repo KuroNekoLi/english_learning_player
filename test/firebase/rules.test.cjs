@@ -7,7 +7,7 @@ const {
   assertSucceeds,
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc } = require('firebase/firestore');
+const { doc, getDoc, runTransaction, setDoc } = require('firebase/firestore');
 const { ref, getMetadata, uploadBytes } = require('firebase/storage');
 
 const projectId = 'demo-english-learning-player';
@@ -128,4 +128,78 @@ test('Storage allows owner read and immutable valid audio only', async () => {
     new Uint8Array([1]),
     { contentType: 'text/plain', customMetadata: metadata.customMetadata },
   ));
+});
+
+// Reference transaction executed on the local emulator as a trusted writer.
+// The Flutter transport and its authenticated server entry point are separate.
+function commitProgress(db, { uid, materialId, streamId, sequence, baseRevision, positionMs, opId, hash }) {
+  const root = `users/${uid}`;
+  const canonicalRef = doc(db, `${root}/progress/${materialId}`);
+  const streamRef = doc(canonicalRef, 'streams', streamId);
+  const candidateRef = doc(canonicalRef, 'candidates', streamId);
+  const receiptRef = doc(db, `${root}/progressReceipts/${opId}`);
+  return runTransaction(db, async (tx) => {
+    const receipt = (await tx.get(receiptRef)).data();
+    if (receipt) {
+      if (receipt.hash !== hash) throw new Error('opId payload changed');
+      return receipt.result;
+    }
+    const canonical = (await tx.get(canonicalRef)).data() ?? { revision: 0 };
+    const stream = (await tx.get(streamRef)).data() ?? { sequence: 0 };
+
+    let result = { status: 'ignoredStale', canonical };
+    if (sequence > stream.sequence) {
+      tx.set(streamRef, { sequence });
+      const checkpoint = { streamId, sequence, baseRevision, positionMs };
+      if (baseRevision === canonical.revision) {
+        result = { status: 'accepted', canonical: { ...checkpoint, revision: canonical.revision + 1 } };
+        tx.set(canonicalRef, result.canonical);
+      } else {
+        result = { status: 'conflict', canonical, candidateId: streamId };
+        tx.set(candidateRef, checkpoint);
+      }
+    }
+    tx.set(receiptRef, { hash, result });
+    return result;
+  });
+}
+
+test('Firestore transaction preserves an offline conflict and a replay receipt', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    const firstDevice = context.firestore();
+    const secondDevice = context.firestore();
+    const base = { uid: 'progress-owner', materialId: 'lesson', sequence: 1, baseRevision: 0 };
+    const mac = { ...base, streamId: 'mac', positionMs: 5000, opId: 'mac-op', hash: 'mac-hash' };
+    const phone = { ...base, streamId: 'phone', positionMs: 20000, opId: 'phone-op', hash: 'phone-hash' };
+    const results = await Promise.all([commitProgress(firstDevice, mac), commitProgress(secondDevice, phone)]);
+    assert.deepEqual(results.map((result) => result.status).sort(), ['accepted', 'conflict']);
+    const accepted = results.find((result) => result.status === 'accepted');
+    const conflict = results.find((result) => result.status === 'conflict');
+    const losingRequest = [mac, phone].find((request) => request.streamId === conflict.candidateId);
+    assert.deepEqual(conflict.canonical, accepted.canonical);
+
+    const parent = doc(firstDevice, 'users/progress-owner/progress/lesson');
+    const candidate = doc(parent, 'candidates', losingRequest.streamId);
+    assert.equal((await getDoc(parent)).data().revision, 1);
+    assert.equal((await getDoc(candidate)).data().positionMs, losingRequest.positionMs);
+    assert.deepEqual(await commitProgress(firstDevice, losingRequest), conflict);
+    await assert.rejects(commitProgress(firstDevice, { ...losingRequest, hash: 'mutated' }), /payload changed/);
+    const stale = await commitProgress(firstDevice, { ...losingRequest, opId: 'stale-op', hash: 'stale-hash' });
+    assert.equal(stale.status, 'ignoredStale');
+    assert.equal((await getDoc(parent)).data().revision, 1);
+  });
+
+  // The deployed rule source deliberately leaves progress disabled until its
+  // authenticated transport is integrated. Direct mutations must fail closed.
+  for (const viewer of [
+    environment.authenticatedContext('progress-owner'),
+    environment.authenticatedContext('other'),
+    environment.unauthenticatedContext(),
+  ]) {
+    const db = viewer.firestore();
+    const canonical = doc(db, 'users/progress-owner/progress/lesson');
+    await assertFails(getDoc(canonical));
+    await assertFails(setDoc(canonical, { revision: 99 }));
+    await assertFails(setDoc(doc(db, 'users/progress-owner/progressReceipts/fake'), { hash: 'fake' }));
+  }
 });
