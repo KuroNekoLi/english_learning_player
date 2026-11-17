@@ -18,6 +18,7 @@ import '../library/material_repository.dart';
 import '../progress/progress_dependencies.dart';
 import '../progress/services/playback_progress_recorder.dart';
 import '../subtitles/domain/subtitle_models.dart';
+import '../subtitles/services/subtitle_import_service.dart';
 import 'player_dependencies.dart';
 import 'services/material_playback_loader.dart';
 
@@ -266,6 +267,30 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     final material = state.material;
     if (material == null || track.materialId != material.id) return;
     await _saveSubtitleTrack(track, manual: true);
+  }
+
+  Future<void> importSubtitle({
+    required String languageTag,
+    required String sourceName,
+    required List<int> bytes,
+  }) async {
+    final material = state.material;
+    if (material == null || !state.isReady) return;
+    try {
+      final repository = await ref.read(materialRepositoryProvider.future);
+      final imported = await SubtitleImportService(repository: repository)
+          .importBytes(
+            ownerId: material.ownerId,
+            materialId: material.id,
+            languageTag: languageTag,
+            sourceName: sourceName,
+            bytes: bytes,
+            manual: true,
+          );
+      await _saveSubtitleTrack(imported.track, manual: true);
+    } catch (_) {
+      state = state.copyWith(errorMessage: '字幕匯入失敗，請確認 SRT 格式。');
+    }
   }
 
   Future<void> setSubtitleOffset(SubtitleTrack track, int offsetMs) async {

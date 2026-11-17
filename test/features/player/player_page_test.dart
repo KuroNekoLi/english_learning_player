@@ -107,6 +107,21 @@ void main() {
     await audio.dispose();
   });
 
+  testWidgets('subtitle sheet exposes manual import and inactive tools', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('字幕設定'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('AI 語音辨識（尚未提供）'), findsOneWidget);
+    expect(find.byTooltip('手動匯入 SRT'), findsOneWidget);
+    expect(find.byTooltip('字幕樣式（尚未提供）'), findsOneWidget);
+    expect(find.text('英文'), findsOneWidget);
+    expect(find.text('中文'), findsOneWidget);
+  });
+
   for (final scenario in [
     (name: 'narrow phone', size: const Size(320, 700), scale: 1.0),
     (name: 'wide desktop', size: const Size(1280, 720), scale: 1.0),

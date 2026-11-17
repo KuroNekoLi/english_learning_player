@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/learning/domain/learning_session.dart';
 import '../../features/library/material_repository.dart';
 import '../../features/subtitles/domain/subtitle_models.dart';
+import '../../features/subtitles/services/subtitle_file_picker.dart';
 import 'player_view_model.dart';
 
 final class PlayerPage extends ConsumerStatefulWidget {
@@ -168,6 +169,37 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
         ),
         child: SubtitleSettingsSheet(
           tracks: state.subtitleTracks,
+          onImport: () async {
+            final source = await SubtitleFilePicker().pickSubtitle();
+            if (source == null || !context.mounted) return;
+            final language = await showDialog<String>(
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: const Text('選擇字幕語言'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, 'en'),
+                    child: const Text('英文'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, 'zh-TW'),
+                    child: const Text('中文'),
+                  ),
+                ],
+              ),
+            );
+            if (language == null || !context.mounted) return;
+            final bytes = await source
+                .openRead()
+                .expand((chunk) => chunk)
+                .toList();
+            await viewModel.importSubtitle(
+              languageTag: language,
+              sourceName: source.name,
+              bytes: bytes,
+            );
+            if (context.mounted) Navigator.of(context).pop();
+          },
           onSelect: (track) async {
             await viewModel.selectSubtitleTrack(track);
             if (context.mounted) Navigator.of(context).pop();
@@ -508,12 +540,14 @@ final class SubtitleSettingsSheet extends StatefulWidget {
     required this.tracks,
     required this.onSelect,
     required this.onOffsetChanged,
+    required this.onImport,
   });
 
   final List<SubtitleTrack> tracks;
   final ValueChanged<SubtitleTrack> onSelect;
   final Future<void> Function(SubtitleTrack track, int offsetMs)
   onOffsetChanged;
+  final Future<void> Function() onImport;
 
   @override
   State<SubtitleSettingsSheet> createState() => _SubtitleSettingsSheetState();
@@ -535,7 +569,31 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('字幕設定', style: Theme.of(context).textTheme.titleLarge),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '字幕設定',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'AI 語音辨識（尚未提供）',
+                  onPressed: null,
+                  icon: const Icon(Icons.auto_awesome),
+                ),
+                IconButton(
+                  tooltip: '手動匯入 SRT',
+                  onPressed: () => unawaited(widget.onImport()),
+                  icon: const Icon(Icons.playlist_add),
+                ),
+                IconButton(
+                  tooltip: '字幕樣式（尚未提供）',
+                  onPressed: null,
+                  icon: const Icon(Icons.tune),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             if (widget.tracks.isEmpty)
               const Padding(
