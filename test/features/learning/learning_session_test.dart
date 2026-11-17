@@ -158,7 +158,7 @@ void main() {
     );
 
     test(
-      'selecting the already-looping cue switches to one-pass playback',
+      'selecting the already-looping cue plays it once then pauses',
       () async {
         await audio.seekTo(const Duration(milliseconds: 300));
         await _flushPlaybackEvents();
@@ -172,8 +172,8 @@ void main() {
 
         audio.advanceTo(1200);
         await _flushPlaybackEvents();
-        expect(audio.snapshot.playing, isTrue);
-        expect(session.state.currentCue?.id, 'en-2');
+        expect(audio.snapshot.playing, isFalse);
+        expect(audio.snapshot.currentLoop, isNull);
       },
     );
 

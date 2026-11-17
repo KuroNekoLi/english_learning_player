@@ -187,6 +187,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   }
 
   Future<void> seekTo(int positionMs) async {
+    _session?.cancelOneShotPlayback();
     await _runAudioCommand(
       () => _audioEngine.seekTo(Duration(milliseconds: positionMs)),
       persistProgress: true,

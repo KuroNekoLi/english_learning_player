@@ -85,6 +85,7 @@ final class LearningSession {
   LearningMode _mode = LearningMode.normal;
   IntensivePhase _phase = IntensivePhase.blindListening;
   SubtitleCue? _currentCue;
+  int? _oneShotCueEndMs;
   bool _sessionLoopEnabled = false;
   bool _disposed = false;
 
@@ -163,12 +164,13 @@ final class LearningSession {
     if (cue == null) return false;
     final range = _audioRangeFor(cue);
     if (range == null) return false;
-    if (_audioEngine.snapshot.currentLoop != null &&
-        _audioEngine.snapshot.currentLoop != range) {
+    _oneShotCueEndMs = null;
+    if (_audioEngine.snapshot.currentLoop != null) {
       await _audioEngine.setSentenceLoop(null);
       _sessionLoopEnabled = false;
     }
     await _audioEngine.seekTo(Duration(milliseconds: range.startMs));
+    _oneShotCueEndMs = range.endMs;
     await _audioEngine.play();
     _refreshFromPlayback();
     return true;
@@ -180,6 +182,7 @@ final class LearningSession {
     if (!_isActiveMaterial) return false;
     final cue = _currentCue;
     if (cue == null) return false;
+    _oneShotCueEndMs = null;
     if (!enabled) {
       await _audioEngine.setSentenceLoop(null);
       _sessionLoopEnabled = false;
@@ -248,14 +251,13 @@ final class LearningSession {
     if (range == null) return false;
 
     final isSameCue = _currentCue?.id == cue.id;
-    // Selecting a cue always means one-pass playback. Even when the selected
-    // cue is already the looped cue, clear that clip so playback can continue
-    // through the rest of the media after the sentence ends.
+    _oneShotCueEndMs = null;
     if (_audioEngine.snapshot.currentLoop != null) {
       await _audioEngine.setSentenceLoop(null);
       _sessionLoopEnabled = false;
     }
     await _audioEngine.seekTo(Duration(milliseconds: range.startMs));
+    _oneShotCueEndMs = range.endMs;
     await _audioEngine.play();
     if (_mode == LearningMode.intensive && !isSameCue) {
       _phase = IntensivePhase.blindListening;
@@ -323,6 +325,11 @@ final class LearningSession {
   bool get _isActiveMaterial =>
       _audioEngine.snapshot.materialId == _englishTrack.materialId;
 
+  /// Disables the card's one-sentence stop when the user seeks freely.
+  void cancelOneShotPlayback() {
+    _oneShotCueEndMs = null;
+  }
+
   TimeRange? _audioRangeFor(SubtitleCue cue) {
     final startMs = _audioStart(cue);
     final endMs = cue.endMs + _englishTrack.offsetMs;
@@ -339,6 +346,14 @@ final class LearningSession {
     if (_disposed) return;
     if (snapshot.materialId != _englishTrack.materialId) {
       _sessionLoopEnabled = false;
+      _oneShotCueEndMs = null;
+    }
+    final oneShotEndMs = _oneShotCueEndMs;
+    if (snapshot.playing &&
+        oneShotEndMs != null &&
+        snapshot.positionMs >= oneShotEndMs) {
+      _oneShotCueEndMs = null;
+      unawaited(_audioEngine.pause().catchError((Object _) {}));
     }
     _state = _createState(snapshot);
     _events.add(_state);

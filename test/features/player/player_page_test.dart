@@ -259,27 +259,24 @@ void main() {
     );
   });
 
-  testWidgets('tapping a sentence exits its active loop and continues audio', (
+  testWidgets('tapping a sentence card plays only that sentence', (
     tester,
   ) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     audio.advanceTo(1800);
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('單句循環'));
-    await tester.pumpAndSettle();
-    expect(audio.snapshot.currentLoop, isNotNull);
+    expect(audio.snapshot.currentLoop, isNull);
 
     await tester.tap(find.byKey(const ValueKey('activeSubtitleCard')));
     await tester.pumpAndSettle();
     expect(audio.snapshot.currentLoop, isNull);
     expect(audio.snapshot.playing, isTrue);
 
-    audio.advanceTo(4000);
+    audio.advanceTo(2600);
     await tester.pumpAndSettle();
-    expect(audio.snapshot.positionMs, 4000);
-    expect(audio.snapshot.playing, isTrue);
+    expect(audio.snapshot.positionMs, 2600);
+    expect(audio.snapshot.playing, isFalse);
   });
 
   testWidgets('resumes confirmed canonical progress only on normal open', (
