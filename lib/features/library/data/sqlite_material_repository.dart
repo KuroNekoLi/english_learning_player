@@ -166,6 +166,19 @@ final class SqliteMaterialRepository
     });
   }
 
+  Future<Set<String>> uploadedMaterialIds() async {
+    final rows = await _database
+        .customSelect(
+          """
+      SELECT entity_id FROM sync_outbox
+      WHERE owner_id = ? AND entity_type = 'material' AND state = 'completed'
+      """,
+          variables: [Variable.withString(_scope.ownerId)],
+        )
+        .get();
+    return rows.map((row) => row.read<String>('entity_id')).toSet();
+  }
+
   @override
   Future<List<LearningMaterial>> listMaterials() async {
     final rows = await _database

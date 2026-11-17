@@ -7,9 +7,7 @@ import 'data/sqlite_progress_repository.dart';
 final progressRepositoryProvider = FutureProvider<ProgressRepository>((
   ref,
 ) async {
+  final scope = ref.watch(accountScopeProvider);
   final database = await ref.watch(localDatabaseProvider.future);
-  return SqliteProgressRepository(
-    scope: ref.watch(accountScopeProvider),
-    db: database,
-  );
+  return SqliteProgressRepository(scope: scope, db: database);
 });

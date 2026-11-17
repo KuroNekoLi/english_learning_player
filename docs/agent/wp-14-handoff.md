@@ -2,6 +2,8 @@
 
 基準為 `ad90054`；以原始規劃 `00886d5` 和 [Gate C](../08-testing-and-quality.md) 驗收。
 
+後續 App 接線與驗收結果見 [WP-14 Firebase 同步交棒](wp-14-firebase-handoff.md)。以下保留當時的驗收紀錄。
+
 ## 可執行路徑
 
 - Mac Release 啟動時和資料夾事件後，使用已授權資料夾掃描，將 M4A／MP3 與雙語 SRT 匯入帳號私有儲存，教材和上傳 outbox 一起落地。

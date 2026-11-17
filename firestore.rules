@@ -71,6 +71,34 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /users/{uid}/materials/{materialId}/subtitleTracks/{language} {
+      function validSubtitle() {
+        let data = request.resource.data;
+        return language in ['en', 'zh']
+          && data.keys().hasOnly([
+            'schemaVersion', 'ownerId', 'materialId', 'languageTag', 'sha256',
+            'byteLength', 'revision', 'offsetMs', 'storagePath'
+          ])
+          && data.schemaVersion == 1 && data.ownerId == uid && data.materialId == materialId
+          && data.languageTag is string
+          && data.languageTag.matches('^' + language + '(-[a-z0-9]{2,8})*$')
+          && data.sha256 is string && data.sha256.matches('^[a-f0-9]{64}$')
+          && data.byteLength is int && data.byteLength > 0 && data.byteLength <= 2097152
+          && data.revision is int && data.revision > 0 && data.offsetMs is int
+          && data.storagePath == 'users/' + uid + '/subtitles/' + materialId + '/' + data.sha256;
+      }
+
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validSubtitle()
+        && exists(/databases/$(database)/documents/users/$(uid)/materials/$(materialId));
+      allow delete: if false;
+    }
+
+    match /users/{uid}/progress/{materialId} {
+      allow get: if isOwner(uid);
+      allow list, write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

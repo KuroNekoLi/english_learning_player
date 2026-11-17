@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/db/account_scope.dart';
 import '../../core/platform/folder_access_gateway.dart';
 import '../../core/platform/folder_access_gateway_provider.dart';
 import '../subtitles/services/subtitle_import_service.dart';
@@ -11,6 +12,11 @@ import 'library_view_model.dart';
 
 const macFolderBindingId = 'primary-icloud-source';
 
+String folderBindingForAccount(AccountScope scope) =>
+    scope.ownerId == 'local-default'
+    ? macFolderBindingId
+    : '$macFolderBindingId-${scope.storageKey}';
+
 final reconcileFolderInventoryProvider =
     Provider<
       Future<FolderReconciliationResult> Function(String, List<FolderEntry>)
@@ -18,6 +24,9 @@ final reconcileFolderInventoryProvider =
       (ref) => (bindingId, entries) async {
         final gateway = ref.read(folderAccessGatewayProvider);
         final scope = ref.read(accountScopeProvider);
+        if (bindingId != folderBindingForAccount(scope)) {
+          throw StateError('Folder inventory belongs to another account.');
+        }
         final materials = ref.read(materialRepositoryProvider.future);
         final importer = ref.read(audioImportServiceProvider.future);
         final repository = await materials;
@@ -97,22 +106,22 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
   FolderSourceState build() {
     _gateway = ref.watch(folderAccessGatewayProvider);
     final scope = ref.watch(accountScopeProvider);
-    _bindingId = scope.ownerId == 'local-default'
-        ? macFolderBindingId
-        : '$macFolderBindingId-${scope.storageKey}';
+    _bindingId = folderBindingForAccount(scope);
     ref.onDispose(() {
       _rescanTimer?.cancel();
       _periodicScan?.cancel();
       unawaited(_watchSubscription?.cancel());
     });
-    unawaited(_restore());
+    unawaited(_restore(_bindingId));
     return const FolderSourceState(isBusy: true);
   }
 
   Future<void> connect() async {
+    final binding = _bindingId;
     state = state.copyWith(isBusy: true, clearError: true);
     try {
-      final folder = await _gateway.pickFolder(_bindingId);
+      final folder = await _gateway.pickFolder(binding);
+      if (!_ownsBinding(binding)) return;
       if (folder == null) {
         state = state.copyWith(isBusy: false);
         return;
@@ -121,11 +130,13 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         grantStatus: GrantStatus.valid,
         displayLabel: folder.displayLabel,
       );
-      await _startWatching();
-      await refresh();
+      await _startWatching(binding);
+      if (_ownsBinding(binding)) await refresh();
     } on FolderAccessException catch (error) {
+      if (!_ownsBinding(binding)) return;
       state = state.copyWith(isBusy: false, error: _message(error.failure));
     } catch (_) {
+      if (!_ownsBinding(binding)) return;
       state = state.copyWith(isBusy: false, error: '無法授權資料夾');
     }
   }
@@ -146,6 +157,8 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
 
   Future<void> disconnect() async {
     if (_disconnecting) return;
+    final binding = _bindingId;
+    final gateway = _gateway;
     _disconnecting = true;
     _rescanRequested = false;
     _rescanTimer?.cancel();
@@ -155,21 +168,24 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
       await _watchSubscription?.cancel();
       _watchSubscription = null;
       await _refreshing;
-      await _gateway.disconnect(_bindingId);
+      await gateway.disconnect(binding);
+      if (!_ownsBinding(binding)) return;
       state = const FolderSourceState();
     } on FolderAccessException catch (error) {
+      if (!_ownsBinding(binding)) return;
       state = state.copyWith(isBusy: false, error: _message(error.failure));
     } catch (_) {
+      if (!_ownsBinding(binding)) return;
       state = state.copyWith(isBusy: false, error: '無法解除資料夾授權');
     } finally {
       _disconnecting = false;
     }
   }
 
-  Future<void> _restore() async {
+  Future<void> _restore(String binding) async {
     try {
-      final status = await _gateway.restoreGrant(_bindingId);
-      if (!ref.mounted) return;
+      final status = await _gateway.restoreGrant(binding);
+      if (!_ownsBinding(binding)) return;
       final connected =
           status == GrantStatus.valid || status == GrantStatus.stale;
       state = state.copyWith(
@@ -178,10 +194,11 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         isBusy: connected,
       );
       if (connected) {
-        await _startWatching();
-        await refresh();
+        await _startWatching(binding);
+        if (_ownsBinding(binding)) await refresh();
       }
     } on FolderAccessException catch (error) {
+      if (!_ownsBinding(binding)) return;
       final status = switch (error.failure) {
         FolderFailure.notFound => GrantStatus.missing,
         FolderFailure.permissionDenied => GrantStatus.denied,
@@ -200,6 +217,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         clearError: error.failure == FolderFailure.notFound,
       );
     } catch (_) {
+      if (!_ownsBinding(binding)) return;
       state = state.copyWith(
         grantStatus: GrantStatus.denied,
         isBusy: false,
@@ -209,15 +227,15 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
   }
 
   Future<void> _refresh() async {
+    final binding = _bindingId;
     try {
-      final binding = _bindingId;
       final entries = await _gateway.scan(binding);
-      if (_disconnecting || !ref.mounted || binding != _bindingId) return;
+      if (_disconnecting || !_ownsBinding(binding)) return;
       final result = await ref.read(reconcileFolderInventoryProvider)(
         binding,
         entries,
       );
-      if (_disconnecting || !ref.mounted || binding != _bindingId) return;
+      if (_disconnecting || !_ownsBinding(binding)) return;
       ref.invalidate(libraryViewModelProvider);
       state = state.copyWith(
         grantStatus: GrantStatus.valid,
@@ -238,7 +256,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         clearError: true,
       );
     } on FolderAccessException catch (error) {
-      if (_disconnecting || !ref.mounted) return;
+      if (_disconnecting || !_ownsBinding(binding)) return;
       state = state.copyWith(
         grantStatus: error.failure == FolderFailure.permissionDenied
             ? GrantStatus.denied
@@ -247,33 +265,42 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         error: _message(error.failure),
       );
     } catch (_) {
-      if (!_disconnecting && ref.mounted) {
+      if (!_disconnecting && _ownsBinding(binding)) {
         state = state.copyWith(isBusy: false, error: '資料夾掃描或匯入失敗');
       }
     }
   }
 
-  Future<void> _startWatching() async {
+  Future<void> _startWatching(String binding) async {
     await _watchSubscription?.cancel();
-    if (!ref.mounted) return;
+    if (!_ownsBinding(binding)) return;
     _periodicScan?.cancel();
     _periodicScan = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (state.grantStatus == GrantStatus.valid) unawaited(refresh());
+      if (_ownsBinding(binding) && state.grantStatus == GrantStatus.valid) {
+        unawaited(refresh());
+      }
     });
     _watchSubscription = _gateway
-        .watch(_bindingId)
+        .watch(binding)
         .listen(
           (_) {
+            if (!_ownsBinding(binding)) return;
             _rescanTimer?.cancel();
             _rescanTimer = Timer(const Duration(milliseconds: 350), () {
-              unawaited(refresh());
+              if (_ownsBinding(binding)) unawaited(refresh());
             });
           },
           onError: (_) {
+            if (!_ownsBinding(binding)) return;
             state = state.copyWith(error: '資料夾監看中斷，請重新整理');
           },
         );
   }
+
+  bool _ownsBinding(String binding) =>
+      ref.mounted &&
+      binding == _bindingId &&
+      binding == folderBindingForAccount(ref.read(accountScopeProvider));
 
   String _message(FolderFailure failure) => switch (failure) {
     FolderFailure.permissionDenied => '資料夾權限已撤銷，請重新選取',

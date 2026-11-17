@@ -31,4 +31,5 @@
 - [WP-00／WP-01 交棒](agent/wp-00-01-handoff.md) 記錄現有程式契約、平台證據與後續工作包的驗證範圍。
 - [WP-12 交棒](agent/wp-12-handoff.md) 記錄資料夾掃描重整、本機清單、schema v6 與遠端 metadata 限制。
 - [WP-13 交棒](agent/wp-13-handoff.md) 記錄多裝置離線衝突、帳號切換安全與真實雲端驗證限制。
-- [WP-14 與 Gate C 交棒](agent/wp-14-handoff.md) 記錄實測與仍需的裝置、簽章及同步接線。
+- [WP-14 與 Gate C 交棒](agent/wp-14-handoff.md) 記錄 Stage 3 的真機證據與未完成項目。
+- [WP-14 Firebase 同步交棒](agent/wp-14-firebase-handoff.md) 記錄 App 同步接線、本機 Emulator 驗收及遠端部署前置條件。

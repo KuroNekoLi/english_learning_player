@@ -34,6 +34,7 @@
 | ADR-026 | PROPOSED | WP-08 以 profile-scoped SQLite outbox + 注入式 Auth/Cloud transport；demo Firebase Emulator 驗證 Rules | 本機 transaction、fake transport 與三組 Emulator Rules 測試通過；FlutterFire 正式接線受 ADR-010/011/017/018 阻擋，SHA-256 read-back 成本未核定 |
 | ADR-027 | ACCEPTED | WP-09 本機 canonical/checkpoint/conflict 與進度 outbox 落 SQLite；雲端交易僅經 ProgressSyncTransport；播放器只在開啟時恢復已確認位置 | SQLite v4→v5 migration、fake receipt/revision/sequence/衝突測試、Player Widget 測試；真實 Firestore transaction 與 Emulator 進度規則仍待 FlutterFire/雲端前置條件 |
 | ADR-028 | ACCEPTED（本機）／OPEN（遠端清單 metadata） | WP-12 完整 scan + account-scoped playlist/source catalog；唯一缺席舊路徑與相同 SHA-256 才視為 rename；缺席不刪教材或收藏 | Drift v5→v6 migration、晚到 SRT、唯一/歧義 rename、掃描錯誤、來源移除與收藏保留測試；既有 sync coordinator 僅派送 material，remote playlist metadata 需後續獨立契約 |
+| ADR-029 | ACCEPTED（本機驗收）／OPEN（遠端發佈） | WP-14 透過 Firebase REST 與 Callable 接入既有同步契約，採測試帳號及手動同步 | 兩個 Emulator 客戶端與 macOS Release 證據見 [WP-14 Firebase 交棒](agent/wp-14-firebase-handoff.md)。正式 Auth、用量及發佈仍依 ADR-010／011／014／017／018 追蹤 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -158,6 +159,12 @@
 - 變更字幕顯示不 seek；變更字幕軌只重建 LearningSession、不重載媒體，確保播放位置不被字幕設定重置。這保持 View → ViewModel → Repository / Service 邊界，也避免 UI 狀態進入 WP-09 跨裝置進度同步。
 - 證據：`test/features/player/player_page_test.dart` 驗證點句只呼叫一次 cue replay、字幕可見模式切換保留 1800ms 播放位置，並在 320×700、1280×720、1.8 倍字體下無 Widget layout exception；`test/features/player/material_playback_service_test.dart` 驗證帳號限定的媒體解析與私有檔案載入。具體執行結果見 WP-06 handoff。
 - 影響工作包：WP-06；沒有新增 schema 或 migration。未包含字幕目錄即時監看、播放進度持久化與跨裝置偏好同步。
+
+### ADR-029 — WP-14 Firebase 同步接線
+
+- 以 Firebase REST／Callable 串接 `SyncIdentityProvider`、`CloudSyncTransport` 與 `ProgressSyncTransport`，沿用目前 Flutter SDK、原生最低版本、SQLite schema 與 outbox。進度寫入由經驗證 UID 的 Callable 交易執行，Firestore 規則只允許客戶端讀取自己的 canonical。
+- Email/Password 用於既有測試帳號。憑據與同步同意只存在記憶體。重開 App 會進入原離線帳號，Firebase 帳號需再次登入。App 目前以前景手動操作消費可重試佇列，網路恢復觸發、正式登入提供者與跨啟動身分保存仍待驗。
+- macOS Release 實測登入、帳號隔離、下載與續播。demo Emulator 對相同 UID 驗證音訊與字幕原始資料、SHA-256、canonical 與衝突處理。遠端環境、簽章與 Gate C 仍需取得 [交棒所列條件](agent/wp-14-firebase-handoff.md)。
 
 ## 風險清單
 | 風險 | 嚴重度 | 失敗形態 | 降低方式 / 檢驗 |

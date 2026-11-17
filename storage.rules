@@ -26,6 +26,17 @@ service firebase.storage {
       allow delete: if false;
     }
 
+    match /users/{uid}/subtitles/{materialId}/{sha256} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid && resource == null
+        && request.resource.size > 0 && request.resource.size <= 2097152
+        && request.resource.contentType == 'application/x-subrip'
+        && request.resource.metadata.ownerId == uid
+        && request.resource.metadata.sha256 == sha256
+        && sha256.matches('^[a-f0-9]{64}$');
+      allow update, delete: if false;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -10,6 +10,9 @@ import 'core/audio/audio_media_session_provider.dart';
 import 'core/audio/english_audio_handler.dart';
 import 'core/audio/just_audio_adapter.dart';
 import 'app/library_page.dart';
+import 'core/db/account_scope.dart';
+import 'features/library/library_view_model.dart';
+import 'features/sync/firebase_sync_dependencies.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,6 +30,12 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
+        accountScopeProvider.overrideWith((ref) {
+          final uid = ref.watch(
+            firebaseSessionProvider.select((state) => state.uid),
+          );
+          return AccountScope(uid ?? 'local-default');
+        }),
         audioEngineProvider.overrideWith((ref) {
           ref.onDispose(() => unawaited(engine.dispose()));
           return engine;
@@ -44,12 +53,14 @@ Future<void> main() async {
   );
 }
 
-class EnglishLearningPlayer extends StatelessWidget {
+class EnglishLearningPlayer extends ConsumerWidget {
   const EnglishLearningPlayer({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final uid = ref.watch(firebaseSessionProvider.select((state) => state.uid));
     return MaterialApp(
+      key: ValueKey(uid),
       title: 'English Learning Player',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
       home: const LibraryPage(),

@@ -58,6 +58,30 @@ void main() {
   );
 
   test(
+    'an inventory from the offline profile cannot enter a signed-in account',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          accountScopeProvider.overrideWithValue(scope),
+          accountDatabaseServiceProvider.overrideWith((ref) async => storage),
+          localDatabaseProvider.overrideWith((ref) async => database),
+        ],
+      );
+      addTearDown(container.dispose);
+      final reconcile = container.read(reconcileFolderInventoryProvider);
+      await expectLater(
+        reconcile(macFolderBindingId, const []),
+        throwsStateError,
+      );
+      expect(await materials.listMaterials(), isEmpty);
+      expect(
+        await database.customSelect('SELECT * FROM sync_outbox').get(),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
     'restored grant and watcher import into the normal library and outbox',
     () async {
       gateway.put('A/Lesson.mp3', [1, 2, 3]);

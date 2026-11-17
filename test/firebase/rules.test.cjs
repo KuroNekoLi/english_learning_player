@@ -193,8 +193,11 @@ test('Firestore transaction preserves an offline conflict and a replay receipt',
     });
   });
 
-  // The deployed rule source deliberately leaves progress disabled until its
-  // authenticated transport is integrated. Direct mutations must fail closed.
+  // Owners may read their canonical position. Writes and receipts require the callable.
+  await assertSucceeds(getDoc(doc(environment.authenticatedContext('progress-owner').firestore(),
+    'users/progress-owner/progress/lesson')));
+  await assertFails(getDoc(doc(environment.authenticatedContext('other').firestore(),
+    'users/progress-owner/progress/lesson')));
   for (const viewer of [
     environment.authenticatedContext('progress-owner'),
     environment.authenticatedContext('other'),
@@ -202,7 +205,6 @@ test('Firestore transaction preserves an offline conflict and a replay receipt',
   ]) {
     const db = viewer.firestore();
     const canonical = doc(db, 'users/progress-owner/progress/lesson');
-    await assertFails(getDoc(canonical));
     await assertFails(setDoc(canonical, { revision: 99 }));
     await assertFails(setDoc(doc(db, 'users/progress-owner/progressReceipts/fake'), { hash: 'fake' }));
   }
@@ -238,4 +240,50 @@ test('receiver can download and verify the published object only under the same 
   assert.equal(createHash('sha256').update(downloaded).digest('hex'), published.assetSha256);
   await assertFails(getDoc(doc(unauthorized.firestore(), documentPath)));
   await assertFails(getBytes(ref(unauthorized.storage(), storagePath)));
+});
+
+test('subtitle manifests and immutable bytes are restricted to the owner', async () => {
+  const alice = environment.authenticatedContext('alice');
+  const bob = environment.authenticatedContext('bob');
+  const anonymous = environment.unauthenticatedContext();
+  const bytes = Buffer.from('1\n00:00:00,000 --> 00:00:01,000\nSynthetic\n');
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  const subtitleMaterialId = 'subtitle-material';
+  const materialPath = `users/alice/materials/${subtitleMaterialId}`;
+  const objectPath = `users/alice/subtitles/${subtitleMaterialId}/${digest}`;
+  const manifestPath = `${materialPath}/subtitleTracks/en`;
+  const manifest = {
+    schemaVersion: 1,
+    ownerId: 'alice',
+    materialId: subtitleMaterialId,
+    languageTag: 'en',
+    sha256: digest,
+    byteLength: bytes.length,
+    revision: 1,
+    offsetMs: 100,
+    storagePath: objectPath,
+  };
+  const metadata = {
+    contentType: 'application/x-subrip',
+    customMetadata: { ownerId: 'alice', sha256: digest },
+  };
+
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), materialPath), {
+      ...materialDocument, materialId: subtitleMaterialId,
+    });
+  });
+  await assertSucceeds(setDoc(doc(alice.firestore(), manifestPath), manifest));
+  await assertSucceeds(uploadBytes(ref(alice.storage(), objectPath), bytes, metadata));
+  assert.equal((await getDoc(doc(alice.firestore(), manifestPath))).data().offsetMs, 100);
+  assert.deepEqual(Buffer.from(await getBytes(ref(alice.storage(), objectPath))), bytes);
+  await assertFails(uploadBytes(ref(alice.storage(), objectPath), bytes, metadata));
+  await assertFails(setDoc(doc(alice.firestore(), manifestPath), {
+    ...manifest, storagePath: objectPath.replace('alice', 'bob'),
+  }));
+  for (const outsider of [bob, anonymous]) {
+    await assertFails(getDoc(doc(outsider.firestore(), manifestPath)));
+    await assertFails(setDoc(doc(outsider.firestore(), manifestPath), manifest));
+    await assertFails(getBytes(ref(outsider.storage(), objectPath)));
+  }
 });

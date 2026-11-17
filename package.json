@@ -2,7 +2,8 @@
   "name": "english-learning-player-emulator-tests",
   "private": true,
   "scripts": {
-    "test:rules": "firebase emulators:exec --project demo-english-learning-player --only auth,firestore,storage \"node --test test/firebase/rules.test.cjs\""
+    "test:rules": "firebase emulators:exec --project demo-english-learning-player --only auth,firestore,storage \"node --test test/firebase/rules.test.cjs\"",
+    "test:firebase": "firebase emulators:exec --project demo-english-learning-player --only auth,firestore,storage,functions \"node --test test/firebase/rules.test.cjs && ELP_RUN_FIREBASE_TEST=1 flutter test --no-pub test/features/sync/firebase_emulator_transport_test.dart --reporter expanded\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.0",

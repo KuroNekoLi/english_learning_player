@@ -7,16 +7,26 @@ import '../features/library/material_repository.dart';
 import '../features/library/services/audio_import_service.dart';
 import '../features/bookmarks/bookmarks_page.dart';
 import '../features/player/player_page.dart';
+import '../features/sync/firebase_sync_dependencies.dart';
+import '../features/sync/firebase_sync_panel.dart';
 
 class LibraryPage extends ConsumerWidget {
   const LibraryPage({super.key});
 
   Future<void> _importAudio(BuildContext context, WidgetRef ref) async {
+    final owner = ref.read(accountScopeProvider).ownerId;
     final picker = ref.read(audioFilePickerProvider);
     final source = await picker.pickAudio();
-    if (source == null || !context.mounted) return;
+    if (source == null ||
+        !context.mounted ||
+        ref.read(accountScopeProvider).ownerId != owner) {
+      return;
+    }
     try {
       final importer = await ref.read(audioImportServiceProvider.future);
+      if (!context.mounted || ref.read(accountScopeProvider).ownerId != owner) {
+        return;
+      }
       final ImportResult result = await importer.importAudio(source);
       ref.invalidate(libraryViewModelProvider);
       if (context.mounted && result.wasDuplicate) {
@@ -41,6 +51,16 @@ class LibraryPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('教材庫'),
         actions: [
+          if (ref.watch(firebaseEndpointProvider) != null)
+            IconButton(
+              tooltip: 'Firebase 同步',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const FirebaseSyncPanel(),
+                ),
+              ),
+              icon: const Icon(Icons.cloud_sync_outlined),
+            ),
           IconButton(
             tooltip: '我的收藏',
             onPressed: () => Navigator.of(context).push(

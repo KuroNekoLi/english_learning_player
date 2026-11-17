@@ -69,3 +69,6 @@ app.*.map.json
 .fvm/cache/
 **/.gradle/
 **/xcuserdata/
+
+/firebase-functions/node_modules/
+/firebase-functions/.env*

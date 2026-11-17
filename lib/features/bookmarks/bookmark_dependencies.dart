@@ -7,9 +7,7 @@ import 'data/sqlite_bookmark_repository.dart';
 final bookmarkRepositoryProvider = FutureProvider<BookmarkRepository>((
   ref,
 ) async {
+  final scope = ref.watch(accountScopeProvider);
   final database = await ref.watch(localDatabaseProvider.future);
-  return SqliteBookmarkRepository(
-    scope: ref.watch(accountScopeProvider),
-    database: database,
-  );
+  return SqliteBookmarkRepository(scope: scope, database: database);
 });

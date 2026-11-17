@@ -19,8 +19,14 @@ final accountDatabaseServiceProvider = FutureProvider<AccountDatabaseService>(
 );
 
 final localDatabaseProvider = FutureProvider.autoDispose((ref) async {
-  final service = await ref.watch(accountDatabaseServiceProvider.future);
-  final database = await service.open(ref.watch(accountScopeProvider));
+  final scope = ref.watch(accountScopeProvider);
+  final storage = ref.watch(accountDatabaseServiceProvider.future);
+  final service = await storage;
+  final database = await service.open(scope);
+  if (!ref.mounted) {
+    await database.close();
+    throw StateError('The selected account has changed.');
+  }
   ref.onDispose(() => unawaited(database.close()));
   return database;
 });
@@ -28,10 +34,10 @@ final localDatabaseProvider = FutureProvider.autoDispose((ref) async {
 final materialRepositoryProvider = FutureProvider<MaterialRepository>((
   ref,
 ) async {
-  final database = await ref.watch(localDatabaseProvider.future);
+  final scope = ref.watch(accountScopeProvider);
   return SqliteMaterialRepository(
-    scope: ref.watch(accountScopeProvider),
-    database: database,
+    scope: scope,
+    database: await ref.watch(localDatabaseProvider.future),
   );
 });
 
@@ -39,20 +45,17 @@ final audioFilePickerProvider = Provider<AudioFilePicker>(
   (ref) => NativeAudioFilePicker(),
 );
 
-final audioImportServiceProvider =
-    FutureProvider.autoDispose<AudioImportService>((ref) async {
-      final service = await ref.watch(accountDatabaseServiceProvider.future);
-      final scope = ref.watch(accountScopeProvider);
-      final database = await ref.watch(localDatabaseProvider.future);
-      final repository = SqliteMaterialRepository(
-        scope: scope,
-        database: database,
-      );
-      return AudioImportService(
-        repository: repository,
-        mediaStore: AppMediaStore(storage: service, scope: scope),
-      );
-    });
+final audioImportServiceProvider = FutureProvider<AudioImportService>((
+  ref,
+) async {
+  final scope = ref.watch(accountScopeProvider);
+  final storage = ref.watch(accountDatabaseServiceProvider.future);
+  final repository = ref.watch(materialRepositoryProvider.future);
+  return AudioImportService(
+    repository: await repository,
+    mediaStore: AppMediaStore(storage: await storage, scope: scope),
+  );
+});
 
 final libraryViewModelProvider = FutureProvider<List<LearningMaterial>>((
   ref,
