@@ -1,6 +1,6 @@
 # 工程文件入口
 
-> 狀態：Specification baseline v0.1。Stage 1 契約及 Stage 2 WP-02..10、Stage 3 WP-11..12 已逐包交付；遠端 playlist metadata 與正式 Firebase 仍受雲端前置條件阻擋。日期：2026-11-17。
+> 狀態：Specification baseline v0.1。Stage 1 契約及 Stage 2 WP-02..10、Stage 3 WP-11..13 已逐包交付；遠端 playlist metadata 與正式 Firebase / 跨裝置 E2E 仍受雲端前置條件阻擋。日期：2026-11-17。
 > 優先完成一條可量測的使用者旅程：Mac iCloud 資料夾新增 M4A＋雙 SRT → 自動配對匯入 → 雲端同步 → iPhone 同帳號續播。
 
 ## 文件地圖與閱讀順序
@@ -30,3 +30,4 @@
 - 指定工作包如 `WP-02`，先閱讀任務所引文件，不必每次讀完整文件庫。
 - [WP-00／WP-01 交棒](agent/wp-00-01-handoff.md) 記錄現有程式契約、平台證據與後續工作包的驗證範圍。
 - [WP-12 交棒](agent/wp-12-handoff.md) 記錄資料夾掃描重整、本機清單、schema v6 與遠端 metadata 限制。
+- [WP-13 交棒](agent/wp-13-handoff.md) 記錄多裝置離線衝突、帳號切換安全與真實雲端驗證限制。

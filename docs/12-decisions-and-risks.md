@@ -133,6 +133,8 @@
 - PlayerViewModel 將 AudioEngine snapshot 轉成純 Dart recorder 事件：本機週期 checkpoint 為 15 秒，並在 pause、seek 完成、教材切換與 ViewModel dispose 記錄。每次播放器開啟建立新 session；device ID 在 profile DB 持久化。正常開啟使用已合併的本機 canonical 位置；`initialCueId` 明確導航優先。遠端 snapshot merge 只改 repository，沒有播放器 seek callback，因此活動播放不會被遠端進度跳轉。
 - 衝突候選選擇先原子建立 immutable `resolveProgress` outbox，payload 帶 `candidateId`、觀察到的 canonical revision 與選擇；本機 canonical/candidate 只有收到交易成功後才更新。過期 revision 的交易回覆須回傳當下 canonical 並保留候選，UI 重新載入後再選。舊的同 opId receipt 必須回傳同結果；相同 opId 不可用不同 hash。
 - 本 WP 的 `ProgressSyncTransport` 是正式交易 adapter 契約；測試 fake 模擬 receipt、session high-water、revision 和 candidate 規則，不代表 Firebase 驗證。FlutterFire 正式 Apple/Core 設定仍受 ADR-005/010/011/017/018 阻擋，故真實 Firestore transactions、Rules 和兩實機競態列 BLOCKED，交由 WP-13/14 完成。
+- WP-13 在 consent 檢查後、恢復佇列後、claim 後及套用 ack 前重新核對目前 UID。切帳號時已 claim 的操作進 `waitingForAuth`，保留 opId；同 UID 恢復後重送相同操作，由 receipt 避免重複效果。這是 client coordinator guard，不取代 transport 對已登入 UID 的綁定，也不證明遠端交易。
+- 證據：`test/features/progress/progress_sync_test.dart` 覆蓋兩個獨立離線 profile 同 UID 交錯寫入、consent 中帳號切換不派送、提交後切帳號延後本機 ack 並以同 opId 回放、權限拒絕不重試。真實 Auth listener race、Firestore receipt、Rules 與雙實機仍 BLOCKED。
 - 重試沿用 ADR-009 的 1 秒起始、指數 cap 60 秒及 `[cap/2, cap]` jitter；8 次暫時錯誤後 `needsAttention`，同 opId 重試。無同 UID 身分時等待認證；同步未同意時不 claim/outbox 不變。權限錯誤進 `needsAttention`。
 - 驗證：`test/features/progress/progress_sync_test.dart` 覆蓋 11 項 local/fake transaction 邊界；`test/features/player/player_page_test.dart` 覆蓋 canonical resume 與 cue seek checkpoint。正式跨裝置交錯與 Firestore atomicity 尚無實際服務證據。
 
@@ -145,6 +147,7 @@
 - subtitle 每輪使用 WP-03 `SubtitleFilenameMatcher`。歧義不自動匯入；已選 manual track 的 sourceName 優先；late subtitle 在之後完整掃描時匯入。相同來源名及原始 bytes 的 track 不重複建立。
 - Schema v6 新表只加本機清單/來源目錄，v5→v6 不改舊教材/收藏；migration 測試建立含舊 material 的 v5 情境後升級確認資料仍在。
 - 目前 `SqliteSyncOutbox.claimNext` 只派送 `entity_type='material'`，`CloudSyncCoordinator` 也只發布 material/asset；因此 playlist 和 folder binding 的 remote metadata 尚未送出。WP-12 不建立未被 transport 消費的孤兒 outbox 操作，也未連雲端/付費服務。需在後續核准 schema、權限規則與 transport 後補實作/驗證。
+- 使用者已指定將遠端 playlist/folder metadata 記為後續整合項；該項不屬於 WP-13 的進度衝突/帳號隔離範圍。後續整合須先核准 metadata schema、Rules 與 transport，並保持本機 source path/bookmark 不外送。
 - 證據：`test/features/library/folder_import_reconciler_test.dart` 覆蓋 late SRT/重開 DB、playlist 與 material outbox、唯一 rename/刪來源保留收藏、歧義 rename 不合併、scan failure 保留狀態、pending download、v5→v6 migration。日期：2026-11-17。
 
 ### ADR-024 — WP-06 播放器 UI 狀態與資料存取邊界

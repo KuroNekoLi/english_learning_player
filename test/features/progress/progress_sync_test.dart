@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:english_learning_player/core/db/account_database_service.dart';
 import 'package:english_learning_player/core/db/account_scope.dart';
 import 'package:english_learning_player/core/db/local_database.dart';
@@ -10,6 +10,7 @@ import 'package:english_learning_player/core/sync/progress_policy.dart';
 import 'package:english_learning_player/core/sync/sync_contracts.dart';
 import 'package:english_learning_player/features/library/data/sqlite_material_repository.dart';
 import 'package:english_learning_player/features/library/domain/audio_import_source.dart';
+import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
 import 'package:english_learning_player/features/progress/data/sqlite_progress_repository.dart';
 import 'package:english_learning_player/features/progress/domain/progress_models.dart';
@@ -150,6 +151,83 @@ void main() {
       expect(candidates, hasLength(1));
       expect(candidates.single.checkpoint.positionMs, 300000);
       expect(candidates.single.checkpoint.baseRevision, 0);
+    },
+  );
+
+  test(
+    'two offline device checkpoints merge as canonical plus conflict candidate',
+    () async {
+      final phoneDirectory = Directory('${root.path}/phone-profile')
+        ..createSync(recursive: true);
+      final phoneStorage = AccountDatabaseService(
+        supportDirectory: phoneDirectory,
+      );
+      final phoneDatabase = await phoneStorage.open(scope);
+      final phoneMaterials = SqliteMaterialRepository(
+        scope: scope,
+        database: phoneDatabase,
+      );
+      final phoneProgress = SqliteProgressRepository(
+        scope: scope,
+        db: phoneDatabase,
+      );
+      try {
+        await phoneMaterials.insertAudio(
+          asset: StoredAudioAsset(
+            id: 'phone-asset',
+            sha256: List.filled(64, 'b').join(),
+            byteLength: 4,
+            mediaType: 'audio/mp4',
+            relativePath: 'media/${scope.storageKey}/phone.m4a',
+          ),
+          sourceKey: 'phone-material-source',
+          title: 'Lesson',
+          materialId: materialId,
+          createdAt: now,
+        );
+        final phoneStream = stream(device: 'iphone', session: 'phone-offline');
+        await progress.recordCheckpoint(
+          stream: stream(device: 'mac', session: 'mac-offline'),
+          positionMs: 30000,
+          state: CheckpointState.paused,
+          nowMs: now.millisecondsSinceEpoch,
+        );
+        await phoneProgress.recordCheckpoint(
+          stream: phoneStream,
+          positionMs: 90000,
+          state: CheckpointState.paused,
+          nowMs: now.millisecondsSinceEpoch,
+        );
+
+        expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+        final phoneCoordinator = ProgressSyncCoordinator(
+          scope: scope,
+          repository: phoneProgress,
+          identityProvider: identity,
+          consentProvider: consent,
+          transport: ledger,
+          clock: () => now,
+          random: () => 0.5,
+        );
+        expect(
+          await phoneCoordinator.runOne(),
+          ProgressSyncRunResult.committed,
+        );
+        expect(
+          (await progress.canonical(materialId))?.checkpoint.positionMs,
+          30000,
+        );
+        expect(
+          (await phoneProgress.canonical(materialId))?.checkpoint.positionMs,
+          30000,
+        );
+        final candidates = await phoneProgress.unresolvedCandidates(materialId);
+        expect(candidates, hasLength(1));
+        expect(candidates.single.checkpoint.positionMs, 90000);
+        expect(candidates.single.checkpoint.baseRevision, 0);
+      } finally {
+        await phoneMaterials.close();
+      }
     },
   );
 
@@ -317,6 +395,160 @@ void main() {
     expect(row.read<String>('state'), 'queued');
     expect(ledger.writes, 0);
   });
+
+  test(
+    'account change during consent check leaves old owner operation queued',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 2000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      consent.onCheck = (_) async {
+        identity.identity = const SyncIdentity('account-b');
+      };
+      expect(
+        await coordinator().runOne(),
+        ProgressSyncRunResult.waitingForAuthentication,
+      );
+      final queued = await database
+          .customSelect(
+            "SELECT state FROM sync_outbox WHERE owner_id = ? AND entity_type = 'progress'",
+            variables: [Variable.withString(scope.ownerId)],
+          )
+          .getSingle();
+      expect(queued.read<String>('state'), 'queued');
+      expect(ledger.writes, 0);
+
+      consent.onCheck = null;
+      identity.identity = SyncIdentity(scope.ownerId);
+      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+    },
+  );
+
+  test(
+    'account change after claiming an operation pauses before transport',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 2600,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      identity.identityResponses = [
+        SyncIdentity(scope.ownerId), // Initial identity.
+        SyncIdentity(scope.ownerId), // After consent.
+        SyncIdentity(scope.ownerId), // After resuming the queue.
+        const SyncIdentity('account-b'), // After the operation is claimed.
+      ];
+      expect(
+        await coordinator().runOne(),
+        ProgressSyncRunResult.waitingForAuthentication,
+      );
+      final paused = await database
+          .customSelect(
+            "SELECT state FROM sync_outbox WHERE entity_type = 'progress'",
+          )
+          .getSingle();
+      expect(paused.read<String>('state'), 'waitingForAuth');
+      expect(ledger.writes, 0);
+
+      identity.identityResponses = null;
+      identity.identity = SyncIdentity(scope.ownerId);
+      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+    },
+  );
+
+  test(
+    'account change after a commit defers local ack and replays same receipt',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 4500,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      final transport = _SwitchAccountAfterCommit(ledger, identity);
+      final guarded = ProgressSyncCoordinator(
+        scope: scope,
+        repository: progress,
+        identityProvider: identity,
+        consentProvider: consent,
+        transport: transport,
+        clock: () => now,
+        random: () => 0.5,
+      );
+      expect(
+        await guarded.runOne(),
+        ProgressSyncRunResult.waitingForAuthentication,
+      );
+      expect(await progress.canonical(materialId), isNull);
+      final waiting = await database
+          .customSelect(
+            "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
+          )
+          .getSingle();
+      final opId = waiting.read<String>('op_id');
+      expect(waiting.read<String>('state'), 'waitingForAuth');
+      expect(ledger.writes, 1);
+
+      identity.identity = SyncIdentity(scope.ownerId);
+      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+      expect(ledger.writes, 1);
+      expect(
+        (await progress.canonical(materialId))?.checkpoint.positionMs,
+        4500,
+      );
+      final completed = await database
+          .customSelect(
+            "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
+          )
+          .getSingle();
+      expect(completed.read<String>('op_id'), opId);
+      expect(completed.read<String>('state'), 'completed');
+    },
+  );
+
+  test(
+    'permission denial needs attention without retrying or changing canonical',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 12000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      final failingTransport = _FailingProgressTransport(ledger)
+        ..failure = const SyncFailure(
+          SyncFailureKind.permissionDenied,
+          'permission_denied',
+        );
+      final deniedCoordinator = ProgressSyncCoordinator(
+        scope: scope,
+        repository: progress,
+        identityProvider: identity,
+        consentProvider: consent,
+        transport: failingTransport,
+        clock: () => now,
+        random: () => 0.5,
+      );
+      expect(
+        await deniedCoordinator.runOne(),
+        ProgressSyncRunResult.needsAttention,
+      );
+      final denied = await database
+          .customSelect(
+            "SELECT attempts, last_error, state FROM sync_outbox WHERE entity_type = 'progress'",
+          )
+          .getSingle();
+      expect(denied.read<int>('attempts'), 0);
+      expect(denied.read<String>('last_error'), 'permission_denied');
+      expect(denied.read<String>('state'), 'needsAttention');
+      expect(await progress.canonical(materialId), isNull);
+      expect(ledger.writes, 0);
+    },
+  );
 
   test(
     'transient failure retries with same operation and needs attention at limit',
@@ -516,5 +748,35 @@ final class _FailingProgressTransport implements ProgressSyncTransport {
       checkpoint: checkpoint,
       resolution: resolution,
     );
+  }
+}
+
+final class _SwitchAccountAfterCommit implements ProgressSyncTransport {
+  _SwitchAccountAfterCommit(this.delegate, this.identity);
+
+  final ProgressSyncTransport delegate;
+  final FakeSyncIdentityProvider identity;
+  bool _switched = false;
+
+  @override
+  Future<ProgressCommitResult> commit({
+    required String uid,
+    required String opId,
+    required String payloadHash,
+    required ProgressCheckpoint checkpoint,
+    ProgressResolution? resolution,
+  }) async {
+    final result = await delegate.commit(
+      uid: uid,
+      opId: opId,
+      payloadHash: payloadHash,
+      checkpoint: checkpoint,
+      resolution: resolution,
+    );
+    if (!_switched) {
+      identity.identity = const SyncIdentity('account-b');
+      _switched = true;
+    }
+    return result;
   }
 }

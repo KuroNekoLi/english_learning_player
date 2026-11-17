@@ -6,18 +6,27 @@ final class FakeSyncIdentityProvider implements SyncIdentityProvider {
   FakeSyncIdentityProvider([this.identity]);
 
   SyncIdentity? identity;
+  List<SyncIdentity?>? identityResponses;
 
   @override
-  Future<SyncIdentity?> currentIdentity() async => identity;
+  Future<SyncIdentity?> currentIdentity() async {
+    final responses = identityResponses;
+    if (responses != null && responses.isNotEmpty) return responses.removeAt(0);
+    return identity;
+  }
 }
 
 final class FakeSyncConsentProvider implements SyncConsentProvider {
   FakeSyncConsentProvider({this.enabled = true});
 
   bool enabled;
+  Future<void> Function(String uid)? onCheck;
 
   @override
-  Future<bool> isCloudSyncEnabled(String uid) async => enabled;
+  Future<bool> isCloudSyncEnabled(String uid) async {
+    await onCheck?.call(uid);
+    return enabled;
+  }
 }
 
 final class FakeCloudSyncTransport implements CloudSyncTransport {

@@ -59,9 +59,19 @@ final class ProgressSyncCoordinator {
     if (!await _consentProvider.isCloudSyncEnabled(identity.uid)) {
       return ProgressSyncRunResult.waitingForConsent;
     }
+    if (!await _isCurrentOwner(identity.uid)) {
+      return ProgressSyncRunResult.waitingForAuthentication;
+    }
     await _repository.resumeAuthenticated(now);
+    if (!await _isCurrentOwner(identity.uid)) {
+      return ProgressSyncRunResult.waitingForAuthentication;
+    }
     final operation = await _repository.claimNext(now);
     if (operation == null) return ProgressSyncRunResult.idle;
+    if (!await _isCurrentOwner(identity.uid)) {
+      await _repository.waitForAuthentication(operation.opId, _clock().toUtc());
+      return ProgressSyncRunResult.waitingForAuthentication;
+    }
     try {
       final result = await _transport.commit(
         uid: identity.uid,
@@ -86,7 +96,8 @@ final class ProgressSyncCoordinator {
       );
       return ProgressSyncRunResult.committed;
     } on SyncFailure catch (failure) {
-      if (failure.kind == SyncFailureKind.unauthenticated) {
+      if (failure.kind == SyncFailureKind.unauthenticated ||
+          !await _isCurrentOwner(identity.uid)) {
         await _repository.waitForAuthentication(
           operation.opId,
           _clock().toUtc(),
@@ -110,6 +121,10 @@ final class ProgressSyncCoordinator {
           : ProgressSyncRunResult.needsAttention;
     }
   }
+
+  Future<bool> _isCurrentOwner(String expectedUid) async =>
+      (await _identityProvider.currentIdentity())?.uid == expectedUid &&
+      expectedUid == _scope.ownerId;
 }
 
 DateTime nextRetryAt(DateTime now, int attempt, double random) {
