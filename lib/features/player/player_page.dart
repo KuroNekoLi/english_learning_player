@@ -108,6 +108,8 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
           bottomNavigationBar: _PlaybackControls(
             state: state,
             viewModel: viewModel,
+            onSubtitleSettings: () =>
+                _showSubtitleSettings(context, state, viewModel),
           ),
         ),
       ),
@@ -169,6 +171,8 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
         ),
         child: SubtitleSettingsSheet(
           tracks: state.subtitleTracks,
+          visibility: viewModel.normalVisibility,
+          onVisibilityChanged: viewModel.setNormalVisibility,
           onImport: () async {
             final source = await SubtitleFilePicker().pickSubtitle();
             if (source == null || !context.mounted) return;
@@ -339,10 +343,15 @@ final class _ActiveSubtitleCard extends StatelessWidget {
 }
 
 final class _PlaybackControls extends StatefulWidget {
-  const _PlaybackControls({required this.state, required this.viewModel});
+  const _PlaybackControls({
+    required this.state,
+    required this.viewModel,
+    required this.onSubtitleSettings,
+  });
 
   final PlayerViewState state;
   final PlayerViewModel viewModel;
+  final VoidCallback onSubtitleSettings;
 
   @override
   State<_PlaybackControls> createState() => _PlaybackControlsState();
@@ -462,31 +471,12 @@ final class _PlaybackControlsState extends State<_PlaybackControls> {
                     ),
                   ),
                   if (learning?.mode != LearningMode.intensive)
-                    PopupMenuButton<SubtitleVisibility>(
-                      tooltip: '字幕顯示方式',
-                      onSelected: viewModel.setNormalVisibility,
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
-                          value: SubtitleVisibility.bilingual,
-                          child: Text('雙語'),
-                        ),
-                        PopupMenuItem(
-                          value: SubtitleVisibility.englishOnly,
-                          child: Text('只顯示英文'),
-                        ),
-                        PopupMenuItem(
-                          value: SubtitleVisibility.chineseOnly,
-                          child: Text('只顯示中文'),
-                        ),
-                        PopupMenuItem(
-                          value: SubtitleVisibility.hidden,
-                          child: Text('隱藏字幕'),
-                        ),
-                      ],
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 10),
-                        child: Icon(Icons.closed_caption_outlined),
-                      ),
+                    IconButton(
+                      tooltip: '字幕',
+                      onPressed: state.isReady
+                          ? widget.onSubtitleSettings
+                          : null,
+                      icon: const Icon(Icons.closed_caption_outlined),
                     ),
                   _learningAction(learning, viewModel),
                 ],
@@ -541,6 +531,8 @@ final class SubtitleSettingsSheet extends StatefulWidget {
     required this.onSelect,
     required this.onOffsetChanged,
     required this.onImport,
+    required this.visibility,
+    required this.onVisibilityChanged,
   });
 
   final List<SubtitleTrack> tracks;
@@ -548,6 +540,8 @@ final class SubtitleSettingsSheet extends StatefulWidget {
   final Future<void> Function(SubtitleTrack track, int offsetMs)
   onOffsetChanged;
   final Future<void> Function() onImport;
+  final SubtitleVisibility visibility;
+  final ValueChanged<SubtitleVisibility> onVisibilityChanged;
 
   @override
   State<SubtitleSettingsSheet> createState() => _SubtitleSettingsSheetState();
@@ -555,6 +549,7 @@ final class SubtitleSettingsSheet extends StatefulWidget {
 
 final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
   final Map<String, int> _offsets = {};
+  late SubtitleVisibility _visibility = widget.visibility;
 
   @override
   Widget build(BuildContext context) {
@@ -592,6 +587,26 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                   onPressed: null,
                   icon: const Icon(Icons.tune),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final option in const [
+                  (SubtitleVisibility.bilingual, '雙語'),
+                  (SubtitleVisibility.englishOnly, '只顯示英文'),
+                  (SubtitleVisibility.chineseOnly, '只顯示中文'),
+                  (SubtitleVisibility.hidden, '隱藏'),
+                ])
+                  ChoiceChip(
+                    label: Text(option.$2),
+                    selected: _visibility == option.$1,
+                    onSelected: (_) {
+                      setState(() => _visibility = option.$1);
+                      widget.onVisibilityChanged(option.$1);
+                    },
+                  ),
               ],
             ),
             const SizedBox(height: 12),

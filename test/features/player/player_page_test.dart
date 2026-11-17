@@ -220,7 +220,7 @@ void main() {
     audio.advanceTo(1800);
     await tester.pump();
 
-    await tester.tap(find.byTooltip('字幕顯示方式'));
+    await tester.tap(find.byTooltip('字幕'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('只顯示英文'));
     await tester.pumpAndSettle();

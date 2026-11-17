@@ -84,6 +84,8 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   SubtitleVisibility _normalVisibility = SubtitleVisibility.bilingual;
   int _openGeneration = 0;
   bool _disposed = false;
+
+  SubtitleVisibility get normalVisibility => _normalVisibility;
   final Map<String, Bookmark> _bookmarksByCueKey = {};
   final BookmarkResolver _bookmarkResolver = const BookmarkResolver();
 
