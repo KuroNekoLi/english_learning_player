@@ -12,6 +12,7 @@ final class FolderAccessPlugin: NSObject, FlutterStreamHandler {
   private var watchedBindingId: String?
   private var watchedURL: URL?
   private var eventStream: FSEventStreamRef?
+  private var watchRequest: UUID?
 
   func register(messenger: FlutterBinaryMessenger) {
     FlutterMethodChannel(name: methodChannel, binaryMessenger: messenger)
@@ -131,7 +132,7 @@ final class FolderAccessPlugin: NSObject, FlutterStreamHandler {
     do {
       url = try URL(
         resolvingBookmarkData: data,
-        options: [.withSecurityScope],
+        options: [.withSecurityScope, .withoutUI, .withoutMounting],
         relativeTo: nil,
         bookmarkDataIsStale: &stale
       )
@@ -179,7 +180,11 @@ final class FolderAccessPlugin: NSObject, FlutterStreamHandler {
       guard let enumerator = self.fileManager.enumerator(
         at: coordinatedRoot,
         includingPropertiesForKeys: keys,
-        options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        options: [.skipsHiddenFiles, .skipsPackageDescendants],
+        errorHandler: { _, error in
+          enumerationError = error
+          return false
+        }
       ) else {
         enumerationError = FolderAccessError.transientIo
         return
@@ -300,46 +305,67 @@ final class FolderAccessPlugin: NSObject, FlutterStreamHandler {
           let bindingId = args["bindingId"] as? String else {
       return FlutterError(code: "notFound", message: "Missing binding ID", details: nil)
     }
-    do {
-      let root = try withResolvedGrant(bindingId: bindingId) { url, _ in url }
-      guard root.startAccessingSecurityScopedResource() else {
-        return FolderAccessError.permissionDenied.flutterError
+    stopWatching()
+    let request = UUID()
+    watchRequest = request
+    watchedBindingId = bindingId
+    eventSink = events
+    DispatchQueue.global(qos: .utility).async {
+      do {
+        let root = try self.withResolvedGrant(bindingId: bindingId) { url, _ in url }
+        guard root.startAccessingSecurityScopedResource() else {
+          throw FolderAccessError.permissionDenied
+        }
+        var context = FSEventStreamContext(
+          version: 0,
+          info: Unmanaged.passUnretained(self).toOpaque(),
+          retain: nil,
+          release: nil,
+          copyDescription: nil
+        )
+        // WatchRoot opens parent directories, which can block for provider-backed folders.
+        let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents)
+        guard let stream = FSEventStreamCreate(
+          kCFAllocatorDefault,
+          Self.fileSystemEventCallback,
+          &context,
+          [root.path] as CFArray,
+          FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+          0.75,
+          flags
+        ) else {
+          root.stopAccessingSecurityScopedResource()
+          throw FolderAccessError.providerUnavailable
+        }
+        FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+        guard FSEventStreamStart(stream) else {
+          FSEventStreamInvalidate(stream)
+          FSEventStreamRelease(stream)
+          root.stopAccessingSecurityScopedResource()
+          throw FolderAccessError.providerUnavailable
+        }
+        DispatchQueue.main.async {
+          guard self.watchRequest == request else {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            root.stopAccessingSecurityScopedResource()
+            return
+          }
+          self.watchedURL = root
+          self.eventStream = stream
+          // Close the gap between the initial inventory and attaching the watcher.
+          self.eventSink?(["changed": true])
+        }
+      } catch {
+        DispatchQueue.main.async {
+          guard self.watchRequest == request else { return }
+          self.eventSink?((error as? FolderAccessError ?? .transientIo).flutterError)
+          self.stopWatching()
+        }
       }
-      var context = FSEventStreamContext(
-        version: 0,
-        info: Unmanaged.passUnretained(self).toOpaque(),
-        retain: nil,
-        release: nil,
-        copyDescription: nil
-      )
-      let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot)
-      guard let stream = FSEventStreamCreate(
-        kCFAllocatorDefault,
-        Self.fileSystemEventCallback,
-        &context,
-        [root.path] as CFArray,
-        FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-        0.75,
-        flags
-      ) else {
-        root.stopAccessingSecurityScopedResource()
-        return FlutterError(code: "providerUnavailable", message: "Cannot start file watcher", details: nil)
-      }
-      eventSink = events
-      watchedBindingId = bindingId
-      watchedURL = root
-      eventStream = stream
-      FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
-      guard FSEventStreamStart(stream) else {
-        stopWatching()
-        return FlutterError(code: "providerUnavailable", message: "Cannot start file watcher", details: nil)
-      }
-      return nil
-    } catch let failure as FolderAccessError {
-      return failure.flutterError
-    } catch {
-      return FlutterError(code: "transientIo", message: error.localizedDescription, details: nil)
     }
+    return nil
   }
 
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
@@ -348,6 +374,7 @@ final class FolderAccessPlugin: NSObject, FlutterStreamHandler {
   }
 
   private func stopWatching() {
+    watchRequest = nil
     if let stream = eventStream {
       FSEventStreamStop(stream)
       FSEventStreamInvalidate(stream)
@@ -362,10 +389,10 @@ final class FolderAccessPlugin: NSObject, FlutterStreamHandler {
 
   private func bookmarkKey(_ bindingId: String) -> String { bookmarkPrefix + bindingId }
 
-  private static let fileSystemEventCallback: FSEventStreamCallback = { _, info, _, _, _, _ in
+  private static let fileSystemEventCallback: FSEventStreamCallback = { stream, info, _, _, _, _ in
     guard let info else { return }
     let plugin = Unmanaged<FolderAccessPlugin>.fromOpaque(info).takeUnretainedValue()
-    DispatchQueue.main.async { plugin.eventSink?(["changed": true]) }
+    if plugin.eventStream == stream { plugin.eventSink?(["changed": true]) }
   }
 
   private func mapFileError(_ error: Error) -> FolderAccessError {

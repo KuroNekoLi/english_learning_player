@@ -26,3 +26,12 @@
 - FSEvents 漏失時由啟動/手動重掃恢復；事件本身不當作完整增量日誌。
 - iOS/Android 只使用 unsupported gateway，沒有 folder picker/background scan。
 - ADR-007/008 納入 WP-11 adapter、資料保護、官方 API 及未驗證限制。
+
+## Stage 3 重驗
+
+新增 app-scope bookmark entitlement，保留 sandbox 及唯讀選取。還原授權時禁止系統互動或自動掛載。目錄走訪一旦回報錯誤就拒絕整份清單，避免下游誤判來源缺席。重新訂閱前會停止舊 watcher 並釋放其 scope。
+
+- PASS：Dart 格式、Flutter Analyze、Flutter Test（114 項）、macOS Release build。實際簽章含 sandbox、唯讀選取與 app-scope bookmark。
+- 初次真實授權後 App 卡在 FSEventStreamCreate 的 watch_all_parents。移除 WatchRoot 並在背景建立 watcher；取消或切換時釋放尚未交付的監看。修正後在 macOS 26.6 的 Release App 重開，成功還原使用者已授權的 bookmark，完整掃描顯示 178 個待下載項目。解除授權、退出再開後維持未授權。
+- BLOCKED：合成教材的原生變更事件、下載後 staging、外部撤權／搬移及發佈簽章未驗證。建置的簽章含 get-task-allow。
+- 依據：[Apple bookmark entitlement](https://developer.apple.com/documentation/professional-video-applications/enabling-security-scoped-bookmark-and-url-access)、[Apple 目錄列舉錯誤處理](https://developer.apple.com/documentation/foundation/nsfilemanager/enumeratoraturl%3Aincludingpropertiesforkeys%3Aoptions%3Aerrorhandler%3A)。
