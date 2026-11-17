@@ -259,6 +259,29 @@ void main() {
     );
   });
 
+  testWidgets('tapping a sentence exits its active loop and continues audio', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    audio.advanceTo(1800);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('單句循環'));
+    await tester.pumpAndSettle();
+    expect(audio.snapshot.currentLoop, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('activeSubtitleCard')));
+    await tester.pumpAndSettle();
+    expect(audio.snapshot.currentLoop, isNull);
+    expect(audio.snapshot.playing, isTrue);
+
+    audio.advanceTo(4000);
+    await tester.pumpAndSettle();
+    expect(audio.snapshot.positionMs, 4000);
+    expect(audio.snapshot.playing, isTrue);
+  });
+
   testWidgets('resumes confirmed canonical progress only on normal open', (
     tester,
   ) async {

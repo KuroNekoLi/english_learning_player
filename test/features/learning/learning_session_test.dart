@@ -158,6 +158,26 @@ void main() {
     );
 
     test(
+      'selecting the already-looping cue switches to one-pass playback',
+      () async {
+        await audio.seekTo(const Duration(milliseconds: 300));
+        await _flushPlaybackEvents();
+        expect(await session.setCueLoopEnabled(true), isTrue);
+        expect(audio.snapshot.currentLoop, isNotNull);
+
+        expect(await session.playCue('en-1'), isTrue);
+        expect(audio.snapshot.currentLoop, isNull);
+        expect(audio.snapshot.positionMs, 0);
+        expect(audio.snapshot.playing, isTrue);
+
+        audio.advanceTo(1200);
+        await _flushPlaybackEvents();
+        expect(audio.snapshot.playing, isTrue);
+        expect(session.state.currentCue?.id, 'en-2');
+      },
+    );
+
+    test(
       'does not control audio after it switches to another material',
       () async {
         await audio.load(

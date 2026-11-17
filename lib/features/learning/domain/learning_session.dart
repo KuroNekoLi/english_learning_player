@@ -248,13 +248,13 @@ final class LearningSession {
     if (range == null) return false;
 
     final isSameCue = _currentCue?.id == cue.id;
-    if (_audioEngine.snapshot.currentLoop != null &&
-        _audioEngine.snapshot.currentLoop != range) {
+    // Selecting a cue always means one-pass playback. Even when the selected
+    // cue is already the looped cue, clear that clip so playback can continue
+    // through the rest of the media after the sentence ends.
+    if (_audioEngine.snapshot.currentLoop != null) {
       await _audioEngine.setSentenceLoop(null);
+      _sessionLoopEnabled = false;
     }
-    _sessionLoopEnabled =
-        _audioEngine.snapshot.currentLoop?.startMs == range.startMs &&
-        _audioEngine.snapshot.currentLoop?.endMs == range.endMs;
     await _audioEngine.seekTo(Duration(milliseconds: range.startMs));
     await _audioEngine.play();
     if (_mode == LearningMode.intensive && !isSameCue) {
