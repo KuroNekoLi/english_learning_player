@@ -1,0 +1,520 @@
+import 'dart:io';
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:english_learning_player/core/db/account_database_service.dart';
+import 'package:english_learning_player/core/db/account_scope.dart';
+import 'package:english_learning_player/core/db/local_database.dart';
+import 'package:english_learning_player/core/files/app_media_store.dart';
+import 'package:english_learning_player/core/sync/progress_policy.dart';
+import 'package:english_learning_player/core/sync/sync_contracts.dart';
+import 'package:english_learning_player/features/library/data/sqlite_material_repository.dart';
+import 'package:english_learning_player/features/library/domain/audio_import_source.dart';
+import 'package:english_learning_player/features/library/services/audio_import_service.dart';
+import 'package:english_learning_player/features/progress/data/sqlite_progress_repository.dart';
+import 'package:english_learning_player/features/progress/domain/progress_models.dart';
+import 'package:english_learning_player/features/progress/services/playback_progress_recorder.dart';
+import 'package:english_learning_player/features/progress/services/progress_sync_coordinator.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../../fakes/fake_cloud_sync.dart';
+import '../../fakes/fake_progress_ledger.dart';
+
+void main() {
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  late Directory root;
+  late AccountDatabaseService storage;
+  late AccountScope scope;
+  late SqliteMaterialRepository materials;
+  late SqliteProgressRepository progress;
+  late LocalDatabase database;
+  late String materialId;
+  late FakeSyncIdentityProvider identity;
+  late FakeSyncConsentProvider consent;
+  late FakeProgressLedger ledger;
+  late DateTime now;
+
+  setUp(() async {
+    root = await Directory.systemTemp.createTemp('elp-wp09-');
+    storage = AccountDatabaseService(supportDirectory: root);
+    scope = AccountScope('progress-owner');
+    database = await storage.open(scope);
+    materials = SqliteMaterialRepository(scope: scope, database: database);
+    progress = SqliteProgressRepository(scope: scope, db: database);
+    materialId = await _importMaterial(storage, scope, materials);
+    identity = FakeSyncIdentityProvider(SyncIdentity(scope.ownerId));
+    consent = FakeSyncConsentProvider();
+    ledger = FakeProgressLedger();
+    now = DateTime.utc(2026, 11, 17, 8);
+  });
+
+  tearDown(() async {
+    await materials.close();
+    await root.delete(recursive: true);
+  });
+
+  ProgressStream stream({
+    String device = 'mac',
+    String session = 'session-1',
+  }) => (
+    ownerId: scope.ownerId,
+    materialId: materialId,
+    deviceId: device,
+    sessionId: session,
+  );
+
+  ProgressSyncCoordinator coordinator() => ProgressSyncCoordinator(
+    scope: scope,
+    repository: progress,
+    identityProvider: identity,
+    consentProvider: consent,
+    transport: ledger,
+    clock: () => now,
+    random: () => 0.5,
+  );
+
+  test(
+    'checkpoint and immutable progress outbox are written together',
+    () async {
+      final checkpoint = await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 15000,
+        state: CheckpointState.playing,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      expect(checkpoint.sequence, 1);
+      expect(checkpoint.baseRevision, 0);
+      final rows = await database
+          .customSelect(
+            "SELECT * FROM sync_outbox WHERE entity_type = 'progress'",
+          )
+          .get();
+      expect(rows, hasLength(1));
+      expect(rows.single.read<String>('operation'), 'writeProgress');
+      expect(rows.single.read<String>('state'), 'queued');
+      expect(rows.single.read<String>('payload_hash'), isNotEmpty);
+    },
+  );
+
+  test(
+    'coordinator commits canonical progress and sequence advances',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 180000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+      final canonical = await progress.canonical(materialId);
+      expect(canonical?.checkpoint.positionMs, 180000);
+      expect(canonical?.revision, 1);
+      final next = await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 1000,
+        state: CheckpointState.playing,
+        nowMs: now.add(const Duration(seconds: 1)).millisecondsSinceEpoch,
+      );
+      expect(next.sequence, 2);
+      expect(next.baseRevision, 1);
+    },
+  );
+
+  test(
+    'offline checkpoint becomes a candidate when canonical advanced',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 300000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      final remotePhone = ProgressCheckpoint(
+        stream: stream(device: 'iphone', session: 'phone-session'),
+        positionMs: 720000,
+        state: CheckpointState.paused,
+        sequence: 1,
+        baseRevision: 0,
+      );
+      await ledger.commit(
+        uid: scope.ownerId,
+        opId: 'phone-op',
+        payloadHash: 'hash-phone',
+        checkpoint: remotePhone,
+      );
+      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+      final canonical = await progress.canonical(materialId);
+      expect(canonical?.checkpoint.positionMs, 720000);
+      expect(canonical?.revision, 1);
+      final candidates = await progress.unresolvedCandidates(materialId);
+      expect(candidates, hasLength(1));
+      expect(candidates.single.checkpoint.positionMs, 300000);
+      expect(candidates.single.checkpoint.baseRevision, 0);
+    },
+  );
+
+  test(
+    'remote update is stored without any playback or seek dependency',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 1000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      await coordinator().runOne();
+      final remote = ProgressCheckpoint(
+        stream: stream(device: 'iphone', session: 'remote'),
+        positionMs: 900000,
+        state: CheckpointState.paused,
+        sequence: 1,
+        baseRevision: 1,
+      );
+      final result = await ledger.commit(
+        uid: scope.ownerId,
+        opId: 'remote-op',
+        payloadHash: 'remote-hash',
+        checkpoint: remote,
+      );
+      await progress.mergeRemoteCanonical(
+        checkpoint: remote,
+        revision: result.canonicalRevision,
+        nowMs: now.add(const Duration(seconds: 1)).millisecondsSinceEpoch,
+      );
+      expect(
+        (await progress.canonical(materialId))?.checkpoint.positionMs,
+        900000,
+      );
+    },
+  );
+
+  test(
+    'receipt replays the original result and rejects opId payload changes',
+    () async {
+      final checkpoint = ProgressCheckpoint(
+        stream: stream(),
+        positionMs: 10,
+        state: CheckpointState.paused,
+        sequence: 1,
+        baseRevision: 0,
+      );
+      final first = await ledger.commit(
+        uid: scope.ownerId,
+        opId: 'stable-op',
+        payloadHash: 'same',
+        checkpoint: checkpoint,
+      );
+      final replay = await ledger.commit(
+        uid: scope.ownerId,
+        opId: 'stable-op',
+        payloadHash: 'same',
+        checkpoint: checkpoint,
+      );
+      expect(replay, same(first));
+      expect(ledger.writes, 1);
+      await expectLater(
+        ledger.commit(
+          uid: scope.ownerId,
+          opId: 'stable-op',
+          payloadHash: 'different',
+          checkpoint: checkpoint,
+        ),
+        throwsStateError,
+      );
+    },
+  );
+
+  test(
+    'candidate choice is queued with observed revision and only confirmed remotely',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 300000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      final phone = ProgressCheckpoint(
+        stream: stream(device: 'iphone', session: 'phone-session'),
+        positionMs: 720000,
+        state: CheckpointState.paused,
+        sequence: 1,
+        baseRevision: 0,
+      );
+      await ledger.commit(
+        uid: scope.ownerId,
+        opId: 'phone-op-for-resolution',
+        payloadHash: 'phone-hash-for-resolution',
+        checkpoint: phone,
+      );
+      await coordinator().runOne();
+      final candidate = (await progress.unresolvedCandidates(
+        materialId,
+      )).single;
+      expect((await progress.canonical(materialId))?.revision, 1);
+
+      await progress.resolveCandidate(
+        candidateId: candidate.id,
+        observedCanonicalRevision: 1,
+        useCandidatePosition: true,
+        resolutionStream: stream(device: 'mac', session: 'resolution-session'),
+        nowMs: now.add(const Duration(seconds: 1)).millisecondsSinceEpoch,
+      );
+      final resolutionRow =
+          (await database
+                  .customSelect(
+                    "SELECT payload_json FROM sync_outbox WHERE entity_type = 'progress' AND operation = 'resolveProgress'",
+                  )
+                  .get())
+              .single;
+      final resolutionPayload =
+          jsonDecode(resolutionRow.read<String>('payload_json'))
+              as Map<String, dynamic>;
+      expect(resolutionPayload['resolveCandidateId'], candidate.id);
+      expect(resolutionPayload['observedCanonicalRevision'], 1);
+      expect(resolutionPayload['positionMs'], 300000);
+      expect(
+        (await progress.canonical(materialId))?.checkpoint.positionMs,
+        720000,
+      );
+      expect(await progress.unresolvedCandidates(materialId), hasLength(1));
+
+      now = now.add(const Duration(seconds: 2));
+      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+      expect(
+        (await progress.canonical(materialId))?.checkpoint.positionMs,
+        300000,
+      );
+      expect((await progress.canonical(materialId))?.revision, 2);
+      expect(await progress.unresolvedCandidates(materialId), isEmpty);
+    },
+  );
+
+  test('authentication and consent gates leave checkpoint queued', () async {
+    await progress.recordCheckpoint(
+      stream: stream(),
+      positionMs: 2,
+      state: CheckpointState.paused,
+      nowMs: now.millisecondsSinceEpoch,
+    );
+    identity.identity = null;
+    expect(
+      await coordinator().runOne(),
+      ProgressSyncRunResult.waitingForAuthentication,
+    );
+    consent.enabled = false;
+    identity.identity = SyncIdentity(scope.ownerId);
+    expect(
+      await coordinator().runOne(),
+      ProgressSyncRunResult.waitingForConsent,
+    );
+    final row =
+        (await database
+                .customSelect(
+                  "SELECT state FROM sync_outbox WHERE entity_type = 'progress'",
+                )
+                .get())
+            .single;
+    expect(row.read<String>('state'), 'queued');
+    expect(ledger.writes, 0);
+  });
+
+  test(
+    'transient failure retries with same operation and needs attention at limit',
+    () async {
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 2,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      final failingTransport = _FailingProgressTransport(ledger);
+      final retrying = ProgressSyncCoordinator(
+        scope: scope,
+        repository: progress,
+        identityProvider: identity,
+        consentProvider: consent,
+        transport: failingTransport,
+        clock: () => now,
+        random: () => 0.5,
+      );
+      for (var attempt = 1; attempt <= 8; attempt++) {
+        failingTransport.failure = const SyncFailure(
+          SyncFailureKind.transient,
+          'offline',
+        );
+        expect(
+          await retrying.runOne(),
+          attempt == 8
+              ? ProgressSyncRunResult.needsAttention
+              : ProgressSyncRunResult.retryScheduled,
+        );
+        now = now.add(const Duration(minutes: 2));
+      }
+      final row =
+          (await database
+                  .customSelect(
+                    "SELECT attempts, state FROM sync_outbox WHERE entity_type = 'progress'",
+                  )
+                  .get())
+              .single;
+      expect(row.read<int>('attempts'), 8);
+      expect(row.read<String>('state'), 'needsAttention');
+      final opId =
+          (await database
+                  .customSelect(
+                    "SELECT op_id FROM sync_outbox WHERE entity_type = 'progress'",
+                  )
+                  .get())
+              .single
+              .read<String>('op_id');
+      failingTransport.failure = null;
+      await progress.retryNeedsAttention(opId, now);
+      expect(await retrying.runOne(), ProgressSyncRunResult.committed);
+      final completed =
+          (await database
+                  .customSelect(
+                    "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
+                  )
+                  .get())
+              .single;
+      expect(completed.read<String>('op_id'), opId);
+      expect(completed.read<String>('state'), 'completed');
+    },
+  );
+
+  test(
+    'checkpoint data survives database reopen and account scope is isolated',
+    () async {
+      final deviceId = await progress.deviceId();
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 12345,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      await materials.close();
+      database = await storage.open(scope);
+      materials = SqliteMaterialRepository(scope: scope, database: database);
+      progress = SqliteProgressRepository(scope: scope, db: database);
+      expect(await progress.deviceId(), deviceId);
+      expect((await progress.claimNext(now))?.checkpoint.positionMs, 12345);
+      final other = AccountScope('other-progress-owner');
+      final otherDb = await storage.open(other);
+      final otherMaterials = SqliteMaterialRepository(
+        scope: other,
+        database: otherDb,
+      );
+      final otherProgress = SqliteProgressRepository(scope: other, db: otherDb);
+      await _importMaterial(storage, other, otherMaterials);
+      expect(await otherProgress.deviceId(), isNot(deviceId));
+      expect(await otherProgress.canonical(materialId), isNull);
+      expect(await otherProgress.claimNext(now), isNull);
+      await otherMaterials.close();
+    },
+  );
+
+  test(
+    'schema v4 upgrade creates progress tables without losing materials',
+    () async {
+      final db = database;
+      await db.customStatement('DROP TABLE progress_conflicts');
+      await db.customStatement('DROP TABLE progress_stream_state');
+      await db.customStatement('DROP TABLE playback_progress');
+      await db.customStatement('DROP INDEX IF EXISTS progress_conflicts_open');
+      await db.customStatement('DROP INDEX IF EXISTS progress_outbox_due');
+      await db.customStatement('PRAGMA user_version = 4');
+      await materials.close();
+      final upgraded = await storage.open(scope);
+      materials = SqliteMaterialRepository(scope: scope, database: upgraded);
+      database = upgraded;
+      progress = SqliteProgressRepository(scope: scope, db: upgraded);
+      expect((await materials.listMaterials()).single.id, materialId);
+      await progress.recordCheckpoint(
+        stream: stream(),
+        positionMs: 20,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      expect(await progress.claimNext(now), isNotNull);
+    },
+  );
+
+  test(
+    'recorder checkpoints every 15 seconds and on seek, pause and exit',
+    () async {
+      var clock = now;
+      final recorder = PlaybackProgressRecorder(
+        repository: progress,
+        stream: stream(),
+        clock: () => clock,
+      );
+      await recorder.onPlaybackSnapshot(positionMs: 1000, playing: true);
+      clock = clock.add(const Duration(seconds: 5));
+      await recorder.onPlaybackSnapshot(positionMs: 6000, playing: true);
+      clock = clock.add(const Duration(seconds: 10));
+      await recorder.onPlaybackSnapshot(positionMs: 16000, playing: true);
+      await recorder.onSeekCompleted(40000, playing: true);
+      await recorder.onPauseCompleted();
+      await recorder.onLifecycleExit();
+      final rows = await database
+          .customSelect(
+            "SELECT payload_json FROM sync_outbox WHERE entity_type = 'progress' ORDER BY created_at_ms, op_id",
+          )
+          .get();
+      expect(rows, hasLength(5));
+      expect(
+        rows.map((row) => row.read<String>('payload_json')),
+        anyElement(
+          allOf(contains('"positionMs":40000'), contains('"state":"paused"')),
+        ),
+      );
+    },
+  );
+}
+
+Future<String> _importMaterial(
+  AccountDatabaseService storage,
+  AccountScope scope,
+  SqliteMaterialRepository materials,
+) async {
+  final importer = AudioImportService(
+    repository: materials,
+    mediaStore: AppMediaStore(storage: storage, scope: scope),
+  );
+  final result = await importer.importAudio(
+    AudioImportSource(
+      sourceKey: 'progress-fixture',
+      name: 'progress.mp3',
+      openRead: () async* {
+        yield [1, 2, 3, 4];
+      },
+    ),
+  );
+  return result.material.id;
+}
+
+final class _FailingProgressTransport implements ProgressSyncTransport {
+  _FailingProgressTransport(this.delegate);
+
+  final ProgressSyncTransport delegate;
+  SyncFailure? failure;
+
+  @override
+  Future<ProgressCommitResult> commit({
+    required String uid,
+    required String opId,
+    required String payloadHash,
+    required ProgressCheckpoint checkpoint,
+    ProgressResolution? resolution,
+  }) {
+    final error = failure;
+    if (error != null) throw error;
+    return delegate.commit(
+      uid: uid,
+      opId: opId,
+      payloadHash: payloadHash,
+      checkpoint: checkpoint,
+      resolution: resolution,
+    );
+  }
+}

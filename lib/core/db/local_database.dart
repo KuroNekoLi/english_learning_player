@@ -10,7 +10,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -68,6 +68,7 @@ class LocalDatabase extends GeneratedDatabase {
       await _createSubtitleSchema();
       await _createBookmarkSchema();
       await _createSyncSchema();
+      await _createProgressSchema();
     },
     onUpgrade: (migrator, from, to) async {
       if (from < 2) await _createSubtitleSchema();
@@ -76,6 +77,7 @@ class LocalDatabase extends GeneratedDatabase {
         await _createSyncSchema();
         await _backfillMaterialSyncOperations();
       }
+      if (from < 5) await _createProgressSchema();
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -206,6 +208,70 @@ class LocalDatabase extends GeneratedDatabase {
         FOREIGN KEY (owner_id, material_id)
           REFERENCES materials (owner_id, id) ON DELETE CASCADE
       )
+    ''');
+  }
+
+  Future<void> _createProgressSchema() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS progress_device_identity (
+        owner_id TEXT NOT NULL PRIMARY KEY,
+        device_id TEXT NOT NULL UNIQUE
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS playback_progress (
+        owner_id TEXT NOT NULL,
+        material_id TEXT NOT NULL,
+        position_ms INTEGER NOT NULL CHECK (position_ms >= 0),
+        state TEXT NOT NULL CHECK (state IN ('playing', 'paused', 'stopped', 'completed')),
+        device_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        revision INTEGER NOT NULL CHECK (revision >= 0),
+        updated_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (owner_id, material_id),
+        FOREIGN KEY (owner_id, material_id)
+          REFERENCES materials (owner_id, id) ON DELETE CASCADE
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS progress_stream_state (
+        owner_id TEXT NOT NULL,
+        material_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        next_sequence INTEGER NOT NULL CHECK (next_sequence > 0),
+        confirmed_revision INTEGER NOT NULL CHECK (confirmed_revision >= 0),
+        PRIMARY KEY (owner_id, material_id, device_id, session_id),
+        FOREIGN KEY (owner_id, material_id)
+          REFERENCES materials (owner_id, id) ON DELETE CASCADE
+      )
+    ''');
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS progress_conflicts (
+        owner_id TEXT NOT NULL,
+        candidate_id TEXT NOT NULL,
+        material_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        base_revision INTEGER NOT NULL CHECK (base_revision >= 0),
+        position_ms INTEGER NOT NULL CHECK (position_ms >= 0),
+        state TEXT NOT NULL CHECK (state IN ('playing', 'paused', 'stopped', 'completed')),
+        created_at_ms INTEGER NOT NULL,
+        resolved_at_ms INTEGER,
+        PRIMARY KEY (owner_id, candidate_id),
+        FOREIGN KEY (owner_id, material_id)
+          REFERENCES materials (owner_id, id) ON DELETE CASCADE
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS progress_conflicts_open
+      ON progress_conflicts (owner_id, material_id, resolved_at_ms)
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS progress_outbox_due
+      ON sync_outbox (owner_id, entity_type, state, next_retry_at_ms, created_at_ms)
     ''');
   }
 

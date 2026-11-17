@@ -88,6 +88,7 @@ final class SqliteSyncOutbox implements SyncOutbox {
         SELECT op_id, entity_id, payload_json, payload_hash, attempts
         FROM sync_outbox
         WHERE owner_id = ?
+          AND entity_type = 'material'
           AND next_retry_at_ms <= ?
           AND (state = 'queued' OR (state = 'leased' AND lease_until_ms <= ?))
         ORDER BY created_at_ms, op_id LIMIT 1

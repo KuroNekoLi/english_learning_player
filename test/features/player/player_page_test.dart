@@ -1,5 +1,7 @@
 import 'package:english_learning_player/core/audio/audio_engine_provider.dart';
 import 'package:english_learning_player/core/audio/audio_engine.dart';
+import 'package:english_learning_player/core/sync/progress_policy.dart';
+import 'package:english_learning_player/features/progress/domain/progress_models.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/player/player_dependencies.dart';
 import 'package:english_learning_player/features/player/player_page.dart';
@@ -9,12 +11,14 @@ import 'package:english_learning_player/features/subtitles/domain/subtitle_model
 import 'package:english_learning_player/features/bookmarks/bookmarks_page.dart';
 import 'package:english_learning_player/features/bookmarks/domain/bookmark.dart';
 import 'package:english_learning_player/features/library/library_view_model.dart';
+import 'package:english_learning_player/features/progress/progress_dependencies.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../fakes/fake_audio_engine.dart';
 import '../../fakes/fake_bookmark_repository.dart';
+import '../../fakes/fake_progress_repository.dart';
 
 void main() {
   late LearningMaterial material;
@@ -22,6 +26,7 @@ void main() {
   late List<SubtitleTrack> tracks;
   late FakeAudioEngine audio;
   late FakeBookmarkRepository bookmarks;
+  late FakeProgressRepository progress;
   late Widget Function({TextScaler textScaler}) buildApp;
 
   setUp(() {
@@ -67,11 +72,13 @@ void main() {
     ];
     audio = FakeAudioEngine({mediaUri: 60_000});
     bookmarks = FakeBookmarkRepository();
+    progress = FakeProgressRepository();
     buildApp = ({TextScaler textScaler = TextScaler.noScaling}) =>
         ProviderScope(
           overrides: [
             audioEngineProvider.overrideWithValue(audio),
             bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
+            progressRepositoryProvider.overrideWith((ref) async => progress),
             materialPlaybackLoaderProvider.overrideWith(
               (ref) async => _FixedLoader(
                 MaterialPlaybackBundle(
@@ -134,6 +141,53 @@ void main() {
     expect(audio.seekCalls, 1);
     expect(audio.playCalls, 1);
     expect(audio.snapshot.positionMs, 1000);
+    expect(
+      progress.checkpoints.any((checkpoint) => checkpoint.positionMs == 1000),
+      isTrue,
+    );
+  });
+
+  testWidgets('resumes confirmed canonical progress only on normal open', (
+    tester,
+  ) async {
+    progress.savedCanonical = CanonicalProgress(
+      checkpoint: ProgressCheckpoint(
+        stream: (
+          ownerId: material.ownerId,
+          materialId: material.id,
+          deviceId: 'other-device',
+          sessionId: 'previous-session',
+        ),
+        positionMs: 12000,
+        state: CheckpointState.paused,
+        sequence: 4,
+        baseRevision: 7,
+      ),
+      revision: 7,
+    );
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    expect(audio.snapshot.positionMs, 12000);
+    expect(audio.seekCalls, 1);
+    await progress.mergeRemoteCanonical(
+      checkpoint: ProgressCheckpoint(
+        stream: (
+          ownerId: material.ownerId,
+          materialId: material.id,
+          deviceId: 'remote-device',
+          sessionId: 'remote-session',
+        ),
+        positionMs: 25000,
+        state: CheckpointState.paused,
+        sequence: 1,
+        baseRevision: 8,
+      ),
+      revision: 8,
+      nowMs: DateTime.utc(2026).millisecondsSinceEpoch,
+    );
+    await tester.pump();
+    expect(audio.snapshot.positionMs, 12000);
+    expect(audio.seekCalls, 1);
   });
 
   testWidgets('changing subtitle visibility preserves playback position', (
@@ -214,6 +268,7 @@ void main() {
         overrides: [
           audioEngineProvider.overrideWithValue(audio),
           bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
+          progressRepositoryProvider.overrideWith((ref) async => progress),
           materialRepositoryProvider.overrideWith((ref) async => library),
           materialPlaybackLoaderProvider.overrideWith(
             (ref) async => _FixedLoader(
@@ -233,8 +288,11 @@ void main() {
     expect(find.text(material.title), findsOneWidget);
 
     await tester.tap(find.text('A sentence to learn.'));
-    await tester.pumpAndSettle();
+    for (var frame = 0; frame < 10 && audio.seekCalls == 0; frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
+    expect(find.text('無法開啟教材'), findsNothing);
     expect(audio.seekCalls, 1);
     expect(audio.playCalls, 1);
     expect(audio.snapshot.positionMs, 3000);

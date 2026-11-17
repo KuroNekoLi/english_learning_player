@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/audio/audio_engine.dart';
 import '../../core/audio/audio_engine_provider.dart';
+import '../../core/sync/progress_policy.dart';
 import '../../features/learning/domain/learning_session.dart';
 import '../../features/learning/learning_session_provider.dart';
 import '../../features/bookmarks/bookmark_dependencies.dart';
@@ -13,6 +14,8 @@ import '../../features/bookmarks/domain/bookmark.dart';
 import '../../features/bookmarks/domain/bookmark_resolver.dart';
 import '../library/library_view_model.dart';
 import '../library/material_repository.dart';
+import '../progress/progress_dependencies.dart';
+import '../progress/services/playback_progress_recorder.dart';
 import '../subtitles/domain/subtitle_models.dart';
 import 'player_dependencies.dart';
 import 'services/material_playback_loader.dart';
@@ -75,6 +78,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   MaterialPlaybackBundle? _bundle;
   StreamSubscription<PlaybackSnapshot>? _playbackSubscription;
   StreamSubscription<LearningSessionState>? _learningSubscription;
+  PlaybackProgressRecorder? _progressRecorder;
   SubtitleVisibility _normalVisibility = SubtitleVisibility.bilingual;
   int _openGeneration = 0;
   bool _disposed = false;
@@ -96,7 +100,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       status: PlayerLoadStatus.loading,
       material: material,
     );
-    await _releaseSession();
+    await _releaseSession(finalProgressState: CheckpointState.stopped);
     try {
       final loader = await ref.read(materialPlaybackLoaderProvider.future);
       final bundle = await loader.load(material);
@@ -104,10 +108,30 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       _bundle = bundle;
       await _audioEngine.load(bundle.source);
       if (generation != _openGeneration) return;
+      final progressRepository = await ref.read(
+        progressRepositoryProvider.future,
+      );
+      if (initialCueId == null) {
+        final savedProgress = await progressRepository.canonical(material.id);
+        final positionMs = savedProgress?.checkpoint.positionMs ?? 0;
+        if (positionMs > 0) {
+          await _audioEngine.seekTo(Duration(milliseconds: positionMs));
+        }
+      }
       await _loadBookmarkAnchors(material.id, bundle.subtitleTracks);
       if (generation != _openGeneration) return;
       await _createSession();
       if (generation != _openGeneration) return;
+      _progressRecorder = PlaybackProgressRecorder(
+        repository: progressRepository,
+        stream: (
+          ownerId: material.ownerId,
+          materialId: material.id,
+          deviceId: await progressRepository.deviceId(),
+          sessionId: const Uuid().v4(),
+        ),
+        clock: DateTime.now,
+      );
       _playbackSubscription = _audioEngine.snapshots.listen(
         (snapshot) => _updatePlayback(snapshot, generation),
       );
@@ -149,14 +173,25 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   Future<void> togglePlayback() async {
     final playback = state.playback;
     if (!state.isReady || playback == null) return;
+    if (playback.playing) {
+      await _runAudioCommand(_audioEngine.pause, persistProgress: true);
+    } else {
+      await _runAudioCommand(_audioEngine.play);
+    }
+  }
+
+  Future<void> seekTo(int positionMs) async {
     await _runAudioCommand(
-      playback.playing ? _audioEngine.pause : _audioEngine.play,
+      () => _audioEngine.seekTo(Duration(milliseconds: positionMs)),
+      persistProgress: true,
     );
   }
 
-  Future<void> seekTo(int positionMs) => _runAudioCommand(
-    () => _audioEngine.seekTo(Duration(milliseconds: positionMs)),
-  );
+  Future<void> onLifecycleExit() async {
+    await _progressRecorder?.onLifecycleExit(
+      positionMs: _audioEngine.snapshot.positionMs,
+    );
+  }
 
   Future<void> setSpeed(double speed) =>
       _runAudioCommand(() => _audioEngine.setSpeed(speed));
@@ -164,21 +199,24 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   Future<void> replay() async {
     final session = _session;
     if (session != null) {
-      await _runAudioCommand(session.replay);
+      await _runAudioCommand(session.replay, persistProgress: true);
     }
   }
 
   Future<void> playCue(String cueId) async {
     final session = _session;
     if (session != null) {
-      await _runAudioCommand(() => session.playCue(cueId));
+      await _runAudioCommand(
+        () => session.playCue(cueId),
+        persistProgress: true,
+      );
     }
   }
 
   Future<void> nextCue() async {
     final session = _session;
     if (session != null) {
-      await _runAudioCommand(session.nextCue);
+      await _runAudioCommand(session.nextCue, persistProgress: true);
     }
   }
 
@@ -327,6 +365,17 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
 
   void _updatePlayback(PlaybackSnapshot snapshot, int generation) {
     if (_disposed || generation != _openGeneration) return;
+    final recorder = _progressRecorder;
+    if (recorder != null) {
+      unawaited(
+        recorder
+            .onPlaybackSnapshot(
+              positionMs: snapshot.positionMs,
+              playing: snapshot.playing,
+            )
+            .catchError((Object _) {}),
+      );
+    }
     state = state.copyWith(playback: snapshot, clearError: true);
   }
 
@@ -382,19 +431,34 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     );
   }
 
-  Future<void> _runAudioCommand(Future<void> Function() command) async {
+  Future<void> _runAudioCommand(
+    Future<void> Function() command, {
+    bool persistProgress = false,
+  }) async {
     if (!state.isReady) return;
     try {
       await command();
       state = state.copyWith(playback: _audioEngine.snapshot, clearError: true);
+      if (persistProgress) {
+        final snapshot = _audioEngine.snapshot;
+        await _progressRecorder?.onSeekCompleted(
+          snapshot.positionMs,
+          playing: snapshot.playing,
+        );
+      }
     } catch (_) {
       state = state.copyWith(errorMessage: '播放操作失敗，請重試。');
     }
   }
 
-  Future<void> _releaseSession() async {
+  Future<void> _releaseSession({
+    CheckpointState finalProgressState = CheckpointState.paused,
+  }) async {
+    final recorder = _progressRecorder;
+    _progressRecorder = null;
     await _playbackSubscription?.cancel();
     _playbackSubscription = null;
+    await recorder?.dispose(finalState: finalProgressState);
     await _releaseLearningSession();
     _bundle = null;
   }
@@ -410,7 +474,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   Future<void> _disposeResources() async {
     _disposed = true;
     _openGeneration++;
-    await _releaseSession();
+    await _releaseSession(finalProgressState: CheckpointState.paused);
   }
 
   void _ensureUsable() {

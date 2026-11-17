@@ -32,6 +32,7 @@
 | ADR-024 | ACCEPTED | WP-06 一般字幕模式為 session 呈現狀態；字幕軌/offset 透過 repository 持久化 | 視窗測試證明切換不 Seek，播放進度保持；詳見 WP-06 handoff |
 | ADR-025 | ACCEPTED | WP-07 本機書籤保存不可變 cue anchor snapshot；字幕變更依文字與時間重定位，無唯一匹配時保留未定位 | WP-07 SQLite v2→v3 migration、重開 DB、subtitle revision relocation、ambiguous 與 account isolation tests |
 | ADR-026 | PROPOSED | WP-08 以 profile-scoped SQLite outbox + 注入式 Auth/Cloud transport；demo Firebase Emulator 驗證 Rules | 本機 transaction、fake transport 與三組 Emulator Rules 測試通過；FlutterFire 正式接線受 ADR-010/011/017/018 阻擋，SHA-256 read-back 成本未核定 |
+| ADR-027 | ACCEPTED | WP-09 本機 canonical/checkpoint/conflict 與進度 outbox 落 SQLite；雲端交易僅經 ProgressSyncTransport；播放器只在開啟時恢復已確認位置 | SQLite v4→v5 migration、fake receipt/revision/sequence/衝突測試、Player Widget 測試；真實 Firestore transaction 與 Emulator 進度規則仍待 FlutterFire/雲端前置條件 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -111,6 +112,17 @@
 2. 提交時先讀 opId receipt，重送回傳既有結果。交易內讀取該 session 的 sequence high-water 與 canonical。sequence 已見過或較舊就忽略。baseRevision 等於 canonical 才接受並遞增 revision。否則保留該 session 最新候選及原 baseRevision。交易同時寫入結果 receipt、高水位與適用的 canonical／候選，避免併發與回覆遺失造成重複效果。
 3. 離線 checkpoint 留在本機，候選確認後 outbox 可完成，候選仍可供使用者選擇。若使用者選定候選或保留目前位置，用畫面當時的 canonical revision 和候選識別提交明確的解決操作，交易檢查兩者仍有效後更新 canonical 並標記已解決的候選。任一版本已改變則重新呈現，保留其他候選。後續本機 checkpoint 可以承接同 session 自己剛確認的寫入；只可在產生新未送出操作時使用該 revision，不能借用別台裝置的新版本覆蓋衝突。
 4. 裝置時鐘與播放位置大小都不能決定勝負，倒帶也能合法接受。進度的 server timestamp 用於呈現，遠端更新只影響下次開啟／明確續播選擇。依據：[時序測試](../test/unit/progress_policy_test.dart)、[Firestore 交易隔離](https://firebase.google.com/docs/firestore/transaction-data-contention)。WP-09／13 尚需驗證 receipt 重送、兩裝置併發、切帳號與播放中的 Seek 隔離。
+
+### ADR-027 — WP-09 進度持久化與播放器邊界
+狀態：ACCEPTED（本機與 adapter 契約）；OPEN（正式 Firebase transaction）
+
+- Drift schema 升至 v5，`playback_progress` 保存 owner/material 的本機 canonical；`progress_stream_state` 保存 device/session 下次 sequence 與該 session 自己確認的 revision；`progress_conflicts` 保存尚未解決候選；`progress_device_identity` 保存 profile-scoped 安裝 ID。新增表均帶 owner/material 外鍵，v4→v5 不修改教材或既有 material outbox。
+- 進度操作共用 `sync_outbox` 冪等欄位，但以 `entity_type='progress'` 和 `writeProgress`／`resolveProgress` operation 分類。舊 WP-08 `SqliteSyncOutbox.claimNext` 明確只領取 `material`，避免進度 payload 進入媒體上傳 coordinator。payload 是版本化 JSON，保存 owner/material/device/session、position/state/sequence/baseRevision；媒體路徑不在進度文件。
+- PlayerViewModel 將 AudioEngine snapshot 轉成純 Dart recorder 事件：本機週期 checkpoint 為 15 秒，並在 pause、seek 完成、教材切換與 ViewModel dispose 記錄。每次播放器開啟建立新 session；device ID 在 profile DB 持久化。正常開啟使用已合併的本機 canonical 位置；`initialCueId` 明確導航優先。遠端 snapshot merge 只改 repository，沒有播放器 seek callback，因此活動播放不會被遠端進度跳轉。
+- 衝突候選選擇先原子建立 immutable `resolveProgress` outbox，payload 帶 `candidateId`、觀察到的 canonical revision 與選擇；本機 canonical/candidate 只有收到交易成功後才更新。過期 revision 的交易回覆須回傳當下 canonical 並保留候選，UI 重新載入後再選。舊的同 opId receipt 必須回傳同結果；相同 opId 不可用不同 hash。
+- 本 WP 的 `ProgressSyncTransport` 是正式交易 adapter 契約；測試 fake 模擬 receipt、session high-water、revision 和 candidate 規則，不代表 Firebase 驗證。FlutterFire 正式 Apple/Core 設定仍受 ADR-005/010/011/017/018 阻擋，故真實 Firestore transactions、Rules 和兩實機競態列 BLOCKED，交由 WP-13/14 完成。
+- 重試沿用 ADR-009 的 1 秒起始、指數 cap 60 秒及 `[cap/2, cap]` jitter；8 次暫時錯誤後 `needsAttention`，同 opId 重試。無同 UID 身分時等待認證；同步未同意時不 claim/outbox 不變。權限錯誤進 `needsAttention`。
+- 驗證：`test/features/progress/progress_sync_test.dart` 覆蓋 11 項 local/fake transaction 邊界；`test/features/player/player_page_test.dart` 覆蓋 canonical resume 與 cue seek checkpoint。正式跨裝置交錯與 Firestore atomicity 尚無實際服務證據。
 
 ### ADR-024 — WP-06 播放器 UI 狀態與資料存取邊界
 狀態：ACCEPTED（WP-06 實作選擇）

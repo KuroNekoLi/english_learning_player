@@ -27,6 +27,8 @@
 
 每筆 checkpoint 保存上次確認的 canonical revision。提交交易先查 opId receipt、再檢查該 session 的 sequence 及 baseRevision，版本不同時保留候選。純 Dart 規則已有測試，交易、Rules 與兩裝置整合由 WP-08／09／13 驗證。見 [ADR-012](12-decisions-and-risks.md)。
 
+WP-09 的本機實作以 `ProgressRepository` 原子保存 checkpoint 與 `sync_outbox`。上層透過 `ProgressSyncTransport` 將穩定 opId/hash、checkpoint 和可選的 candidate resolution 送入伺服器交易；只有交易回覆後才更新本機 canonical 或標記候選已解決。PlayerViewModel 在正常教材開啟時讀取已確認 canonical；播放器執行中只合併資料，不將遠端 snapshot 回送為 seek 命令。正式 Firestore adapter/Rules 尚未接線，fake transaction 僅驗證契約。
+
 預設每 15 秒寫本地 checkpoint 並排隊；暫停、seek 完成、切教材與生命周期退出寫 checkpoint。是否每 15 秒上傳遠端取決於前景/電量/成本；應合併 outbox 同實體連續進度。不要無限制每幀寫 Firestore。
 
 ## 4. 使用者與資料安全
