@@ -72,3 +72,5 @@ app.*.map.json
 
 /firebase-functions/node_modules/
 /firebase-functions/.env*
+
+**/SocialSignIn.local.xcconfig

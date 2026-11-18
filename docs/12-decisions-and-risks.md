@@ -14,7 +14,7 @@
 | ADR-007 | ACCEPTED | macOS 自選來源採唯讀授權 | grant 留在裝置，原始檔不經 app 寫入；sandbox 實測留 WP-11 |
 | ADR-008 | ACCEPTED | Mac 是 MVP 自動 iCloud 入口，iOS 直接 folder scan 延後 | 產品範圍 §4 與 folder 規格 §3 |
 | ADR-009 | ACCEPTED | SQLite 原子寫入與 durable outbox；先驗證 blob 再發佈 metadata | 依同步規格與 Firestore 交易限制；重試與部分失敗規則見下方 |
-| ADR-010 | OPEN | Auth providers（Google/Apple/Email） | 需看 App Store 登入規則與使用者偏好 |
+| ADR-010 | ACCEPTED（登入方式）／OPEN（正式環境驗收） | Google 與 Apple 透過 Firebase Auth 登入；Email／Password 保留供測試 | 依 WP-14 [登入補件](agent/wp-14-social-sign-in.md) 驗收平台設定、Firebase UID 及實機登入 |
 | ADR-011 | OPEN | Firebase 所有權、費率預算、最大單檔限制 | 不能擅自建立付費資源 |
 | ADR-012 | ACCEPTED | 以 canonical revision 和 session sequence 判斷進度寫入；落後版本保留候選 | 純 Dart 時序已測；伺服器交易及規則由 WP-08／09／13 驗證 |
 | ADR-013 | ACCEPTED | WP-10 使用 `audio_service` 0.18.19 將 AudioEngine 狀態與系統媒體控制橋接；macOS 支援範圍限官方列出的 Now Playing/Control Center，不宣稱鎖定畫面控制 | Android/iOS 使用原生背景媒體服務配置；Android 暫停時維持 foreground service 以符合 Android 12+ 背景限制；平台 build 已核驗，真機控制列 smoke 尚待具備裝置 |
@@ -43,6 +43,11 @@
 - Riverpod 以 exact pin 與 lockfile 隨 bootstrap 交付。Drift、just_audio、FlutterFire 只在獨立 Spike 解析；個別模組在接線時再加入依賴。單頁先用 MaterialApp。版本、授權、實測與重跑步驟見 [WP-00／01 交棒](agent/wp-00-01-handoff.md)。
 - Firebase Auth／Firestore／Storage 的 macOS 支援表列為 beta。正式 Storage 要 Blaze；即使有免費配額也須先核准專案、預算、單檔上限及區域。驗證先用本機 Emulator 與合成資料。本機 Auth Emulator 匿名登入在目前 debug app 的 Keychain 保存失敗（`SecItemAdd -34018`）。登入方式、具 Keychain Sharing 的有效簽章與帳號切換仍待驗。依據：[FlutterFire 平台表](https://firebase.google.com/docs/flutter/setup)、[Storage 計費要求](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024)。
 - CocoaPods Spike 的 FlutterFire core 5.1.0 固定 Apple SDK 12.19.3。官方已在 2026 年 10 月停止以 CocoaPods 發佈新 Firebase 版本。正式方案需驗證 Flutter 3.32.2 的 SwiftPM 整合及三平台最低 OS；若須升級，另審 SDK、原生目標與回歸範圍。[Apple SDK 套件管理遷移](https://firebase.google.com/docs/ios/cocoapods-deprecation)。
+
+### ADR-010 — Google／Apple 登入補件
+
+- 依使用者指示採用 Google 與 Apple 作為 Firebase Auth 登入方式。Firebase UID 維持本機與雲端帳號邊界。App 依 Firebase 回傳的 UID 開啟教材庫；以 Email 合併本機資料或新增帳號連結入口需另行決策。
+- Google 與 Apple 原生 Apple 平台維持 REST 憑據交換，Apple 使用隨機 nonce。Android Apple 採 Firebase SDK OAuth，由建置選項開啟，該建置最低 API 23。Google 外掛將 macOS 最低版本調至 10.15。平台配置與實機驗收見 [登入補件](agent/wp-14-social-sign-in.md)。
 
 ### ADR-007／008 — Mac 資料夾權限
 

@@ -1,5 +1,7 @@
 # WP-14 Firebase 同步交棒
 
+後續 Google／Apple 登入已另列 [WP-14 登入補件](wp-14-social-sign-in.md)。下文保留原始 Emulator 驗收紀錄。
+
 App 的教材庫在建置啟用 Firebase 時顯示同步入口。可用已存在的 Email/Password 測試帳號登入，手動同意同步後按「立即同步」，再選擇下載。登入後切到該 UID 的本機資料庫，同步同意及憑據只存在程式記憶體。原先離線空間由登出入口返回。
 
 ## 同步內容

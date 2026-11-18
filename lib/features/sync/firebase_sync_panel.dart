@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/sync/sync_contracts.dart';
+import '../auth/account_sign_in_view.dart';
+import '../auth/social_sign_in.dart';
+import '../auth/test_email_sign_in_dialog.dart';
 import '../library/library_view_model.dart';
 import '../progress/domain/progress_models.dart';
 import 'firebase_sync_dependencies.dart';
@@ -20,7 +23,10 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
   List<CloudMaterialMetadata> _cloud = const [];
   Map<String, List<ProgressCandidate>> _conflicts = const {};
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<void> _run(
+    Future<void> Function() action, {
+    String fallbackMessage = '同步失敗，請稍後重試。',
+  }) async {
     if (_busy) return;
     setState(() {
       _busy = true;
@@ -32,14 +38,17 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
       if (!mounted) return;
       setState(() {
         _status = switch (error.kind) {
-          SyncFailureKind.unauthenticated => '登入失敗或已過期，請重新登入。',
+          SyncFailureKind.unauthenticated =>
+            error.code == 'sign_in_account_link_required'
+                ? '這個帳號已有其他登入方式，請使用原本的登入方式。'
+                : '登入失敗或已過期，請重新登入。',
           SyncFailureKind.permissionDenied => '沒有這項同步權限。',
           SyncFailureKind.transient => 'Firebase 暫時無法連線，請稍後重試。',
           SyncFailureKind.invalidData => '同步資料未通過驗證。',
         };
       });
     } catch (_) {
-      if (mounted) setState(() => _status = '同步失敗，請稍後重試。');
+      if (mounted) setState(() => _status = fallbackMessage);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -56,10 +65,10 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
     return runtime;
   }
 
-  Future<void> _signIn() async {
+  Future<void> _signInForTesting() async {
     final entered = await showDialog<({String email, String password})>(
       context: context,
-      builder: (_) => const _SignInDialog(),
+      builder: (_) => const TestEmailSignInDialog(),
     );
     if (entered == null || !mounted) return;
     await _run(
@@ -133,23 +142,46 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
   Widget build(BuildContext context) {
     final state = ref.watch(firebaseSessionProvider);
     final controller = ref.read(firebaseSessionProvider.notifier);
-    final local = ref.watch(libraryViewModelProvider).value;
+    final endpoint = ref.watch(firebaseEndpointProvider);
+    final platform = ref.watch(socialSignInProvider);
+    final canUseTestEmail =
+        endpoint != null &&
+        (endpoint.isEmulator ||
+            const bool.fromEnvironment('ELP_ENABLE_TEST_EMAIL_SIGN_IN'));
+    final local = _cloud.isEmpty
+        ? null
+        : ref.watch(libraryViewModelProvider).value;
     return PopScope(
       canPop: !_busy,
       child: Scaffold(
-        appBar: AppBar(title: const Text('Firebase 同步')),
+        appBar: AppBar(title: const Text('帳號與同步')),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             if (state.uid == null) ...[
-              const Text('登入會切換到該帳號的教材庫。原本的離線教材仍可在登出後使用。'),
-              FilledButton(
-                onPressed: _busy ? null : _signIn,
-                child: const Text('登入'),
+              AccountSignInView(
+                configuredProviders: {
+                  for (final provider in SocialProvider.values)
+                    if (platform?.isConfigured(provider) == true) provider,
+                },
+                busy: _busy,
+                onSignIn: (provider) => _run(
+                  () => controller.signInWithProvider(provider),
+                  fallbackMessage: '${provider.label} 登入失敗，請稍後重試。',
+                ),
+                onTestEmailSignIn: canUseTestEmail ? _signInForTesting : null,
               ),
             ] else ...[
               OutlinedButton(
-                onPressed: _busy ? null : controller.signOut,
+                onPressed: _busy
+                    ? null
+                    : () => _run(() async {
+                        setState(() {
+                          _cloud = const [];
+                          _conflicts = const {};
+                        });
+                        await controller.signOut();
+                      }),
                 child: const Text('登出'),
               ),
               SwitchListTile(
@@ -168,7 +200,8 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
               ),
             ],
             if (_busy) const LinearProgressIndicator(),
-            if (_status case final message?) Text(message),
+            if (_status case final message?)
+              Semantics(liveRegion: true, child: Text(message)),
             if (state.uid != null && state.consent)
               for (final material in _cloud) ...[
                 ListTile(
@@ -196,58 +229,4 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
       ),
     );
   }
-}
-
-final class _SignInDialog extends StatefulWidget {
-  const _SignInDialog();
-
-  @override
-  State<_SignInDialog> createState() => _SignInDialogState();
-}
-
-final class _SignInDialogState extends State<_SignInDialog> {
-  final _email = TextEditingController();
-  final _password = TextEditingController();
-
-  @override
-  void dispose() {
-    _email.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('登入 Firebase 帳號'),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TextField(
-          controller: _email,
-          keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: '電子郵件'),
-        ),
-        TextField(
-          controller: _password,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: '密碼'),
-        ),
-      ],
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('取消'),
-      ),
-      FilledButton(
-        onPressed: () {
-          if (_email.text.trim().isEmpty || _password.text.isEmpty) return;
-          Navigator.of(
-            context,
-          ).pop((email: _email.text, password: _password.text));
-        },
-        child: const Text('登入'),
-      ),
-    ],
-  );
 }

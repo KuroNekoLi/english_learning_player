@@ -8,6 +8,7 @@ import 'package:english_learning_player/core/files/app_media_store.dart';
 import 'package:english_learning_player/core/sync/sqlite_sync_outbox.dart';
 import 'package:english_learning_player/core/sync/progress_policy.dart';
 import 'package:english_learning_player/core/sync/sync_contracts.dart';
+import 'package:english_learning_player/features/auth/social_sign_in.dart';
 import 'package:english_learning_player/features/library/data/sqlite_material_repository.dart';
 import 'package:english_learning_player/features/library/domain/audio_import_source.dart';
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
@@ -26,6 +27,45 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../fakes/fake_cloud_sync.dart';
 
 void main() {
+  test(
+    'Firebase emulator: Google and Apple exchange mock credentials for isolated UIDs',
+    () async {
+      final http = FirebaseHttp();
+      addTearDown(http.close);
+      final endpoint = FirebaseEndpoint(
+        project: 'demo-english-learning-player',
+        bucket: 'demo-english-learning-player.appspot.com',
+        apiKey: 'fake-api-key',
+        emulatorHost: '127.0.0.1',
+      );
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final uids = <String, String>{};
+      for (final provider in SocialProvider.values) {
+        final session = FirebaseAccountSession(endpoint, http);
+        final mockCredential = ProviderIdToken(
+          jsonEncode({
+            'sub': '${provider.name}-$stamp',
+            'email': '${provider.name}-$stamp@example.test',
+            'email_verified': true,
+          }),
+          rawNonce: provider == SocialProvider.apple
+              ? 'emulator-only-nonce'
+              : null,
+        );
+        Future<SocialSignInResult?> authorize() async => mockCredential;
+        final uid = await session.signInWithProvider(provider, authorize);
+        expect(uid, isNotNull);
+        expect(await session.tokenFor(uid!), isNotEmpty);
+        uids[provider.name] = uid;
+        session.signOut();
+        await expectLater(session.tokenFor(uid), throwsA(isA<SyncFailure>()));
+        expect(await session.signInWithProvider(provider, authorize), uid);
+      }
+      expect(uids.values.toSet(), hasLength(2));
+    },
+    skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1',
+  );
+
   test(
     'Firebase emulator: two authenticated clients upload, download, and isolate accounts',
     () async {

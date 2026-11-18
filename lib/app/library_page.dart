@@ -9,7 +9,6 @@ import '../features/library/services/media_selection_import_service.dart';
 import '../features/subtitles/services/subtitle_import_service.dart';
 import '../features/bookmarks/bookmarks_page.dart';
 import '../features/player/player_page.dart';
-import '../features/sync/firebase_sync_dependencies.dart';
 import '../features/sync/firebase_sync_panel.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
@@ -307,8 +306,13 @@ final class _SourceManagementPage extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const FolderSourcePanel(),
-        if (ref.watch(firebaseEndpointProvider) != null)
-          const FirebaseSyncPanel(),
+        ListTile(
+          leading: const Icon(Icons.manage_accounts_outlined),
+          title: const Text('帳號與同步'),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const FirebaseSyncPanel()),
+          ),
+        ),
         ListTile(
           leading: const Icon(Icons.bookmarks_outlined),
           title: const Text('我的收藏'),

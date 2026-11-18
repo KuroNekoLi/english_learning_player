@@ -2,28 +2,29 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../../core/sync/sync_contracts.dart';
+import '../../auth/social_sign_in.dart';
 import 'firebase_endpoint.dart';
 
-/// The development sign-in holds credentials only in process memory.
+/// The active account used by all Firebase synchronization transports.
 final class FirebaseAccountSession implements SyncIdentityProvider {
   FirebaseAccountSession(this.endpoint, this.http);
 
   final FirebaseEndpoint endpoint;
   final FirebaseHttp http;
   _Credentials? _credentials;
+  NativeFirebaseUser? _nativeUser;
   Future<_Credentials>? _renewing;
   int _generation = 0;
 
-  String? get uid => _credentials?.uid;
+  String? get uid => _credentials?.uid ?? _nativeUser?.uid;
 
   @override
   Future<SyncIdentity?> currentIdentity() async =>
       uid == null ? null : SyncIdentity(uid!);
 
   Future<String> signIn(String email, String password) async {
-    final generation = ++_generation;
-    _credentials = null;
-    _renewing = null;
+    signOut();
+    final generation = _generation;
     final response = await http.send(
       'POST',
       endpoint.auth('signInWithPassword'),
@@ -48,13 +49,94 @@ final class FirebaseAccountSession implements SyncIdentityProvider {
     return credentials.uid;
   }
 
+  Future<String?> signInWithProvider(
+    SocialProvider provider,
+    Future<SocialSignInResult?> Function() authorize,
+  ) async {
+    if (uid != null) throw StateError('Sign out before changing accounts.');
+    final generation = ++_generation;
+    final result = await authorize();
+    if (_generation != generation) _notSignedIn();
+    switch (result) {
+      case null:
+        return null;
+      case NativeFirebaseUser(:final uid):
+        if (provider != SocialProvider.apple || !_validUid(uid)) {
+          throw const SyncFailure(
+            SyncFailureKind.invalidData,
+            'invalid_auth_response',
+          );
+        }
+        await result.getIdToken();
+        if (_generation != generation) _notSignedIn();
+        _nativeUser = result;
+        return uid;
+      case ProviderIdToken(:final idToken, :final rawNonce):
+        if (idToken.isEmpty ||
+            (provider == SocialProvider.apple && (rawNonce?.isEmpty ?? true))) {
+          throw const SyncFailure(
+            SyncFailureKind.invalidData,
+            'invalid_provider_credential',
+          );
+        }
+        final response = await http.send(
+          'POST',
+          endpoint.auth('signInWithIdp'),
+          contentType: ContentType.json,
+          bytes: FirebaseHttp.encode({
+            'requestUri': endpoint.isEmulator
+                ? 'http://localhost'
+                : 'https://${endpoint.project}.firebaseapp.com/__/auth/handler',
+            'postBody': Uri(
+              queryParameters: {
+                'providerId': provider.firebaseId,
+                'id_token': idToken,
+                if (rawNonce != null) 'nonce': rawNonce,
+              },
+            ).query,
+            'returnIdpCredential': true,
+            'returnSecureToken': true,
+          }),
+        );
+        if (response.statusCode == 400) {
+          final error = (await http.json(response))['error'];
+          if (error is Map && _needsAccountLink(error['message'])) {
+            _accountLinkRequired();
+          }
+          throw const SyncFailure(
+            SyncFailureKind.unauthenticated,
+            'sign_in_rejected',
+          );
+        }
+        await http.requireSuccess(response);
+        final data = await http.json(response);
+        if (data['needConfirmation'] == true ||
+            _needsAccountLink(data['errorMessage'])) {
+          _accountLinkRequired();
+        }
+        final credentials = _Credentials.parse(data);
+        if (_generation != generation) _notSignedIn();
+        _credentials = credentials;
+        return credentials.uid;
+    }
+  }
+
   void signOut() {
     _generation++;
     _credentials = null;
+    _nativeUser = null;
     _renewing = null;
   }
 
   Future<String> tokenFor(String expectedUid) async {
+    final native = _nativeUser;
+    if (native != null) {
+      if (native.uid != expectedUid) _notSignedIn();
+      final generation = _generation;
+      final token = await native.getIdToken();
+      if (_generation != generation) _notSignedIn();
+      return token;
+    }
     final current = _credentials;
     if (current == null || current.uid != expectedUid) _notSignedIn();
     if (current.expiresAt.isAfter(
@@ -102,7 +184,22 @@ final class FirebaseAccountSession implements SyncIdentityProvider {
     SyncFailureKind.unauthenticated,
     'firebase_sign_in_required',
   );
+
+  static bool _needsAccountLink(Object? error) =>
+      error is String &&
+      const [
+        'EMAIL_EXISTS',
+        'ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL',
+        'FEDERATED_USER_ID_ALREADY_LINKED',
+      ].any(error.startsWith);
+
+  static Never _accountLinkRequired() => throw const SyncFailure(
+    SyncFailureKind.unauthenticated,
+    'sign_in_account_link_required',
+  );
 }
+
+bool _validUid(String uid) => uid.isNotEmpty && !uid.contains('/');
 
 final class _Credentials {
   const _Credentials(this.uid, this.token, this.refresh, this.expiresAt);
@@ -118,8 +215,7 @@ final class _Credentials {
       '${data[refreshed ? 'expires_in' : 'expiresIn']}',
     );
     if (uid is! String ||
-        uid.isEmpty ||
-        uid.contains('/') ||
+        !_validUid(uid) ||
         token is! String ||
         token.isEmpty ||
         refresh is! String ||

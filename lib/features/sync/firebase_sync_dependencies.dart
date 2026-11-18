@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 import '../../core/files/app_media_store.dart';
 import '../../core/sync/sqlite_sync_outbox.dart';
 import '../../core/sync/sync_contracts.dart';
+import '../auth/platform_social_sign_in.dart';
+import '../auth/social_sign_in.dart';
 import '../library/data/sqlite_material_repository.dart';
 import '../library/library_view_model.dart';
 import '../progress/domain/progress_models.dart';
@@ -34,6 +36,15 @@ final firebaseAuthSessionProvider = Provider<FirebaseAccountSession?>((ref) {
       : FirebaseAccountSession(endpoint, ref.watch(firebaseHttpProvider));
 });
 
+final socialSignInProvider = Provider<SocialSignIn?>((ref) {
+  final endpoint = ref.watch(firebaseEndpointProvider);
+  if (endpoint == null || endpoint.isEmulator) return null;
+  return PlatformSocialSignIn(
+    project: endpoint.project,
+    apiKey: endpoint.apiKey,
+  );
+});
+
 typedef FirebaseSessionState = ({String? uid, bool consent});
 
 final firebaseSessionProvider =
@@ -42,19 +53,71 @@ final firebaseSessionProvider =
     );
 
 final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
+  SocialProvider? _signedInProvider;
+  bool _changingAccount = false;
+
   @override
   FirebaseSessionState build() => (uid: null, consent: false);
 
   Future<void> signIn(String email, String password) async {
-    final session = ref.read(firebaseAuthSessionProvider);
-    if (session == null) throw StateError('Firebase is not configured.');
-    final uid = await session.signIn(email, password);
-    if (ref.mounted) state = (uid: uid, consent: false);
+    await _signIn((session) => session.signIn(email, password));
   }
 
-  void signOut() {
+  Future<void> signInWithProvider(SocialProvider provider) async {
+    final platform = ref.read(socialSignInProvider);
+    if (platform == null || !platform.isConfigured(provider)) {
+      throw StateError('The sign-in provider is not configured.');
+    }
+    await _signIn((session) async {
+      try {
+        return await session.signInWithProvider(
+          provider,
+          () => platform.signIn(provider),
+        );
+      } catch (_) {
+        try {
+          await platform.signOut(provider);
+        } catch (_) {
+          // Keep the original sign-in error.
+        }
+        rethrow;
+      }
+    }, provider: provider);
+  }
+
+  Future<void> _signIn(
+    Future<String?> Function(FirebaseAccountSession) authenticate, {
+    SocialProvider? provider,
+  }) async {
+    if (_changingAccount || state.uid != null) return;
+    final session = ref.read(firebaseAuthSessionProvider);
+    if (session == null) throw StateError('Firebase is not configured.');
+    _changingAccount = true;
+    try {
+      final uid = await authenticate(session);
+      if (!ref.mounted || uid == null) return;
+      _signedInProvider = provider;
+      state = (uid: uid, consent: false);
+    } finally {
+      _changingAccount = false;
+    }
+  }
+
+  Future<void> signOut() async {
+    if (_changingAccount) return;
+    final provider = _signedInProvider;
+    final platform = ref.read(socialSignInProvider);
+    _changingAccount = true;
     ref.read(firebaseAuthSessionProvider)?.signOut();
+    _signedInProvider = null;
     state = (uid: null, consent: false);
+    try {
+      if (provider != null && platform != null) {
+        await platform.signOut(provider);
+      }
+    } finally {
+      _changingAccount = false;
+    }
   }
 
   void setConsent(bool enabled) {

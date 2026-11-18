@@ -5,7 +5,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val appleAuthEnabled = providers.gradleProperty("elpAppleAuth").orNull == "true"
+
 android {
+    sourceSets.getByName("main").java.srcDir(
+        if (appleAuthEnabled) "src/appleAuth/kotlin" else "src/noAppleAuth/kotlin"
+    )
     namespace = "com.example.english_learning_player"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -24,7 +29,7 @@ android {
         applicationId = "com.example.english_learning_player"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = if (appleAuthEnabled) maxOf(23, flutter.minSdkVersion) else flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -37,6 +42,10 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    if (appleAuthEnabled) implementation("com.google.firebase:firebase-auth:24.0.1")
 }
 
 flutter {
