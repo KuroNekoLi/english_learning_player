@@ -2,10 +2,11 @@ import 'subtitle_models.dart';
 
 /// Splits one cue-per-language bilingual SRT into paired subtitle cues.
 ///
-/// The split is accepted only when every cue has at least one English-only
-/// line and one Chinese-only line. Wrapped lines for either language are
-/// joined. Ordinary multi-line subtitles remain a single track, and the
-/// original SRT bytes are retained in both generated tracks.
+/// The split is accepted when every cue has an English section followed by a
+/// Chinese section. Chinese lines may contain English names or terms; after
+/// the first Han character, remaining lines belong to the Chinese section.
+/// Ordinary multi-line subtitles remain a single track, and the original SRT
+/// bytes are retained in both generated tracks.
 final class BilingualSubtitleSplitter {
   const BilingualSubtitleSplitter();
 
@@ -25,15 +26,20 @@ final class BilingualSubtitleSplitter {
           .toList(growable: false);
       final englishLines = <String>[];
       final chineseLines = <String>[];
+      var chineseStarted = false;
       List<String>? lastLanguageLines;
       for (final line in lines) {
         final hasLatin = _latin.hasMatch(line);
         final hasHan = _han.hasMatch(line);
-        if (hasLatin && hasHan) return null;
-        if (hasLatin) {
+        if (hasHan) {
+          chineseStarted = true;
+          chineseLines.add(line);
+          lastLanguageLines = chineseLines;
+        } else if (hasLatin && !chineseStarted) {
           englishLines.add(line);
           lastLanguageLines = englishLines;
-        } else if (hasHan) {
+        } else if (hasLatin) {
+          // Standalone English terms can occur inside a Chinese translation.
           chineseLines.add(line);
           lastLanguageLines = chineseLines;
         } else if (lastLanguageLines != null) {

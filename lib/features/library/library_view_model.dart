@@ -15,8 +15,12 @@ final libraryViewModelProvider = FutureProvider<List<LearningMaterial>>((
 
 /// Do not start an import if the account changed while the picker was open.
 final libraryImportProvider =
-    Provider<Future<MediaSelectionImportResult?> Function()>((ref) {
-      return () async {
+    Provider<
+      Future<MediaSelectionImportResult?> Function({
+        void Function(List<MediaFileImportProgress>)? onProgress,
+      })
+    >((ref) {
+      return ({onProgress}) async {
         final owner = ref.read(accountScopeProvider).ownerId;
         bool isCurrent() =>
             ref.mounted && ref.read(accountScopeProvider).ownerId == owner;
@@ -26,12 +30,18 @@ final libraryImportProvider =
         final repository = await ref.read(materialRepositoryProvider.future);
         final importer = await audioImporter;
         if (!isCurrent()) return null;
-        final result = await MediaSelectionImportService(
-          ownerId: owner,
-          repository: repository,
-          audioImporter: importer,
-          subtitleImporter: SubtitleImportService(repository: repository),
-        ).importFiles(files);
+        final result =
+            await MediaSelectionImportService(
+              ownerId: owner,
+              repository: repository,
+              audioImporter: importer,
+              subtitleImporter: SubtitleImportService(repository: repository),
+            ).importFiles(
+              files,
+              onProgress: (progress) {
+                if (isCurrent()) onProgress?.call(progress);
+              },
+            );
         if (!isCurrent()) return null;
         ref.invalidate(libraryViewModelProvider);
         return result;

@@ -31,6 +31,7 @@ final class WebAudioFilePicker implements AudioFilePicker {
               .toString(),
           name: file.name,
           openRead: file.openRead,
+          byteLength: length,
         ),
       );
     }

@@ -193,6 +193,41 @@ void main() {
     },
   );
 
+  test(
+    'auto-import accepts bilingual translations with English proper nouns',
+    () async {
+      final bytes = utf8.encode(
+        '1\n00:00:00,000 --> 00:00:01,000\n'
+        'Researchers Haselton and Buss developed the theory.\n'
+        '研究者 Haselton 與 Buss 提出了這項理論。\n\n'
+        '2\n00:00:01,000 --> 00:00:02,000\n'
+        'The terms are false positive and false negative.\n'
+        '它們叫做 false positive（偽陽性）和 false negative（偽陰性）。',
+      );
+
+      final tracks = await _importer(repository).importAutoDetectedBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'Why_Your_Brain_Misreads_Flirting.srt',
+        bytes: bytes,
+        manual: true,
+      );
+
+      expect(tracks.map((track) => track.languageTag), ['en', 'zh-TW']);
+      expect(tracks.first.cues.map((cue) => cue.text), [
+        'Researchers Haselton and Buss developed the theory.',
+        'The terms are false positive and false negative.',
+      ]);
+      expect(tracks.last.cues.map((cue) => cue.text), [
+        '研究者 Haselton 與 Buss 提出了這項理論。',
+        '它們叫做 false positive（偽陽性）和 false negative（偽陰性）。',
+      ]);
+      for (final track in tracks) {
+        expect(track.originalBytes, orderedEquals(bytes));
+      }
+    },
+  );
+
   test('does not guess when mixed language content cannot be split', () async {
     await expectLater(
       _importer(repository).importAutoDetectedBytes(

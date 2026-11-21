@@ -54,6 +54,23 @@ final class SubtitleFilenameMatcher {
     });
   }
 
+  /// Returns exact-stem `.srt` files without a language suffix.
+  ///
+  /// These files may contain one language or a bilingual track, so callers
+  /// must use content-based import rather than assign a language from name.
+  List<String> matchUnlabelled({
+    required String audioFileName,
+    required Iterable<String> subtitleFileNames,
+  }) {
+    final audioStem = _normalize(p.basenameWithoutExtension(audioFileName));
+    final matches = subtitleFileNames.map(p.basename).where((name) {
+      final stem = p.basenameWithoutExtension(name);
+      return p.extension(name).toLowerCase() == '.srt' &&
+          _normalize(stem) == audioStem;
+    }).toList()..sort();
+    return List.unmodifiable(matches);
+  }
+
   String _normalize(String value) => unorm.nfc(value).toLowerCase();
 
   SubtitleLanguage _languageFrom(String suffix) =>

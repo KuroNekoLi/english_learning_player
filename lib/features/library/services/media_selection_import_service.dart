@@ -27,21 +27,49 @@ final class MediaSelectionImportService {
   final SubtitleFilenameMatcher _matcher;
 
   Future<MediaSelectionImportResult> importFiles(
-    List<AudioImportSource> files,
-  ) async {
+    List<AudioImportSource> files, {
+    void Function(List<MediaFileImportProgress>)? onProgress,
+  }) async {
     final audioFiles = files.where(_isAudio).toList();
     final subtitleFiles = files.where(_isSubtitle).toList();
+    final fileProgress = audioFiles
+        .map((file) => MediaFileImportProgress(sourceName: file.name))
+        .toList();
+    void publishProgress() => onProgress?.call(List.unmodifiable(fileProgress));
+    publishProgress();
     final importedMaterials = <LearningMaterial>[];
     final sourceNamesByMaterial = <String, String>{};
     var audioFailures = 0;
-    for (final file in audioFiles) {
+    for (var index = 0; index < audioFiles.length; index++) {
+      final file = audioFiles[index];
+      fileProgress[index] = fileProgress[index].copyWith(
+        status: MediaFileImportStatus.importing,
+      );
+      publishProgress();
       try {
-        final material = (await _audioImporter.importAudio(file)).material;
+        final material = (await _audioImporter.importAudio(
+          file,
+          onProgress: (bytesCopied, totalBytes) {
+            fileProgress[index] = fileProgress[index].copyWith(
+              bytesCopied: bytesCopied,
+              totalBytes: totalBytes,
+              status: MediaFileImportStatus.importing,
+            );
+            publishProgress();
+          },
+        )).material;
         importedMaterials.add(material);
         sourceNamesByMaterial[material.id] = file.name;
+        fileProgress[index] = fileProgress[index].copyWith(
+          status: MediaFileImportStatus.completed,
+        );
       } catch (_) {
         audioFailures++;
+        fileProgress[index] = fileProgress[index].copyWith(
+          status: MediaFileImportStatus.failed,
+        );
       }
+      publishProgress();
     }
 
     final candidates = <LearningMaterial>{...importedMaterials};
@@ -61,12 +89,76 @@ final class MediaSelectionImportService {
             if (_language(track.languageTag) case final language?)
               language: track.sourceName,
       };
+      if (audioFiles.length == 1 && subtitleFiles.length == 1) {
+        final file = subtitleFiles.single;
+        final fileName = p.basename(file.name);
+        try {
+          final bytes = await file.openRead().expand((chunk) => chunk).toList();
+          if (!_hasSameSource(tracks, fileName, bytes)) {
+            final importedTracks = await _subtitleImporter
+                .importAutoDetectedBytes(
+                  ownerId: ownerId,
+                  materialId: material.id,
+                  sourceName: fileName,
+                  bytes: bytes,
+                  manual: true,
+                );
+            subtitlesImported += importedTracks.length;
+          }
+          matchedSubtitles.add(fileName);
+        } catch (_) {
+          subtitleFailures++;
+        }
+        continue;
+      }
       final matches = _matcher.match(
         audioFileName:
             sourceNamesByMaterial[material.id] ?? '${material.title}.m4a',
         subtitleFileNames: subtitleFiles.map((file) => file.name),
         manualSelections: manual,
       );
+      final labelledMatches = matches.values.any(
+        (match) => match.status != SubtitleMatchStatus.missing,
+      );
+      final unlabelled = _matcher.matchUnlabelled(
+        audioFileName:
+            sourceNamesByMaterial[material.id] ?? '${material.title}.m4a',
+        subtitleFileNames: subtitleFiles.map((file) => file.name),
+      );
+      if (!labelledMatches && unlabelled.isNotEmpty) {
+        if (unlabelled.length > 1) {
+          ambiguousSubtitles++;
+          continue;
+        }
+        final fileName = unlabelled.single;
+        final file = subtitleFiles
+            .where((candidate) => p.basename(candidate.name) == fileName)
+            .firstOrNull;
+        if (file != null) {
+          try {
+            final bytes = await file
+                .openRead()
+                .expand((chunk) => chunk)
+                .toList();
+            final existing = _hasSameSource(tracks, fileName, bytes);
+            if (!existing) {
+              final importedTracks = await _subtitleImporter
+                  .importAutoDetectedBytes(
+                    ownerId: ownerId,
+                    materialId: material.id,
+                    sourceName: fileName,
+                    bytes: bytes,
+                    manual: false,
+                  );
+              subtitlesImported += importedTracks.length;
+            }
+            matchedSubtitles.add(fileName);
+          } catch (_) {
+            subtitleFailures++;
+          }
+        }
+        continue;
+      }
       for (final language in SubtitleLanguage.values) {
         final match = matches[language]!;
         if (match.status == SubtitleMatchStatus.ambiguous) {
@@ -79,11 +171,7 @@ final class MediaSelectionImportService {
             .firstOrNull;
         if (file == null || fileName == null) continue;
         final bytes = await file.openRead().expand((chunk) => chunk).toList();
-        final existing = tracks.any(
-          (track) =>
-              track.sourceName == fileName &&
-              listEquals(track.originalBytes, bytes),
-        );
+        final existing = _hasSameSource(tracks, fileName, bytes);
         if (existing) {
           matchedSubtitles.add(fileName);
           continue;
@@ -124,6 +212,17 @@ final class MediaSelectionImportService {
   bool _isSubtitle(AudioImportSource file) =>
       p.extension(file.name).toLowerCase() == '.srt';
 
+  bool _hasSameSource(
+    List<SubtitleTrack> tracks,
+    String sourceName,
+    List<int> bytes,
+  ) => tracks.any(
+    (track) =>
+        (track.sourceName == sourceName ||
+            track.sourceName.startsWith('$sourceName ·')) &&
+        listEquals(track.originalBytes, bytes),
+  );
+
   SubtitleLanguage? _language(String languageTag) {
     final language = languageTag.toLowerCase();
     if (language == 'en' || language.startsWith('en-')) {
@@ -134,6 +233,41 @@ final class MediaSelectionImportService {
     }
     return null;
   }
+}
+
+enum MediaFileImportStatus { pending, importing, completed, failed }
+
+final class MediaFileImportProgress {
+  const MediaFileImportProgress({
+    required this.sourceName,
+    this.bytesCopied = 0,
+    this.totalBytes,
+    this.status = MediaFileImportStatus.pending,
+  });
+
+  final String sourceName;
+  final int bytesCopied;
+  final int? totalBytes;
+  final MediaFileImportStatus status;
+
+  double? get fraction {
+    final total = totalBytes;
+    if (total == null || total <= 0) return null;
+    if (status == MediaFileImportStatus.completed) return 1;
+    // Leave room for final hashing and persistence after all bytes are read.
+    return (bytesCopied / total).clamp(0, 0.95).toDouble();
+  }
+
+  MediaFileImportProgress copyWith({
+    int? bytesCopied,
+    int? totalBytes,
+    MediaFileImportStatus? status,
+  }) => MediaFileImportProgress(
+    sourceName: sourceName,
+    bytesCopied: bytesCopied ?? this.bytesCopied,
+    totalBytes: totalBytes ?? this.totalBytes,
+    status: status ?? this.status,
+  );
 }
 
 final class MediaSelectionImportResult {

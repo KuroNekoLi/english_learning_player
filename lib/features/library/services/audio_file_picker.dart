@@ -22,14 +22,19 @@ final class NativeAudioFilePicker implements AudioFilePicker {
   );
 
   @override
-  Future<List<AudioImportSource>> pickMediaFiles() async =>
-      (await openFiles(acceptedTypeGroups: [_audioFiles]))
-          .map(
-            (file) => AudioImportSource(
-              sourceKey: sha256.convert(utf8.encode(file.path)).toString(),
-              name: file.name,
-              openRead: file.openRead,
-            ),
-          )
-          .toList(growable: false);
+  Future<List<AudioImportSource>> pickMediaFiles() async {
+    final files = await openFiles(acceptedTypeGroups: [_audioFiles]);
+    final sources = <AudioImportSource>[];
+    for (final file in files) {
+      sources.add(
+        AudioImportSource(
+          sourceKey: sha256.convert(utf8.encode(file.path)).toString(),
+          name: file.name,
+          openRead: file.openRead,
+          byteLength: await file.length(),
+        ),
+      );
+    }
+    return List.unmodifiable(sources);
+  }
 }

@@ -18,9 +18,25 @@ final class AudioImportService {
   final MediaStore _mediaStore;
   final Uuid _uuid;
 
-  Future<ImportResult> importAudio(AudioImportSource source) async {
+  Future<ImportResult> importAudio(
+    AudioImportSource source, {
+    void Function(int bytesCopied, int? totalBytes)? onProgress,
+  }) async {
     AudioFileType.fromName(source.name);
-    final stored = await _mediaStore.copyAndHash(source);
+    var bytesCopied = 0;
+    final trackedSource = AudioImportSource(
+      sourceKey: source.sourceKey,
+      name: source.name,
+      byteLength: source.byteLength,
+      openRead: () async* {
+        await for (final chunk in source.openRead()) {
+          bytesCopied += chunk.length;
+          onProgress?.call(bytesCopied, source.byteLength);
+          yield chunk;
+        }
+      },
+    );
+    final stored = await _mediaStore.copyAndHash(trackedSource);
     final now = DateTime.now().toUtc();
     final result = await _repository.insertAudio(
       asset: StoredAudioAsset(

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/library/library_view_model.dart';
 import '../features/library/folder_source_view_model.dart';
 import '../features/library/material_repository.dart';
+import '../features/library/services/media_selection_import_service.dart';
 import '../features/library/widgets/library_add_menu.dart';
 import '../features/library/widgets/library_material_list.dart';
 import '../features/library/widgets/source_management_page.dart';
@@ -20,6 +21,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   final _searchController = TextEditingController();
   bool _searching = false;
   bool _gridMode = false;
+  bool _importing = false;
+  List<MediaFileImportProgress> _importProgress = const [];
 
   @override
   void dispose() {
@@ -28,8 +31,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   }
 
   Future<void> _importAudio(BuildContext context) async {
+    setState(() {
+      _importing = true;
+      _importProgress = const [];
+    });
     try {
-      final result = await ref.read(libraryImportProvider)();
+      final result = await ref.read(libraryImportProvider)(
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _importProgress = progress);
+        },
+      );
       if (result == null || !context.mounted) return;
       if (result.audioFailures > 0 || result.subtitleFailures > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -62,6 +74,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('音訊匯入失敗')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _importing = false;
+          _importProgress = const [];
+        });
       }
     }
   }
@@ -109,7 +128,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             icon: Icon(_searching ? Icons.close : Icons.search),
           ),
           LibraryAddMenu(
-            onImportMedia: library.isLoading
+            onImportMedia: library.isLoading || _importing
                 ? null
                 : () => _importAudio(context),
             onImportFolder: () =>
@@ -136,6 +155,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   library: library,
                   materials: visibleMaterials,
                   gridMode: _gridMode,
+                  importProgress: _importProgress,
                   onRetry: () => ref.invalidate(libraryViewModelProvider),
                   onOpen: (material) => Navigator.of(context).push(
                     MaterialPageRoute<void>(

@@ -10,6 +10,7 @@ import 'package:english_learning_player/features/library/domain/audio_import_sou
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
 import 'package:english_learning_player/features/library/services/media_selection_import_service.dart';
+import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -59,6 +60,7 @@ void main() {
   }) => AudioImportSource(
     sourceKey: sourceKey,
     name: name,
+    byteLength: value.length,
     openRead: () async* {
       yield value.sublist(0, value.length ~/ 2);
       yield value.sublist(value.length ~/ 2);
@@ -121,6 +123,59 @@ void main() {
         'Hello\n',
         '你好\n',
       ]);
+    },
+  );
+
+  test(
+    'imports explicitly selected bilingual SRT regardless of stem and reports progress',
+    () async {
+      final selection = MediaSelectionImportService(
+        ownerId: accountA.ownerId,
+        repository: repositoryA,
+        audioImporter: service(accountA, repositoryA),
+        subtitleImporter: SubtitleImportService(repository: repositoryA),
+      );
+      final progressSnapshots = <List<MediaFileImportProgress>>[];
+      final result = await selection.importFiles([
+        bytes('lesson.m4a', [1, 2, 3, 4], sourceKey: 'lesson-audio'),
+        bytes(
+          'captions-from-another-source.srt',
+          _bilingualSrt('A sentence to learn.', '這是一句雙語字幕。'),
+          sourceKey: 'lesson-subtitle',
+        ),
+      ], onProgress: progressSnapshots.add);
+
+      expect(result.importedMaterials, hasLength(1));
+      expect(result.subtitlesImported, 2);
+      expect(result.unmatchedSubtitles, 0);
+      final tracks = await repositoryA.listSubtitleTracks(
+        result.importedMaterials.single.id,
+      );
+      expect(tracks.map((track) => track.languageTag), ['en', 'zh-TW']);
+      expect(tracks.map((track) => track.cues.single.text), [
+        'A sentence to learn.',
+        '這是一句雙語字幕。',
+      ]);
+      expect(
+        tracks.every(
+          (track) => track.selectionMode == SubtitleSelectionMode.manual,
+        ),
+        isTrue,
+      );
+      expect(progressSnapshots.first.single.sourceName, 'lesson.m4a');
+      expect(
+        progressSnapshots.any(
+          (snapshot) =>
+              snapshot.single.bytesCopied > 0 &&
+              snapshot.single.status == MediaFileImportStatus.importing,
+        ),
+        isTrue,
+      );
+      expect(
+        progressSnapshots.last.single.status,
+        MediaFileImportStatus.completed,
+      );
+      expect(progressSnapshots.last.single.fraction, 1);
     },
   );
 
@@ -240,3 +295,6 @@ void main() {
 
 List<int> _srt(String text) =>
     utf8.encode('1\n00:00:01,000 --> 00:00:02,000\n$text\n');
+
+List<int> _bilingualSrt(String english, String chinese) =>
+    utf8.encode('1\n00:00:01,000 --> 00:00:02,000\n$english\n$chinese\n');

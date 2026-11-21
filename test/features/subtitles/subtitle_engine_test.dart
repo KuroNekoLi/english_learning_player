@@ -142,6 +142,24 @@ Valid
       );
     });
 
+    test(
+      'matches an unlabelled SRT only when its full stem equals the audio',
+      () {
+        expect(
+          matcher.matchUnlabelled(
+            audioFileName: 'Lesson.M4A',
+            subtitleFileNames: [
+              'lesson.srt',
+              'lesson.en.srt',
+              'lesson_2.srt',
+              'another-lesson.srt',
+            ],
+          ),
+          ['lesson.srt'],
+        );
+      },
+    );
+
     test('manual selection remains authoritative when candidates change', () {
       final result = matcher.match(
         audioFileName: 'lesson.mp3',
@@ -272,6 +290,39 @@ Valid
         'This is a long English line\nthat wraps.',
       );
       expect(pair?.chinese.single.text, '這是一句\n換行的中文。');
+    });
+
+    test('keeps English names and terms in the Chinese translation track', () {
+      final pair = splitter.split(const [
+        SubtitleCue(
+          id: 'cue-25',
+          sequence: 25,
+          startMs: 1000,
+          endMs: 3000,
+          text:
+              'Specifically the work by researchers Haselton and Buss.\n'
+              '特別是研究者 Haselton 與 Buss 關於錯誤管理理論的工作。',
+        ),
+        SubtitleCue(
+          id: 'cue-54',
+          sequence: 54,
+          startMs: 3000,
+          endMs: 5000,
+          text:
+              'The terms are false positive and false negative.\n'
+              '在文獻中，它們叫做 false positive（偽陽性）和 '
+              'false negative（偽陰性）。',
+        ),
+      ]);
+
+      expect(pair?.english.map((cue) => cue.text), [
+        'Specifically the work by researchers Haselton and Buss.',
+        'The terms are false positive and false negative.',
+      ]);
+      expect(pair?.chinese.map((cue) => cue.text), [
+        '特別是研究者 Haselton 與 Buss 關於錯誤管理理論的工作。',
+        '在文獻中，它們叫做 false positive（偽陽性）和 false negative（偽陰性）。',
+      ]);
     });
 
     test('keeps ordinary multiline single-language cues intact', () {
