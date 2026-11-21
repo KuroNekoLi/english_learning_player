@@ -1,4 +1,4 @@
-import 'package:english_learning_player/features/library/library_view_model.dart';
+import 'package:english_learning_player/features/library/library_dependencies.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/main.dart';

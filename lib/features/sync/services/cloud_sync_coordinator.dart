@@ -8,6 +8,7 @@ import '../../library/material_repository.dart';
 import '../../../core/db/account_database_service.dart';
 import '../../../core/db/account_scope.dart';
 import '../../../core/sync/sqlite_sync_outbox.dart';
+import '../../../core/sync/subtitle_outbox_entry.dart';
 import '../../../core/sync/sync_contracts.dart';
 
 enum SyncRunResult {
@@ -31,6 +32,7 @@ final class CloudSyncCoordinator {
     required MaterialRepository materials,
     required AccountDatabaseService mediaFiles,
     required CloudSyncTransport transport,
+    Future<void> Function(String materialId)? publishSubtitles,
     SyncClock? clock,
     SyncRandom? random,
   }) : _scope = scope,
@@ -40,6 +42,7 @@ final class CloudSyncCoordinator {
        _materials = materials,
        _mediaFiles = mediaFiles,
        _transport = transport,
+       _publishSubtitles = publishSubtitles,
        _clock = clock ?? DateTime.now,
        _random = random ?? Random().nextDouble;
 
@@ -50,6 +53,7 @@ final class CloudSyncCoordinator {
   final MaterialRepository _materials;
   final AccountDatabaseService _mediaFiles;
   final CloudSyncTransport _transport;
+  final Future<void> Function(String materialId)? _publishSubtitles;
   final SyncClock _clock;
   final SyncRandom _random;
 
@@ -74,6 +78,9 @@ final class CloudSyncCoordinator {
         throw StateError(
           'Outbox operation owner does not match authenticated UID.',
         );
+      }
+      if (operation.kind == SyncOperationKind.subtitle) {
+        return await _runSubtitleOperation(operation);
       }
       final payload = _parsePayload(operation);
       final asset = await _materials.audioAssetForMaterial(operation.entityId);
@@ -166,6 +173,11 @@ final class CloudSyncCoordinator {
       await _outbox.complete(identity.uid, operation.opId, _clock());
       return SyncRunResult.uploaded;
     } on SyncFailure catch (failure) {
+      if (operation.kind == SyncOperationKind.subtitle &&
+          failure.code == 'consent_required') {
+        await _outbox.release(identity.uid, operation.opId, _clock());
+        return SyncRunResult.waitingForConsent;
+      }
       if (failure.kind == SyncFailureKind.unauthenticated) {
         await _outbox.deferForAuthentication(
           identity.uid,
@@ -202,6 +214,53 @@ final class CloudSyncCoordinator {
           ? SyncRunResult.needsAttention
           : SyncRunResult.retryScheduled;
     }
+  }
+
+  Future<SyncRunResult> _runSubtitleOperation(SyncOperation operation) async {
+    final uid = operation.ownerId;
+    if (operation.payloadJson !=
+            SubtitleOutboxEntry.payload(operation.entityId) ||
+        SqliteSyncOutbox.payloadHash(operation.payloadJson) !=
+            operation.payloadHash) {
+      throw const SyncFailure(
+        SyncFailureKind.invalidData,
+        'invalid_outbox_payload',
+      );
+    }
+    final publish = _publishSubtitles;
+    if (publish == null) {
+      throw const SyncFailure(
+        SyncFailureKind.invalidData,
+        'subtitle_publisher_missing',
+      );
+    }
+    if (!await _stillSameIdentity(uid)) {
+      throw const SyncFailure(
+        SyncFailureKind.unauthenticated,
+        'unauthenticated',
+      );
+    }
+    if (!await _consentProvider.isCloudSyncEnabled(uid)) {
+      throw const SyncFailure(
+        SyncFailureKind.permissionDenied,
+        'consent_required',
+      );
+    }
+    await publish(operation.entityId);
+    if (!await _stillSameIdentity(uid)) {
+      throw const SyncFailure(
+        SyncFailureKind.unauthenticated,
+        'unauthenticated',
+      );
+    }
+    if (!await _consentProvider.isCloudSyncEnabled(uid)) {
+      throw const SyncFailure(
+        SyncFailureKind.permissionDenied,
+        'consent_required',
+      );
+    }
+    await _outbox.complete(uid, operation.opId, _clock());
+    return SyncRunResult.uploaded;
   }
 
   void _verifyReceipt(CloudAssetReceipt receipt, StoredAudioAsset asset) {

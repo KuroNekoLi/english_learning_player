@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../sync/data/firebase_account_session.dart';
-import '../sync/data/firebase_endpoint.dart';
+import 'data/firebase_account_session.dart';
+import '../../core/firebase/firebase_endpoint.dart';
 import 'platform_social_sign_in.dart';
 import 'social_sign_in.dart';
 

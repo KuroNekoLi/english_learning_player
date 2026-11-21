@@ -171,6 +171,12 @@
 - Email/Password 用於既有測試帳號。憑據與同步同意只存在記憶體。重開 App 會進入原離線帳號，Firebase 帳號需再次登入。App 目前以前景手動操作消費可重試佇列，網路恢復觸發、正式登入提供者與跨啟動身分保存仍待驗。
 - macOS Release 實測登入、帳號隔離、下載與續播。demo Emulator 對相同 UID 驗證音訊與字幕原始資料、SHA-256、canonical 與衝突處理。遠端環境、簽章與 Gate C 仍需取得 [交棒所列條件](agent/wp-14-firebase-handoff.md)。
 
+### ADR-030 — WP-16 字幕發布與持久化佇列
+
+- 決定以選取字幕集合作為發布單位。字幕 Repository 在更新已選軌的 SQLite 交易內排入 `publishSubtitles`。工作儲存版本、教材 ID 與 payload hash，處理時從同 UID 的本機庫讀取當前軌道及原始 bytes。
+- 沿用現有 `sync_outbox`。音檔先完成 `uploadMaterial`，字幕發布失敗仍保留音檔的 `cloudReady`。發布中的新選取另外排隊，同教材在有效 lease 期間只會有一筆字幕工作在處理。已選軌更新與 v6 → v7 補排都限本機來源教材，下載快取不發布。
+- 佇列消費仍由既有的前景同步操作觸發。Firestore 路徑、manifest 格式、權限與 Storage SHA-256 驗證沿用 WP-16 已有契約。正式跨裝置與部署證據見 [WP-16 驗收紀錄](agent/wp-16-architecture-remediation.md)。
+
 ## 風險清單
 | 風險 | 嚴重度 | 失敗形態 | 降低方式 / 檢驗 |
 |---|---|---|---|

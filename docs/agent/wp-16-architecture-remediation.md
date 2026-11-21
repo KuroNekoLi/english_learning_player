@@ -24,3 +24,21 @@
 | 正式環境與真機 | BLOCKED | 發布新客戶端前需部署新版 Firestore Rules。實機登入、iCloud 授權生命週期與跨裝置續播仍待驗收 |
 
 Gate C／D 仍缺正式 Firebase 與跨裝置真機證據。遠端播放清單和資料夾 metadata 依 ADR-028 保留為整合項。
+
+## 後續架構整理
+
+基準為 `bf17892`，以 [系統架構與資料流](../01-architecture.md) 為查閱入口。
+
+- 帳號 DB providers、Firebase 端點及 HTTP client 歸入 `core`。Firebase Auth session 歸入 `features/auth/data`。教材庫的 DI 與畫面命令各有入口，其他模組直接引用所需 providers。
+- `PlayerViewModel` 465 行，教材載入後的音訊準備、系統媒體及續播交給 `PlayerPlaybackStartup`，播放訂閱與 checkpoint 給 `PlayerSessionResources`。`SqliteProgressRepository` 409 行，`SqliteProgressPositions` 負責確認位置及候選衝突資料，Repository 負責跨表交易。`SentenceLoopPlayback` 負責 `just_audio` 平台 clip 的套用和復原，`JustAudioAdapter` 繼續管理命令與快照。
+- 字幕發布使用現有 `sync_outbox`，並由 schema v7 為舊教材補排。測試驗證儲存與排隊原子性、音訊先完成、有效 lease 內的並行保護、同意撤回、重開後重試、以及下載快取隔離。見 [ADR-030](../12-decisions-and-risks.md)。
+
+本輪前景同步沿用既有 UI。字幕工作在暫時失敗後保留，待下次前景同步消費；終端失敗記錄在 Outbox，尚無逐筆字幕重送介面。Gate C／D 的正式環境限制沿用上述驗收紀錄。
+
+| 後續驗收 | 結果 | 證據 |
+|---|---|---|
+| 格式與靜態分析 | PASS | `dart format --output=none --set-exit-if-changed .`、`flutter analyze --no-pub` |
+| Flutter 回歸 | PASS | `flutter test --no-pub`，143 項通過，2 項 Emulator 測試另行執行 |
+| Firebase Emulator | PASS | 6 項 Rules 測試、2 項 Flutter 整合測試，雙語字幕由 Outbox 發布並在另一份 DB 讀回 |
+| 三平台建置 | PASS | macOS Debug、iOS Simulator Debug、Android Gradle Debug（單次 JDK 17） |
+| 正式 Firebase 與真機驗收 | BLOCKED | 待正式環境部署及實機登入、iCloud 授權、跨裝置續播驗收 |

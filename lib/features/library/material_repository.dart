@@ -51,6 +51,11 @@ abstract interface class MaterialRepository {
   Future<List<SubtitleTrack>> listSubtitleTracks(String materialId);
 }
 
+abstract interface class CloudSubtitleCacheRepository {
+  Future<List<SubtitleTrack>> listSubtitleTracks(String materialId);
+  Future<SubtitleTrack> saveDownloadedSubtitleTrack(SubtitleTrack track);
+}
+
 /// Local source catalog used to make full folder scans idempotent. Paths stay
 /// inside the account's local database and are never part of cloud metadata.
 abstract interface class FolderReconciliationRepository {

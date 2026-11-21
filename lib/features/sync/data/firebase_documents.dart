@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import '../../../core/sync/sync_contracts.dart';
-import 'firebase_account_session.dart';
-import 'firebase_endpoint.dart';
+import '../../auth/data/firebase_account_session.dart';
+import '../../../core/firebase/firebase_endpoint.dart';
 
 final class FirebaseDocuments {
   const FirebaseDocuments(this.endpoint, this.session, this.http);

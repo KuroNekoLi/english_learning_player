@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:english_learning_player/core/sync/sync_contracts.dart';
 import 'package:english_learning_player/features/auth/social_sign_in.dart';
-import 'package:english_learning_player/features/sync/data/firebase_endpoint.dart';
+import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_dependencies.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_panel.dart';
 import 'package:flutter/material.dart';

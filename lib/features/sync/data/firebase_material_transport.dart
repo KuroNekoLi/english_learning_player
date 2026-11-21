@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import '../../../core/sync/sync_contracts.dart';
-import 'firebase_account_session.dart';
-import 'firebase_endpoint.dart';
+import '../../auth/data/firebase_account_session.dart';
+import '../../../core/firebase/firebase_endpoint.dart';
 import '../services/cloud_material_download_service.dart';
 import 'firebase_documents.dart';
 import 'firebase_storage_objects.dart';

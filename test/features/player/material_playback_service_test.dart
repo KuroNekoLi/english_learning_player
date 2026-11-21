@@ -10,7 +10,8 @@ import 'package:english_learning_player/features/library/services/audio_import_s
 import 'package:english_learning_player/features/player/services/material_playback_loader.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:english_learning_player/features/library/library_view_model.dart';
+import 'package:english_learning_player/core/db/account_database_providers.dart';
+import 'package:english_learning_player/features/library/library_dependencies.dart';
 import 'package:english_learning_player/features/player/player_dependencies.dart';
 
 void main() {

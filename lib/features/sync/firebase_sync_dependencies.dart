@@ -5,7 +5,7 @@ import '../../core/sync/sqlite_sync_outbox.dart';
 import '../../core/sync/sync_contracts.dart';
 import '../auth/firebase_session_controller.dart';
 import '../library/data/sqlite_material_repository.dart';
-import '../library/library_view_model.dart';
+import '../../core/db/account_database_providers.dart';
 import '../progress/data/sqlite_progress_repository.dart';
 import '../progress/services/progress_sync_coordinator.dart';
 import 'data/firebase_material_transport.dart';
@@ -41,6 +41,13 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
   final progressTransport = endpoint.progressRegion == null
       ? null
       : FirebaseProgressTransport(endpoint, session, http, transport.documents);
+  final subtitles = FirebaseSubtitleSync(
+    uid: account.ownerId,
+    documents: transport.documents,
+    objects: transport.objects,
+    repository: repository,
+    consent: consent,
+  );
   return FirebaseSyncRuntime(
     uid: account.ownerId,
     transport: transport,
@@ -52,6 +59,7 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
       materials: repository,
       mediaFiles: files,
       transport: transport,
+      publishSubtitles: subtitles.publish,
     ),
     downloader: CloudMaterialDownloadService(
       scope: account,
@@ -63,13 +71,7 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
     ),
     consent: consent,
     repository: repository,
-    subtitles: FirebaseSubtitleSync(
-      uid: account.ownerId,
-      documents: transport.documents,
-      objects: transport.objects,
-      repository: repository,
-      consent: consent,
-    ),
+    subtitles: subtitles,
     progress: progress,
     progressTransport: progressTransport,
     progressCoordinator: progressTransport == null

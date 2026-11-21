@@ -1,11 +1,13 @@
 # Firebase 跨裝置同步規格
 
 ## 1. 責任與順序
-本機 Repository 更新 → transaction 寫 SQLite + SyncOutbox → SyncCoordinator 消費佇列 → Firebase Auth 身分檢核 → Storage 媒體傳輸 → Firestore metadata 交易/寫入 → 其他裝置 snapshot/手動 refresh → 本機 Repository merge → UI。
+本機 Repository 更新 → transaction 寫 SQLite + SyncOutbox → SyncCoordinator 消費佇列 → Firebase Auth 身分檢核 → Storage 媒體傳輸 → Firestore metadata 交易/寫入 → 其他裝置前景重新整理或下載 → 本機 Repository merge → UI。
 
 音檔與字幕二進位放 Cloud Storage，metadata/進度/收藏放 Firestore；不得將大型 base64 直接塞 Firestore。
 
 內嵌雙語 SRT 的兩個語言軌可以共用原始檔案內容。字幕 manifest 的選用欄位 `cueProjection` 記錄 `bilingual`（下載後以本機相同規則取出對應語言）或 `original`（使用解析後的原字幕）。舊 manifest 未記錄此欄位時，英中軌的 SHA-256 相同才嘗試拆軌。發布會寫入此欄位的客戶端前，需先部署支援此欄位的 Firestore Rules。
+
+字幕儲存時在同一筆 SQLite 交易中排入 `publishSubtitles`。新增或修改選中的字幕會更新該教材的待送工作。工作領取後讀取當下選中的字幕軌，並在同帳號的 `uploadMaterial` 完成後發布。下載到本機的教材和字幕仍只寫入快取。本機資料庫 v6 → v7 會為既有本機來源教材的已選字幕補排。暫時失敗使用既有 lease 與重試間隔。撤回同意時交還工作，待同意後再次同步。
 
 ## 2. 可靠性契約
 - 每項 outbox 有 `opId`（冪等）、`entityId`、`revision`、`attempts`、`nextRetryAt`、`lastError`。

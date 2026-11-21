@@ -2,12 +2,14 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/db/account_database_providers.dart';
 import '../../core/db/account_scope.dart';
 import '../../core/platform/folder_access_gateway.dart';
 import '../../core/platform/folder_access_gateway_provider.dart';
 import '../subtitles/services/subtitle_import_service.dart';
 import 'material_repository.dart';
 import 'services/folder_import_reconciler.dart';
+import 'library_dependencies.dart';
 import 'library_view_model.dart';
 
 const macFolderBindingId = 'primary-icloud-source';

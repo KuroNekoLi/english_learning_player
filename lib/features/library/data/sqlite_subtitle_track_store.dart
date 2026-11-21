@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/db/account_scope.dart';
 import '../../../core/db/local_database.dart';
+import '../../../core/sync/subtitle_outbox_entry.dart';
 import '../../subtitles/domain/subtitle_models.dart';
 
 final class SqliteSubtitleTrackStore {
@@ -13,6 +14,7 @@ final class SqliteSubtitleTrackStore {
   Future<SubtitleTrack> saveSubtitleTrack(
     SubtitleTrack track, {
     required bool manual,
+    required bool queueForPublication,
   }) async {
     if (track.ownerId != _scope.ownerId) {
       throw ArgumentError.value(track.ownerId, 'track.ownerId');
@@ -146,6 +148,14 @@ final class SqliteSubtitleTrackStore {
             );
           }
         });
+      }
+      if (selected && queueForPublication) {
+        await SubtitleOutboxEntry.enqueue(
+          _database,
+          ownerId: _scope.ownerId,
+          materialId: track.materialId,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+        );
       }
       return track.copyWith(
         selectionMode: manual

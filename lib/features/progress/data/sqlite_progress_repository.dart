@@ -10,6 +10,7 @@ import '../../../core/sync/sync_contracts.dart';
 import '../domain/progress_models.dart';
 import 'progress_repository.dart';
 import 'progress_payload_codec.dart';
+import 'sqlite_progress_positions.dart';
 import 'sqlite_progress_queue.dart';
 
 final class SqliteProgressRepository implements ProgressRepository {
@@ -22,6 +23,7 @@ final class SqliteProgressRepository implements ProgressRepository {
   final AccountScope _scope;
   final LocalDatabase _db;
   static const _uuid = Uuid();
+  late final _positions = SqliteProgressPositions(_scope, _db);
 
   @override
   Future<String> deviceId() async {
@@ -104,26 +106,7 @@ final class SqliteProgressRepository implements ProgressRepository {
         baseRevision: baseRevision,
       );
       final payload = encodeProgressCheckpoint(checkpoint);
-      final opId = _uuid.v4();
-      await _db.customStatement(
-        '''
-        INSERT INTO sync_outbox
-          (owner_id, op_id, entity_type, entity_id, operation, payload_version,
-           payload_json, payload_hash, attempts, next_retry_at_ms, state,
-           created_at_ms, updated_at_ms)
-        VALUES (?, ?, 'progress', ?, 'writeProgress', 1, ?, ?, 0, ?, 'queued', ?, ?)
-      ''',
-        [
-          stream.ownerId,
-          opId,
-          stream.materialId,
-          payload,
-          hashProgressPayload(payload),
-          nowMs,
-          nowMs,
-          nowMs,
-        ],
-      );
+      await _insertOutbox(stream, payload, nowMs, operation: 'writeProgress');
       await _db.customStatement(
         '''
         UPDATE progress_stream_state SET next_sequence = ?
@@ -142,38 +125,8 @@ final class SqliteProgressRepository implements ProgressRepository {
   }
 
   @override
-  Future<CanonicalProgress?> canonical(String materialId) async {
-    final rows = await _db
-        .customSelect(
-          '''
-      SELECT position_ms, state, device_id, session_id, sequence, revision
-      FROM playback_progress WHERE owner_id = ? AND material_id = ?
-    ''',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(materialId),
-          ],
-        )
-        .get();
-    if (rows.isEmpty) return null;
-    final row = rows.single;
-    final revision = row.read<int>('revision');
-    return CanonicalProgress(
-      checkpoint: ProgressCheckpoint(
-        stream: (
-          ownerId: _scope.ownerId,
-          materialId: materialId,
-          deviceId: row.read<String>('device_id'),
-          sessionId: row.read<String>('session_id'),
-        ),
-        positionMs: row.read<int>('position_ms'),
-        state: CheckpointState.values.byName(row.read<String>('state')),
-        sequence: row.read<int>('sequence'),
-        baseRevision: revision,
-      ),
-      revision: revision,
-    );
-  }
+  Future<CanonicalProgress?> canonical(String materialId) =>
+      _positions.canonical(materialId);
 
   @override
   Future<void> mergeRemoteCanonical({
@@ -186,50 +139,13 @@ final class SqliteProgressRepository implements ProgressRepository {
     await _db.transaction(() async {
       final current = await canonical(checkpoint.stream.materialId);
       if (current != null && current.revision >= revision) return;
-      await _upsertCanonical(checkpoint, revision, nowMs);
+      await _positions.upsertCanonical(checkpoint, revision, nowMs);
     });
   }
 
   @override
-  Future<List<ProgressCandidate>> unresolvedCandidates(
-    String materialId,
-  ) async {
-    final rows = await _db
-        .customSelect(
-          '''
-      SELECT candidate_id, device_id, session_id, sequence, base_revision,
-             position_ms, state, created_at_ms
-      FROM progress_conflicts WHERE owner_id = ? AND material_id = ? AND resolved_at_ms IS NULL
-      ORDER BY created_at_ms, candidate_id
-    ''',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(materialId),
-          ],
-        )
-        .get();
-    return rows
-        .map((row) {
-          final checkpoint = ProgressCheckpoint(
-            stream: (
-              ownerId: _scope.ownerId,
-              materialId: materialId,
-              deviceId: row.read<String>('device_id'),
-              sessionId: row.read<String>('session_id'),
-            ),
-            positionMs: row.read<int>('position_ms'),
-            state: CheckpointState.values.byName(row.read<String>('state')),
-            sequence: row.read<int>('sequence'),
-            baseRevision: row.read<int>('base_revision'),
-          );
-          return ProgressCandidate(
-            id: row.read<String>('candidate_id'),
-            checkpoint: checkpoint,
-            createdAtMs: row.read<int>('created_at_ms'),
-          );
-        })
-        .toList(growable: false);
-  }
+  Future<List<ProgressCandidate>> unresolvedCandidates(String materialId) =>
+      _positions.unresolvedCandidates(materialId);
 
   SqliteProgressQueue get _queue => SqliteProgressQueue(_scope, _db);
 
@@ -308,15 +224,15 @@ final class SqliteProgressRepository implements ProgressRepository {
       }
       switch (result.status) {
         case ProgressCommitStatus.accepted:
-          await _upsertCanonical(checkpoint, result.canonicalRevision, nowMs);
+          await _positions.upsertCanonical(
+            checkpoint,
+            result.canonicalRevision,
+            nowMs,
+          );
           final resolutionPayload = jsonDecode(payload) as Map<String, dynamic>;
           final resolvedCandidateId = resolutionPayload['resolveCandidateId'];
           if (resolvedCandidateId is String) {
-            await _db.customStatement(
-              '''UPDATE progress_conflicts SET resolved_at_ms = ?
-                WHERE owner_id = ? AND candidate_id = ? AND resolved_at_ms IS NULL''',
-              [nowMs, _scope.ownerId, resolvedCandidateId],
-            );
+            await _positions.markResolved(resolvedCandidateId, nowMs);
           }
           await _db.customStatement(
             '''
@@ -334,7 +250,11 @@ final class SqliteProgressRepository implements ProgressRepository {
         case ProgressCommitStatus.ignoredStale:
           final canonical = result.canonicalCheckpoint;
           if (canonical != null) {
-            await _upsertCanonical(canonical, result.canonicalRevision, nowMs);
+            await _positions.upsertCanonical(
+              canonical,
+              result.canonicalRevision,
+              nowMs,
+            );
           }
           break;
         case ProgressCommitStatus.conflict:
@@ -348,37 +268,14 @@ final class SqliteProgressRepository implements ProgressRepository {
           }
           final canonical = result.canonicalCheckpoint;
           if (canonical != null) {
-            await _upsertCanonical(canonical, result.canonicalRevision, nowMs);
+            await _positions.upsertCanonical(
+              canonical,
+              result.canonicalRevision,
+              nowMs,
+            );
           }
           if (!isResolution) {
-            await _db.customStatement(
-              '''
-            INSERT INTO progress_conflicts
-              (owner_id, candidate_id, material_id, device_id, session_id, sequence,
-               base_revision, position_ms, state, created_at_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(owner_id, candidate_id) DO UPDATE SET
-              sequence = excluded.sequence, base_revision = excluded.base_revision,
-              position_ms = excluded.position_ms, state = excluded.state,
-              created_at_ms = excluded.created_at_ms, resolved_at_ms = NULL
-            WHERE progress_conflicts.material_id = excluded.material_id
-              AND progress_conflicts.device_id = excluded.device_id
-              AND progress_conflicts.session_id = excluded.session_id
-              AND excluded.sequence > progress_conflicts.sequence
-          ''',
-              [
-                _scope.ownerId,
-                candidateId!,
-                checkpoint.stream.materialId,
-                checkpoint.stream.deviceId,
-                checkpoint.stream.sessionId,
-                checkpoint.sequence,
-                checkpoint.baseRevision,
-                checkpoint.positionMs,
-                checkpoint.state.name,
-                nowMs,
-              ],
-            );
+            await _positions.saveConflict(candidateId!, checkpoint, nowMs);
           }
       }
       await _db.customStatement(
@@ -401,51 +298,21 @@ final class SqliteProgressRepository implements ProgressRepository {
   }) async {
     _checkOwner(resolutionStream.ownerId);
     await _db.transaction(() async {
-      final canonicalRows = await _db
-          .customSelect(
-            '''
-        SELECT * FROM playback_progress WHERE owner_id = ? AND material_id = ?
-      ''',
-            variables: [
-              Variable.withString(_scope.ownerId),
-              Variable.withString(resolutionStream.materialId),
-            ],
-          )
-          .get();
-      final currentRevision = canonicalRows.isEmpty
-          ? 0
-          : canonicalRows.single.read<int>('revision');
+      final canonical = await _positions.canonical(resolutionStream.materialId);
+      final currentRevision = canonical?.revision ?? 0;
       if (currentRevision != observedCanonicalRevision) {
         throw StateError(
           'Canonical progress changed; refresh before resolving.',
         );
       }
-      final candidateRows = await _db
-          .customSelect(
-            '''
-        SELECT * FROM progress_conflicts WHERE owner_id = ? AND candidate_id = ?
-          AND material_id = ? AND resolved_at_ms IS NULL
-      ''',
-            variables: [
-              Variable.withString(_scope.ownerId),
-              Variable.withString(candidateId),
-              Variable.withString(resolutionStream.materialId),
-            ],
-          )
-          .get();
-      if (candidateRows.isEmpty) {
+      final candidate = await _positions.unresolvedCandidate(
+        candidateId,
+        resolutionStream,
+      );
+      if (candidate == null) {
         throw StateError('Progress candidate is no longer available.');
       }
-      final candidate = candidateRows.single;
-      final existing = canonicalRows.isEmpty
-          ? null
-          : _checkpointFromCanonical(
-              canonicalRows.single,
-              resolutionStream.materialId,
-            );
-      final chosen = useCandidatePosition
-          ? _checkpointFromConflict(candidate, resolutionStream)
-          : existing;
+      final chosen = useCandidatePosition ? candidate : canonical?.checkpoint;
       if (chosen == null) {
         throw StateError('No canonical position exists to retain.');
       }
@@ -533,63 +400,6 @@ final class SqliteProgressRepository implements ProgressRepository {
       ],
     );
   }
-
-  Future<void> _upsertCanonical(
-    ProgressCheckpoint checkpoint,
-    int revision,
-    int nowMs,
-  ) async {
-    await _db.customStatement(
-      '''
-      INSERT INTO playback_progress
-        (owner_id, material_id, position_ms, state, device_id, session_id, sequence, revision, updated_at_ms)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(owner_id, material_id) DO UPDATE SET
-        position_ms=excluded.position_ms, state=excluded.state, device_id=excluded.device_id,
-        session_id=excluded.session_id, sequence=excluded.sequence, revision=excluded.revision,
-        updated_at_ms=excluded.updated_at_ms
-      WHERE excluded.revision > playback_progress.revision
-    ''',
-      [
-        checkpoint.stream.ownerId,
-        checkpoint.stream.materialId,
-        checkpoint.positionMs,
-        checkpoint.state.name,
-        checkpoint.stream.deviceId,
-        checkpoint.stream.sessionId,
-        checkpoint.sequence,
-        revision,
-        nowMs,
-      ],
-    );
-  }
-
-  ProgressCheckpoint _checkpointFromCanonical(
-    QueryRow row,
-    String materialId,
-  ) => ProgressCheckpoint(
-    stream: (
-      ownerId: _scope.ownerId,
-      materialId: materialId,
-      deviceId: row.read<String>('device_id'),
-      sessionId: row.read<String>('session_id'),
-    ),
-    positionMs: row.read<int>('position_ms'),
-    state: CheckpointState.values.byName(row.read<String>('state')),
-    sequence: row.read<int>('sequence'),
-    baseRevision: row.read<int>('revision'),
-  );
-
-  ProgressCheckpoint _checkpointFromConflict(
-    QueryRow row,
-    ProgressStream stream,
-  ) => ProgressCheckpoint(
-    stream: stream,
-    positionMs: row.read<int>('position_ms'),
-    state: CheckpointState.values.byName(row.read<String>('state')),
-    sequence: row.read<int>('sequence'),
-    baseRevision: row.read<int>('base_revision'),
-  );
 
   void _checkOwner(String ownerId) {
     if (ownerId != _scope.ownerId) {

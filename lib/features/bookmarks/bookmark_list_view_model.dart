@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../library/library_view_model.dart';
+import '../library/library_dependencies.dart';
 import '../library/material_repository.dart';
 import '../subtitles/domain/subtitle_models.dart';
 import 'bookmark_dependencies.dart';

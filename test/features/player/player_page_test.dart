@@ -11,7 +11,7 @@ import 'package:english_learning_player/features/bookmarks/bookmark_dependencies
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/features/bookmarks/bookmarks_page.dart';
 import 'package:english_learning_player/features/bookmarks/domain/bookmark.dart';
-import 'package:english_learning_player/features/library/library_view_model.dart';
+import 'package:english_learning_player/features/library/library_dependencies.dart';
 import 'package:english_learning_player/features/progress/progress_dependencies.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -364,15 +364,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('一句練習句。'), findsOneWidget);
 
-    await tester.tap(find.text('精聽'));
+    await tester.tap(find.widgetWithText(ActionChip, '精聽'));
     await tester.pumpAndSettle();
     expect(find.text('A sentence to learn.'), findsNothing);
     expect(find.text('一句練習句。'), findsNothing);
-    await tester.tap(find.text('顯示英文'));
+    await tester.tap(find.widgetWithText(ActionChip, '顯示英文'));
     await tester.pumpAndSettle();
     expect(find.text('A sentence to learn.'), findsOneWidget);
     expect(find.text('一句練習句。'), findsNothing);
-    await tester.tap(find.text('顯示中文'));
+    await tester.tap(find.widgetWithText(ActionChip, '顯示中文'));
     await tester.pumpAndSettle();
     expect(find.text('一句練習句。'), findsOneWidget);
     expect(audio.seekCalls, 0);

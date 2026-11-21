@@ -163,6 +163,7 @@ final class SyncFailure implements Exception {
 abstract interface class SyncOutbox {
   Future<SyncOperation?> claimNext(String ownerId, DateTime now);
   Future<void> complete(String ownerId, String opId, DateTime now);
+  Future<void> release(String ownerId, String opId, DateTime now);
   Future<void> deferForAuthentication(
     String ownerId,
     String opId,
@@ -180,6 +181,8 @@ abstract interface class SyncOutbox {
   Future<void> retryNeedsAttention(String ownerId, String opId, DateTime now);
 }
 
+enum SyncOperationKind { material, subtitle }
+
 final class SyncOperation {
   const SyncOperation({
     required this.ownerId,
@@ -188,6 +191,7 @@ final class SyncOperation {
     required this.payloadJson,
     required this.payloadHash,
     required this.attempts,
+    this.kind = SyncOperationKind.material,
   });
 
   final String ownerId;
@@ -196,4 +200,5 @@ final class SyncOperation {
   final String payloadJson;
   final String payloadHash;
   final int attempts;
+  final SyncOperationKind kind;
 }

@@ -4,8 +4,8 @@ import '../../../core/sync/progress_policy.dart';
 import '../../../core/sync/sync_contracts.dart';
 import '../../progress/domain/progress_models.dart';
 import '../../progress/services/progress_sync_coordinator.dart';
-import 'firebase_account_session.dart';
-import 'firebase_endpoint.dart';
+import '../../auth/data/firebase_account_session.dart';
+import '../../../core/firebase/firebase_endpoint.dart';
 import 'firebase_documents.dart';
 
 final class FirebaseProgressTransport implements ProgressSyncTransport {

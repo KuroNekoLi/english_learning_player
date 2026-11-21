@@ -11,7 +11,7 @@ import 'core/audio/english_audio_handler.dart';
 import 'core/audio/just_audio_adapter.dart';
 import 'app/library_page.dart';
 import 'core/db/account_scope.dart';
-import 'features/library/library_view_model.dart';
+import 'core/db/account_database_providers.dart';
 import 'features/auth/firebase_session_controller.dart';
 import 'features/player/player_view_model.dart';
 

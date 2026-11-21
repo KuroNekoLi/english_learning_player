@@ -17,8 +17,8 @@ import 'package:english_learning_player/features/progress/services/progress_sync
 import 'package:english_learning_player/features/sync/data/firebase_progress_transport.dart';
 import 'package:english_learning_player/features/sync/data/firebase_subtitle_sync.dart';
 import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
-import 'package:english_learning_player/features/sync/data/firebase_account_session.dart';
-import 'package:english_learning_player/features/sync/data/firebase_endpoint.dart';
+import 'package:english_learning_player/features/auth/data/firebase_account_session.dart';
+import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
 import 'package:english_learning_player/features/sync/data/firebase_material_transport.dart';
 import 'package:english_learning_player/features/sync/services/cloud_material_download_service.dart';
 import 'package:english_learning_player/features/sync/services/cloud_sync_coordinator.dart';
@@ -150,6 +150,13 @@ void main() {
         ),
       );
       final sending = FirebaseMaterialTransport(endpoint, sender, http);
+      final publishingSubtitles = FirebaseSubtitleSync(
+        uid: uid,
+        documents: sending.documents,
+        objects: sending.objects,
+        repository: senderRepository,
+        consent: consent,
+      );
       final coordinator = CloudSyncCoordinator(
         scope: scope,
         identityProvider: sender,
@@ -158,6 +165,7 @@ void main() {
         materials: senderRepository,
         mediaFiles: senderFiles,
         transport: sending,
+        publishSubtitles: publishingSubtitles.publish,
       );
       expect(
         await coordinator.runOne(),
@@ -212,15 +220,14 @@ void main() {
         offsetMs: 100,
       );
       expect(imported, hasLength(2));
-      final publishingSubtitles = FirebaseSubtitleSync(
-        uid: uid,
-        documents: sending.documents,
-        objects: sending.objects,
-        repository: senderRepository,
-        consent: consent,
-      );
-      await publishingSubtitles.publish(downloaded.id);
-      await publishingSubtitles.publish(downloaded.id);
+      expect(await coordinator.runOne(), SyncRunResult.uploaded);
+      expect(await coordinator.runOne(), SyncRunResult.idle);
+      final subtitleOperation = await senderDb
+          .customSelect(
+            "SELECT state FROM sync_outbox WHERE entity_type = 'subtitle'",
+          )
+          .getSingle();
+      expect(subtitleOperation.read<String>('state'), 'completed');
       final receivingSubtitles = FirebaseSubtitleSync(
         uid: uid,
         documents: receiving.documents,
@@ -230,6 +237,10 @@ void main() {
       );
       await receivingSubtitles.download(downloaded.id);
       await receivingSubtitles.download(downloaded.id);
+      expect(
+        await receiverDb.customSelect('SELECT * FROM sync_outbox').get(),
+        isEmpty,
+      );
       final subtitleTracks = await receiverRepository.listSubtitleTracks(
         downloaded.id,
       );

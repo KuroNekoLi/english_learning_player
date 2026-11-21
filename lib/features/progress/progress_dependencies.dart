@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../library/library_view_model.dart';
+import '../../core/db/account_database_providers.dart';
 import 'data/progress_repository.dart';
 import 'data/sqlite_progress_repository.dart';
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../core/audio/audio_engine.dart';
 import '../../core/audio/audio_engine_provider.dart';
@@ -14,11 +13,11 @@ import '../../features/bookmarks/bookmark_list_view_model.dart';
 import '../library/domain/audio_import_source.dart';
 import '../library/material_repository.dart';
 import '../progress/progress_dependencies.dart';
-import '../progress/services/playback_progress_recorder.dart';
 import '../subtitles/domain/subtitle_models.dart';
 import 'player_dependencies.dart';
 import 'services/material_playback_loader.dart';
 import 'services/player_bookmarks.dart';
+import 'services/player_playback_startup.dart';
 import 'services/player_session_resources.dart';
 
 import 'player_view_state.dart';
@@ -61,21 +60,16 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       final bundle = await loader.load(material);
       if (!_isCurrent(generation)) return;
       _bundle = bundle;
-      await _audioEngine.load(bundle.source);
-      if (!_isCurrent(generation)) return;
-      await _publishMediaItem(material, generation);
-      if (!_isCurrent(generation)) return;
-      final progressRepository = await ref.read(
-        progressRepositoryProvider.future,
-      );
-      if (initialCueId == null) {
-        final savedProgress = await progressRepository.canonical(material.id);
-        final positionMs = savedProgress?.checkpoint.positionMs ?? 0;
-        if (!_isCurrent(generation)) return;
-        if (positionMs > 0) {
-          await _audioEngine.seekTo(Duration(milliseconds: positionMs));
-        }
-      }
+      final progressRepository = await PlayerPlaybackStartup(_audioEngine)
+          .prepare(
+            bundle,
+            mediaSession: () => ref.read(audioMediaSessionProvider.future),
+            progressRepository: () =>
+                ref.read(progressRepositoryProvider.future),
+            restorePosition: initialCueId == null,
+            isCurrent: () => _isCurrent(generation),
+          );
+      if (progressRepository == null || !_isCurrent(generation)) return;
       await _loadBookmarkAnchors(
         material.id,
         bundle.subtitleTracks,
@@ -84,21 +78,15 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       if (!_isCurrent(generation)) return;
       await _createSession(generation);
       if (!_isCurrent(generation)) return;
-      final deviceId = await progressRepository.deviceId();
-      if (!_isCurrent(generation)) return;
-      _resources.progress = PlaybackProgressRecorder(
+      await _resources.startProgress(
+        audio: _audioEngine,
         repository: progressRepository,
-        stream: (
-          ownerId: material.ownerId,
-          materialId: material.id,
-          deviceId: deviceId,
-          sessionId: const Uuid().v4(),
-        ),
-        clock: DateTime.now,
+        material: material,
+        isCurrent: () => _isCurrent(generation),
+        onPlayback: (snapshot) =>
+            state = state.copyWith(playback: snapshot, clearError: true),
       );
-      _resources.playbackSubscription = _audioEngine.snapshots.listen(
-        (snapshot) => _updatePlayback(snapshot, generation),
-      );
+      if (!_isCurrent(generation)) return;
       state = PlayerViewState(
         status: PlayerLoadStatus.ready,
         material: material,
@@ -154,11 +142,8 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     );
   }
 
-  Future<void> onLifecycleExit() async {
-    await _resources.progress?.onLifecycleExit(
-      positionMs: _audioEngine.snapshot.positionMs,
-    );
-  }
+  Future<void> onLifecycleExit() =>
+      _resources.onLifecycleExit(_audioEngine.snapshot);
 
   Future<void> setSpeed(double speed) =>
       _runAudioCommand(() => _audioEngine.setSpeed(speed));
@@ -386,25 +371,8 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       timeline: bundle.timeline,
       normalVisibility: state.normalVisibility,
     );
-    _resources.learning = session;
     if (wasIntensive) session.enterIntensive();
-    _resources.learningSubscription = session.states.listen(_syncLearningState);
-  }
-
-  void _updatePlayback(PlaybackSnapshot snapshot, int generation) {
-    if (_disposed || generation != _openGeneration) return;
-    final recorder = _resources.progress;
-    if (recorder != null) {
-      unawaited(
-        recorder
-            .onPlaybackSnapshot(
-              positionMs: snapshot.positionMs,
-              playing: snapshot.playing,
-            )
-            .catchError((Object _) {}),
-      );
-    }
-    state = state.copyWith(playback: snapshot, clearError: true);
+    _resources.attachLearning(session, _syncLearningState);
   }
 
   void _syncLearningState(LearningSessionState learning) {
@@ -432,23 +400,6 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     if (_isCurrent(generation)) _bookmarks = bookmarks;
   }
 
-  Future<void> _publishMediaItem(
-    LearningMaterial material,
-    int generation,
-  ) async {
-    try {
-      final mediaSession = await ref.read(audioMediaSessionProvider.future);
-      if (!_isCurrent(generation)) return;
-      await mediaSession.publishMediaItem(
-        id: material.id,
-        title: material.title,
-        durationMs: _audioEngine.snapshot.durationMs,
-      );
-    } catch (_) {
-      // Keep foreground playback available if a platform media session fails.
-    }
-  }
-
   bool _isBookmarked(SubtitleCue? cue, SubtitleTrack? track) =>
       cue != null &&
       track != null &&
@@ -465,11 +416,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       if (!_isCurrent(generation)) return;
       state = state.copyWith(playback: _audioEngine.snapshot, clearError: true);
       if (persistProgress) {
-        final snapshot = _audioEngine.snapshot;
-        await _resources.progress?.onSeekCompleted(
-          snapshot.positionMs,
-          playing: snapshot.playing,
-        );
+        await _resources.savePosition(_audioEngine.snapshot);
       }
     } catch (_) {
       if (_isCurrent(generation)) {

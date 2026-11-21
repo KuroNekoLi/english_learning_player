@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../../core/sync/sync_contracts.dart';
-import '../../auth/social_sign_in.dart';
-import 'firebase_endpoint.dart';
+import '../social_sign_in.dart';
+import '../../../core/firebase/firebase_endpoint.dart';
 
 /// The active account used by all Firebase synchronization transports.
 final class FirebaseAccountSession implements SyncIdentityProvider {

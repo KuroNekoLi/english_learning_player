@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../../../core/sync/sync_contracts.dart';
+import '../sync/sync_contracts.dart';
 
 final class FirebaseEndpoint {
   FirebaseEndpoint({

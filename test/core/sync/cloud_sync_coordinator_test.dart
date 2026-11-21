@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/drift.dart' show QueryRow, driftRuntimeOptions;
 import 'package:english_learning_player/core/db/account_database_service.dart';
 import 'package:english_learning_player/core/db/local_database.dart';
 import 'package:english_learning_player/core/db/account_scope.dart';
@@ -11,6 +12,7 @@ import 'package:english_learning_player/features/library/data/sqlite_material_re
 import 'package:english_learning_player/features/library/domain/audio_import_source.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
+import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
 import 'package:english_learning_player/features/sync/services/cloud_sync_coordinator.dart';
 import '../../fakes/fake_cloud_sync.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +31,21 @@ void main() {
   late DateTime now;
   late CloudSyncCoordinator coordinator;
 
+  CloudSyncCoordinator makeCoordinator({
+    Future<void> Function(String)? publishSubtitles,
+  }) => CloudSyncCoordinator(
+    scope: scope,
+    identityProvider: identity,
+    consentProvider: consent,
+    outbox: outbox,
+    materials: materials,
+    mediaFiles: files,
+    transport: transport,
+    publishSubtitles: publishSubtitles,
+    clock: () => now,
+    random: () => 0.5,
+  );
+
   setUp(() async {
     root = await Directory.systemTemp.createTemp('elp-wp08-');
     files = AccountDatabaseService(supportDirectory: root);
@@ -40,17 +57,7 @@ void main() {
     consent = FakeSyncConsentProvider();
     transport = FakeCloudSyncTransport();
     now = DateTime.now().toUtc();
-    coordinator = CloudSyncCoordinator(
-      scope: scope,
-      identityProvider: identity,
-      consentProvider: consent,
-      outbox: outbox,
-      materials: materials,
-      mediaFiles: files,
-      transport: transport,
-      clock: () => now,
-      random: () => 0.5,
-    );
+    coordinator = makeCoordinator();
     await _importOne(materials, files, scope);
     now = DateTime.now().toUtc().add(const Duration(seconds: 1));
   });
@@ -346,7 +353,127 @@ void main() {
     await expectLater(coordinator.runOne(), throwsStateError);
     expect(transport.uploadCount, 0);
   });
+
+  test(
+    'subtitle release waits for audio, retries after restart and keeps CloudReady',
+    () async {
+      final material = (await materials.listMaterials()).single;
+      await _importSubtitle(material, materials, 'First');
+      await _importSubtitle(material, materials, 'Latest');
+      now = DateTime.now().toUtc().add(const Duration(seconds: 1));
+      var publications = 0;
+      coordinator = makeCoordinator(
+        publishSubtitles: (id) async {
+          publications++;
+          throw const SyncFailure(
+            SyncFailureKind.transient,
+            'network_unavailable',
+          );
+        },
+      );
+      final before = await _subtitleOperations(database);
+      expect(before, hasLength(1));
+      final opId = before.single.read<String>('op_id');
+      expect(await coordinator.runOne(), SyncRunResult.uploaded);
+      expect(publications, 0);
+      expect(await coordinator.runOne(), SyncRunResult.retryScheduled);
+      expect(await coordinator.runOne(), SyncRunResult.idle);
+      expect(
+        (await materials.listMaterials()).single.status,
+        MaterialStatus.cloudReady,
+      );
+
+      await materials.close();
+      database = await files.open(scope);
+      materials = SqliteMaterialRepository(scope: scope, database: database);
+      outbox = SqliteSyncOutbox(scope: scope, db: database);
+      coordinator = makeCoordinator(
+        publishSubtitles: (id) async {
+          publications++;
+          expect(id, material.id);
+          final tracks = await materials.listSubtitleTracks(id);
+          expect(
+            tracks.singleWhere((track) => track.isSelected).cues.single.text,
+            'Latest',
+          );
+        },
+      );
+      now = now.add(const Duration(seconds: 2));
+      expect(await coordinator.runOne(), SyncRunResult.uploaded);
+      expect(publications, 2);
+      final completed = (await _subtitleOperations(database)).single;
+      expect(completed.read<String>('op_id'), opId);
+      expect(completed.read<String>('state'), 'completed');
+      expect(await coordinator.runOne(), SyncRunResult.idle);
+    },
+  );
+
+  test(
+    'a subtitle edit during publication waits for its own lease and consent',
+    () async {
+      final material = (await materials.listMaterials()).single;
+      final started = Completer<void>();
+      final resume = Completer<void>();
+      var publications = 0;
+      coordinator = makeCoordinator(
+        publishSubtitles: (id) async {
+          publications++;
+          if (publications == 1) {
+            started.complete();
+            await resume.future;
+            throw const SyncFailure(
+              SyncFailureKind.permissionDenied,
+              'consent_required',
+            );
+          }
+          final tracks = await materials.listSubtitleTracks(id);
+          expect(
+            tracks.singleWhere((track) => track.isSelected).cues.single.text,
+            'Edited',
+          );
+        },
+      );
+      await _importSubtitle(material, materials, 'Original');
+      now = DateTime.now().toUtc().add(const Duration(seconds: 1));
+      expect(await coordinator.runOne(), SyncRunResult.uploaded);
+      final publishing = coordinator.runOne();
+      await started.future;
+      await _importSubtitle(material, materials, 'Edited');
+      now = DateTime.now().toUtc().add(const Duration(seconds: 1));
+      expect(await coordinator.runOne(), SyncRunResult.idle);
+      resume.complete();
+      expect(await publishing, SyncRunResult.waitingForConsent);
+      expect(
+        (await _subtitleOperations(
+          database,
+        )).every((row) => row.read<int>('attempts') == 0),
+        isTrue,
+      );
+      expect(await coordinator.runOne(), SyncRunResult.uploaded);
+      expect(await coordinator.runOne(), SyncRunResult.idle);
+      expect(publications, 2);
+    },
+  );
 }
+
+Future<void> _importSubtitle(
+  LearningMaterial material,
+  SqliteMaterialRepository repository,
+  String text,
+) async {
+  await SubtitleImportService(repository: repository).importBytes(
+    ownerId: material.ownerId,
+    materialId: material.id,
+    languageTag: 'en',
+    sourceName: 'lesson.en.srt',
+    bytes: '1\n00:00:00,000 --> 00:00:01,000\n$text'.codeUnits,
+    manual: true,
+  );
+}
+
+Future<List<QueryRow>> _subtitleOperations(LocalDatabase db) => db
+    .customSelect("SELECT * FROM sync_outbox WHERE entity_type = 'subtitle'")
+    .get();
 
 Future<void> _importOne(
   SqliteMaterialRepository materials,

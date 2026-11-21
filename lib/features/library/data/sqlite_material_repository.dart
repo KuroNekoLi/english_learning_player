@@ -12,7 +12,8 @@ final class SqliteMaterialRepository
     implements
         MaterialRepository,
         FolderReconciliationRepository,
-        CloudMaterialCacheRepository {
+        CloudMaterialCacheRepository,
+        CloudSubtitleCacheRepository {
   const SqliteMaterialRepository({
     required AccountScope scope,
     required LocalDatabase database,
@@ -351,7 +352,19 @@ final class SqliteMaterialRepository
   Future<SubtitleTrack> saveSubtitleTrack(
     SubtitleTrack track, {
     required bool manual,
-  }) => _subtitles.saveSubtitleTrack(track, manual: manual);
+  }) => _subtitles.saveSubtitleTrack(
+    track,
+    manual: manual,
+    queueForPublication: true,
+  );
+
+  @override
+  Future<SubtitleTrack> saveDownloadedSubtitleTrack(SubtitleTrack track) =>
+      _subtitles.saveSubtitleTrack(
+        track,
+        manual: false,
+        queueForPublication: false,
+      );
 
   @override
   Future<List<SubtitleTrack>> listSubtitleTracks(String materialId) =>

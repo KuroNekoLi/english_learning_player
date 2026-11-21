@@ -4,6 +4,7 @@ import 'dart:io';
 import 'audio_engine.dart';
 import 'audio_player_port.dart';
 import 'just_audio_player_port.dart';
+import 'sentence_loop_playback.dart';
 
 final class JustAudioAdapter implements AudioEngine {
   JustAudioAdapter({AudioPlayerPort? player})
@@ -31,6 +32,7 @@ final class JustAudioAdapter implements AudioEngine {
   }
 
   final AudioPlayerPort _player;
+  late final _sentenceLoop = SentenceLoopPlayback(_player);
   final StreamController<PlaybackSnapshot> _events =
       StreamController<PlaybackSnapshot>.broadcast(sync: true);
   final List<StreamSubscription<dynamic>> _subscriptions = [];
@@ -84,8 +86,7 @@ final class JustAudioAdapter implements AudioEngine {
       if (generation != _loadGeneration) _throwSuperseded();
       try {
         await _player.pause();
-        await _player.setLoopEnabled(false);
-        await _player.setClip(null);
+        await _sentenceLoop.clearClip();
         final duration = await _player.load(source.uri);
         if (generation != _loadGeneration) _throwSuperseded();
         _sourceDurationMs =
@@ -245,11 +246,7 @@ final class JustAudioAdapter implements AudioEngine {
       final resumePlayback = _playing;
       _configuringLoop = true;
       try {
-        await _player.pause();
-        await _player.setLoopEnabled(false);
-        await _player.setClip(range);
-        await _player.seekTo(range.startMs);
-        await _player.setLoopEnabled(true);
+        await _sentenceLoop.apply(range);
         _loopRange = range;
         _positionMs = range.startMs;
         _playing = false;
@@ -286,10 +283,8 @@ final class JustAudioAdapter implements AudioEngine {
     _configuringLoop = true;
     try {
       await _player.pause();
-      await _player.setLoopEnabled(false);
-      await _player.setClip(null);
       final restoredPosition = _clampPosition(previousPosition);
-      await _player.seekTo(restoredPosition);
+      await _sentenceLoop.restorePosition(restoredPosition);
       _loopRange = null;
       _positionMs = restoredPosition;
       _playing = false;
@@ -311,9 +306,7 @@ final class JustAudioAdapter implements AudioEngine {
 
   Future<void> _restoreUnlooped(int positionMs, bool resumePlayback) async {
     try {
-      await _player.setLoopEnabled(false);
-      await _player.setClip(null);
-      await _player.seekTo(_clampPosition(positionMs));
+      await _sentenceLoop.restorePosition(_clampPosition(positionMs));
       _loopRange = null;
       _positionMs = _clampPosition(positionMs);
       _playing = false;

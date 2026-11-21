@@ -6,11 +6,13 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:uuid/uuid.dart';
 
+import '../sync/subtitle_outbox_entry.dart';
+
 class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -80,6 +82,7 @@ class LocalDatabase extends GeneratedDatabase {
       }
       if (from < 5) await _createProgressSchema();
       if (from < 6) await _createFolderLibrarySchema();
+      if (from < 7) await transaction(_backfillSubtitleSyncOperations);
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -379,6 +382,22 @@ class LocalDatabase extends GeneratedDatabase {
           createdAtMs,
           createdAtMs,
         ],
+      );
+    }
+  }
+
+  Future<void> _backfillSubtitleSyncOperations() async {
+    final rows = await customSelect('''
+      SELECT DISTINCT owner_id, material_id FROM subtitle_tracks
+      WHERE is_selected = 1
+    ''').get();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    for (final row in rows) {
+      await SubtitleOutboxEntry.enqueue(
+        this,
+        ownerId: row.read<String>('owner_id'),
+        materialId: row.read<String>('material_id'),
+        nowMs: nowMs,
       );
     }
   }

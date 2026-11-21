@@ -110,9 +110,6 @@ final class FirebaseSyncRuntime {
     for (var i = 0; i < 20; i++) {
       final status = await coordinator.runOne();
       if (status == SyncRunResult.idle) {
-        for (final materialId in await repository.uploadedMaterialIds()) {
-          await subtitles.publish(materialId);
-        }
         return _syncProgress();
       }
       if (status != SyncRunResult.uploaded) return status;

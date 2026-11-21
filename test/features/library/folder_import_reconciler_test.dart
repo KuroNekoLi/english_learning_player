@@ -17,7 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:english_learning_player/core/platform/folder_access_gateway_provider.dart';
 import 'package:english_learning_player/features/library/folder_source_view_model.dart';
-import 'package:english_learning_player/features/library/library_view_model.dart';
+import 'package:english_learning_player/core/db/account_database_providers.dart';
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;

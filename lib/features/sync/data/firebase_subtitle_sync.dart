@@ -25,7 +25,7 @@ final class FirebaseSubtitleSync {
   final String uid;
   final FirebaseDocuments documents;
   final FirebaseStorageObjects objects;
-  final MaterialRepository repository;
+  final CloudSubtitleCacheRepository repository;
   final SyncConsentProvider consent;
 
   List<String> _collection(String materialId) => [
@@ -153,7 +153,7 @@ final class FirebaseSubtitleSync {
           ? split.english
           : split.chinese;
       await _checkConsent();
-      await repository.saveSubtitleTrack(
+      await repository.saveDownloadedSubtitleTrack(
         SubtitleTrack(
           id: id,
           ownerId: uid,
@@ -167,7 +167,6 @@ final class FirebaseSubtitleSync {
           isSelected: false,
           cues: cues,
         ),
-        manual: false,
       );
     }
   }
