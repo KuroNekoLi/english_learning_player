@@ -17,9 +17,19 @@ import 'media_store.dart';
 /// It avoids partial playable records but can use substantial memory for large
 /// files; chunked OPFS streaming remains a performance follow-up.
 final class WebMediaStore implements MediaStore {
-  WebMediaStore(this._scope);
+  WebMediaStore(this._scope) : _forceIndexedDb = false, _beforeWrite = null;
+
+  /// Forces a browser backend and injects failures for platform tests.
+  WebMediaStore.forTesting(
+    this._scope, {
+    bool forceIndexedDb = false,
+    Future<void> Function(WebMediaBackend backend)? beforeWrite,
+  }) : _forceIndexedDb = forceIndexedDb,
+       _beforeWrite = beforeWrite;
 
   final AccountScope _scope;
+  final bool _forceIndexedDb;
+  final Future<void> Function(WebMediaBackend backend)? _beforeWrite;
   WebMediaBackend? _lastWriteBackend;
 
   WebMediaBackend? get lastWriteBackend => _lastWriteBackend;
@@ -32,17 +42,20 @@ final class WebMediaStore implements MediaStore {
     Future<void> Function(ImportedAudio)? verifyBeforePublish,
   }) async {
     final type = AudioFileType.fromName(source.name);
-    try {
-      final imported = await _copyToOpfs(
-        source,
-        type,
-        verifyBeforePublish: verifyBeforePublish,
-      );
-      _lastWriteBackend = WebMediaBackend.opfs;
-      return imported;
-    } catch (_) {
-      // If OPFS is unavailable or out of quota, replay the source stream into
-      // the IndexedDB fallback. AudioRead is a stream factory by contract.
+    if (!_forceIndexedDb) {
+      try {
+        await _beforeWrite?.call(WebMediaBackend.opfs);
+        final imported = await _copyToOpfs(
+          source,
+          type,
+          verifyBeforePublish: verifyBeforePublish,
+        );
+        _lastWriteBackend = WebMediaBackend.opfs;
+        return imported;
+      } catch (_) {
+        // If OPFS is unavailable or out of quota, replay the source stream into
+        // the IndexedDB fallback. AudioRead is a stream factory by contract.
+      }
     }
 
     final bytes = BytesBuilder(copy: false);
@@ -66,6 +79,7 @@ final class WebMediaStore implements MediaStore {
         relativePath: 'media/${_scope.storageKey}/$key',
       );
       await verifyBeforePublish?.call(imported);
+      await _beforeWrite?.call(WebMediaBackend.indexedDb);
       final blob = web.Blob(
         [bytes.takeBytes().toJS].toJS,
         web.BlobPropertyBag(type: type.mimeType),
