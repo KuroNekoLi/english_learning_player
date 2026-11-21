@@ -7,14 +7,15 @@ import '../sync/sync_contracts.dart';
 final class FirebaseEndpoint {
   FirebaseEndpoint({
     required this.project,
-    required this.bucket,
     required this.apiKey,
+    this.bucket,
     this.emulatorHost,
     this.progressRegion,
   }) {
     final demo = emulatorHost != null;
     if (!RegExp(r'^[a-z][a-z0-9-]+$').hasMatch(project) ||
-        !RegExp(r'^[a-z0-9][a-z0-9.-]+$').hasMatch(bucket) ||
+        (bucket != null &&
+            !RegExp(r'^[a-z0-9][a-z0-9.-]+$').hasMatch(bucket!)) ||
         apiKey.trim().isEmpty ||
         (progressRegion != null &&
             !RegExp(r'^[a-z]+-[a-z]+[0-9]+$').hasMatch(progressRegion!)) ||
@@ -35,7 +36,9 @@ final class FirebaseEndpoint {
     const region = String.fromEnvironment('ELP_FIREBASE_PROGRESS_REGION');
     return FirebaseEndpoint(
       project: project,
-      bucket: host.isEmpty ? bucket : '$project.appspot.com',
+      bucket: host.isEmpty
+          ? (bucket.isEmpty ? null : bucket)
+          : '$project.appspot.com',
       apiKey: host.isEmpty ? key : 'demo-key',
       emulatorHost: host.isEmpty ? null : host,
       progressRegion: region.isNotEmpty
@@ -45,12 +48,13 @@ final class FirebaseEndpoint {
   }
 
   final String project;
-  final String bucket;
+  final String? bucket;
   final String apiKey;
   final String? emulatorHost;
   final String? progressRegion;
 
   bool get isEmulator => emulatorHost != null;
+  bool get isMediaSyncConfigured => bucket != null;
 
   Uri auth(String method) => _uri(
     'identitytoolkit.googleapis.com',
@@ -88,12 +92,19 @@ final class FirebaseEndpoint {
     query,
   );
 
-  Uri storage({String? object, Map<String, String>? query}) => _uri(
-    'firebasestorage.googleapis.com',
-    9199,
-    ['v0', 'b', bucket, 'o', if (object != null) object],
-    query,
-  );
+  Uri storage({String? object, Map<String, String>? query}) {
+    final storageBucket = bucket;
+    if (storageBucket == null) {
+      throw StateError('Firebase Storage is not configured.');
+    }
+    return _uri('firebasestorage.googleapis.com', 9199, [
+      'v0',
+      'b',
+      storageBucket,
+      'o',
+      if (object != null) object,
+    ], query);
+  }
 
   Uri _uri(
     String host,

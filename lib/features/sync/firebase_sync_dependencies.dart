@@ -29,7 +29,11 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
     final state = ref.read(firebaseSessionProvider);
     return state.uid == uid && state.consent;
   });
-  if (endpoint == null || session?.uid != account.ownerId) return null;
+  if (endpoint == null ||
+      !endpoint.isMediaSyncConfigured ||
+      session?.uid != account.ownerId) {
+    return null;
+  }
   final http = ref.watch(firebaseHttpProvider);
   final transport = FirebaseMaterialTransport(endpoint, session!, http);
   final database = ref.watch(localDatabaseProvider.future);

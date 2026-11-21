@@ -45,6 +45,7 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
     final viewModel = ref.read(firebaseSyncViewModelProvider.notifier);
     final endpoint = ref.watch(firebaseEndpointProvider);
     final platform = ref.watch(socialSignInProvider);
+    final canSync = endpoint?.isMediaSyncConfigured ?? false;
     final canUseTestEmail =
         endpoint != null &&
         (endpoint.isEmulator ||
@@ -74,20 +75,25 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
                 onPressed: sync.busy ? null : viewModel.signOut,
                 child: const Text('登出'),
               ),
-              SwitchListTile(
-                title: const Text('允許同步這個帳號的教材'),
-                value: state.consent,
-                onChanged: sync.busy ? null : viewModel.setConsent,
-              ),
-              FilledButton(
-                onPressed: sync.busy || !state.consent ? null : viewModel.sync,
-                child: const Text('立即同步'),
-              ),
+              if (canSync) ...[
+                SwitchListTile(
+                  title: const Text('允許同步這個帳號的教材'),
+                  value: state.consent,
+                  onChanged: sync.busy ? null : viewModel.setConsent,
+                ),
+                FilledButton(
+                  onPressed: sync.busy || !state.consent
+                      ? null
+                      : viewModel.sync,
+                  child: const Text('立即同步'),
+                ),
+              ] else
+                const Text('教材同步尚未設定。'),
             ],
             if (sync.busy) const LinearProgressIndicator(),
             if (sync.status case final message?)
               Semantics(liveRegion: true, child: Text(message)),
-            if (state.uid != null && state.consent)
+            if (state.uid != null && canSync && state.consent)
               for (final material in sync.materials)
                 CloudMaterialEntry(
                   material: material,

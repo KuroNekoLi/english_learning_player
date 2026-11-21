@@ -147,6 +147,47 @@ void main() {
     expect(social.attempts, [SocialProvider.apple, SocialProvider.apple]);
     expect(find.textContaining('請使用原本的登入方式'), findsNothing);
   });
+
+  testWidgets('supports a Firebase account with no media sync configuration', (
+    tester,
+  ) async {
+    final endpoint = FirebaseEndpoint(
+      project: 'example-project',
+      apiKey: 'test-only',
+    );
+    final social = _FakeSocialSignIn()
+      ..result = Future.value(
+        NativeFirebaseUser('auth-only-uid', () async => 'test-firebase-token'),
+      );
+    final container = ProviderContainer(
+      overrides: [
+        firebaseEndpointProvider.overrideWithValue(endpoint),
+        socialSignInProvider.overrideWithValue(social),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: FirebaseSyncPanel()),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('appleSignIn')));
+    await tester.pumpAndSettle();
+
+    expect(container.read(firebaseSessionProvider).uid, 'auth-only-uid');
+    expect(find.text('教材同步尚未設定。'), findsOneWidget);
+    expect(find.text('立即同步'), findsNothing);
+    container.read(firebaseSessionProvider.notifier).setConsent(true);
+    expect(container.read(firebaseSessionProvider).consent, isFalse);
+    expect(await container.read(firebaseSyncRuntimeProvider.future), isNull);
+    expect(endpoint.storage, throwsStateError);
+
+    await tester.tap(find.text('登出'));
+    await tester.pumpAndSettle();
+    expect(container.read(firebaseSessionProvider).uid, isNull);
+  });
 }
 
 final class _FakeSocialSignIn implements SocialSignIn {

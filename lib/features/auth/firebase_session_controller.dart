@@ -129,6 +129,9 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
 
   void setConsent(bool enabled) {
     final uid = state.uid;
-    if (uid != null) state = (uid: uid, consent: enabled);
+    if (uid == null) return;
+    final canSync =
+        ref.read(firebaseEndpointProvider)?.isMediaSyncConfigured ?? false;
+    state = (uid: uid, consent: enabled && canSync);
   }
 }
