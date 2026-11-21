@@ -37,6 +37,7 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 emulator-data/
+.firebase/
 
 # Symbolication related
 app.*.symbols
