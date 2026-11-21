@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -22,7 +23,11 @@ final class AccountDatabaseService {
       p.join(_supportDirectory.path, 'profiles', scope.storageKey),
     );
     await directory.create(recursive: true);
-    return LocalDatabase.open(File(p.join(directory.path, 'library.sqlite')));
+    return LocalDatabase(
+      NativeDatabase.createInBackground(
+        File(p.join(directory.path, 'library.sqlite')),
+      ),
+    );
   }
 
   Directory mediaDirectory(AccountScope scope) =>

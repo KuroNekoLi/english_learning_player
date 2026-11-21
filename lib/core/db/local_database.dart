@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:uuid/uuid.dart';
 
 import '../sync/subtitle_outbox_entry.dart';
@@ -401,7 +399,4 @@ class LocalDatabase extends GeneratedDatabase {
       );
     }
   }
-
-  static LocalDatabase open(File file) =>
-      LocalDatabase(NativeDatabase.createInBackground(file));
 }
