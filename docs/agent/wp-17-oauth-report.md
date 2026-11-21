@@ -30,16 +30,16 @@ Firebase 官方文件提供 Web Google 登入的 `GoogleAuthProvider` 與 `signI
 | Web build | PASS | `flutter build web --no-pub --dart-define-from-file=.env.firebase-web` |
 | OAuth UI/session/account-scope widget tests | PASS | 6 個測試：取消、成功與 UID token guard、登出、切帳號、popup/domain 失敗、登入恢復、未設定狀態；VM 與 Chrome 均通過 |
 | Firebase Google provider 設定 | PASS（既有證據） | [WP-14 登入紀錄](wp-14-social-sign-in.md) 記錄 Firebase Console 已確認 Google provider 啟用；本輪未變更 Auth 設定 |
-| Firebase 授權網域即時讀取 | BLOCKED | 本機沒有可用的 gcloud OAuth access token；本輪未讀取 Authorized domains，部署網址仍需由專案擁有人核對 |
-| Firebase 實際 Google 帳號登入、同意畫面及登出 | BLOCKED | 本輪未使用任何真實使用者憑據完成授權；Web build 與 fake-port 測試不等於正式 provider E2E |
+| Firebase 授權網域管理 API 讀取 | BLOCKED | 本機沒有可用的 gcloud OAuth access token，未能讀取完整 Authorized domains 清單；但本輪 localhost 實際 OAuth 成功，證明該來源可用 |
+| Firebase 實際 Google 登入與重載恢復 | PASS | 2026-11-21 執行 `flutter run -d chrome --dart-define-from-file=.env.firebase-web`，在 `localhost` 完成 Google 授權並看到「已登入同步帳號」；重新載入後仍恢復登入。未記錄帳號或識別資料 |
+| 真實帳號登出 | 未執行 | 保留使用者登入狀態；登出由 fake-port widget 測試覆蓋，尚未以真實帳號操作 |
 | 跨分頁即時登入狀態更新 | 未實作 | 每個分頁初始化時會恢復 Firebase session；其他分頁登入／登出後，本分頁需重新整理。ID token 仍會以目前 UID 再檢查，scope 不匹配時拒絕 token |
 
-## 人工完成真實 OAuth 驗收
+## OAuth 驗收結果與後續網域確認
 
-1. 在 Firebase Console 核對 `english-learning-player-auth` 的 Authentication → Sign-in method（WP-14 紀錄已確認 Google 啟用），並確認這次實際測試的 `localhost` 與部署網域都在 Authorized domains 中。設定值本階段沒有透過程式自動變更。
-2. 使用上述啟動命令開啟 `localhost` 網址；在未確認授權清單前，不要假設該來源可進行 OAuth。
-3. 在「教材庫 → 帳號與同步」按 Google 登入，完成使用者自己的 Google 授權；確認顯示已登入，重新載入後 session 仍在，登出後返回本機離線教材庫。
-4. 若部署網域不在授權清單，Firebase 會拒絕 popup；需由專案擁有人在 Console 加入該網域後重試。
+1. 本機 `localhost` 登入和重新載入恢復已實測通過。Google provider 啟用狀態沿用 WP-14 的 Firebase Console 確認紀錄；本階段沒有更改 Auth 設定。
+2. 其他部署網域仍需專案擁有人在 Firebase Console 的 Authentication → Settings → Authorized domains 核對；正式部署前應以該網域再做一次實際 Google 登入。
+3. 真實帳號登出未執行，避免清除目前有效 session；登出回復離線 scope 的契約由六個 widget 測試覆蓋。
 
 ## 已知限制與後續
 
