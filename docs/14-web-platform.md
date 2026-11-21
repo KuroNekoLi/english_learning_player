@@ -41,3 +41,11 @@ Web 是 Android、iOS、macOS 以外的第四個正式支援目標。WP-17 負�
 
 - 基準 `057ce4b` 使用 Flutter 3.32.2／Dart 3.8.1、Drift 2.31.0、sqlite3 2.9.4。本機套件源碼確認 `WasmDatabase.open()` 已存在。`flutter build web --no-pub` 回覆 `Missing index.html.`，目前沒有 `web/` 入口。`LocalDatabase.open(File)`、`AppMediaStore`、Firebase HTTP 傳輸與 macOS Desktop OAuth 目前使用 `dart:io` 或原生 executor，須依平台隔離。這些是程式盤點結果，瀏覽器實際相容性由 T-WEB 系列驗證。
 - 開發先用 localhost、合成教材和 Firebase Emulator。正式發布前需核准 Web App 註冊、Authorized Domains、HTTPS 託管與已核准的媒體同步資源。沿用現行費用及資料授權邊界，瀏覽器與套件最低版本以實測後的支援矩陣確定。
+
+### Hosting 目標
+
+WP-17 首次正式 Web 發布採用既有 Firebase Hosting site `english-learning-player-auth`，網址為 `https://english-learning-player-auth.web.app`。專案已有此 Hosting site，Firebase 專案與登入、Firestore、Storage 相同。`firebase.json` 的 Hosting 設定以 `build/web` 為公開目錄，並套用 SPA fallback、入口頁重新驗證及 WASM MIME。部署只執行 `firebase deploy --only hosting`，不可連帶發布 Firestore、Storage rules 或 Functions。
+
+Firebase Authentication 已確認包含 `english-learning-player-auth.web.app` Authorized Domain。Storage bucket CORS 已保留 localhost，並加入 Hosting origin 與瀏覽器 GET／POST 請求標頭；對 Hosting origin 的 Storage POST preflight 回覆 HTTP 200。這只驗證跨來源預檢，不代表真實登入、上傳或下載已通過。
+
+`tool/build_firebase_web.sh` 讀取被 Git 忽略的 `.env.firebase-web`，只取 Web 公開 Firebase 設定，暫存成 Flutter CLI 所需 JSON，再建置 `build/web`；臨時檔於結束時移除。Firebase Hosting predeploy 會執行此腳本。正式 Google OAuth 登入、跨裝置媒體收送與首次發布仍待 HTTPS 網站實測。
