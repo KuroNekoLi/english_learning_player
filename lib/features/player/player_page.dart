@@ -10,6 +10,7 @@ import 'player_view_model.dart';
 import 'widgets/playback_controls.dart';
 import 'widgets/subtitle_empty_state.dart';
 import 'widgets/subtitle_settings_sheet.dart';
+import 'widgets/subtitle_toolbar.dart';
 import 'widgets/subtitle_transcript.dart';
 
 export 'widgets/subtitle_settings_sheet.dart';
@@ -69,7 +70,17 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          appBar: AppBar(title: Text(widget.material.title, maxLines: 1)),
+          appBar: AppBar(
+            title: Tooltip(
+              message: widget.material.title,
+              excludeFromSemantics: true,
+              child: Text(
+                widget.material.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
           body: _subtitleContent(state, viewModel),
         ),
       ),
@@ -102,77 +113,48 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
     }
 
     return SafeArea(
-      child: Column(
-        children: [
-          PlaybackControls(
-            state: state,
-            viewModel: viewModel,
-            onSubtitleSettings: () => _showSubtitleSettings(context, viewModel),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1120),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PlaybackControls(state: state, viewModel: viewModel),
+              SubtitleToolbar(
+                visibility: state.normalVisibility,
+                onVisibilityChanged:
+                    state.learning?.mode == LearningMode.intensive
+                    ? null
+                    : viewModel.setNormalVisibility,
+                onSettings: () => _showSubtitleSettings(context, viewModel),
+              ),
+              Expanded(
+                child: state.timeline == null
+                    ? SubtitleEmptyState(
+                        onImport: () =>
+                            _showSubtitleSettings(context, viewModel),
+                      )
+                    : SubtitleTranscript(
+                        key: ValueKey(
+                          '${state.englishTrack!.id}:${state.englishTrack!.revision}:${state.subtitleTracks.length}',
+                        ),
+                        timeline: state.timeline!,
+                        visibility:
+                            state.learning?.subtitleVisibility ??
+                            state.normalVisibility,
+                        intensive:
+                            state.learning?.mode == LearningMode.intensive,
+                        activeCueId: state.learning?.currentCue?.id,
+                        isCurrentCueBookmarked: state.isCurrentCueBookmarked,
+                        onPlayCue: viewModel.playCue,
+                        onBookmark: viewModel.toggleBookmark,
+                        onRepeatCue: viewModel.replay,
+                        onNextCue: viewModel.nextCue,
+                      ),
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              runSpacing: 8,
-              children: [
-                Text('逐句雙語字幕', style: Theme.of(context).textTheme.titleLarge),
-                SegmentedButton<SubtitleVisibility>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(
-                      value: SubtitleVisibility.englishOnly,
-                      label: Text('英文'),
-                    ),
-                    ButtonSegment(
-                      value: SubtitleVisibility.chineseOnly,
-                      label: Text('中文'),
-                    ),
-                    ButtonSegment(
-                      value: SubtitleVisibility.bilingual,
-                      label: Text('雙語'),
-                    ),
-                  ],
-                  selected: {
-                    if (state.normalVisibility != SubtitleVisibility.hidden)
-                      state.normalVisibility,
-                  },
-                  emptySelectionAllowed: true,
-                  onSelectionChanged:
-                      state.learning?.mode == LearningMode.intensive
-                      ? null
-                      : (selection) {
-                          if (selection.isNotEmpty) {
-                            viewModel.setNormalVisibility(selection.first);
-                          }
-                        },
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: state.timeline == null
-                ? SubtitleEmptyState(
-                    onImport: () => _showSubtitleSettings(context, viewModel),
-                  )
-                : SubtitleTranscript(
-                    key: ValueKey(
-                      '${state.englishTrack!.id}:${state.englishTrack!.revision}:${state.subtitleTracks.length}',
-                    ),
-                    timeline: state.timeline!,
-                    visibility:
-                        state.learning?.subtitleVisibility ??
-                        state.normalVisibility,
-                    intensive: state.learning?.mode == LearningMode.intensive,
-                    activeCueId: state.learning?.currentCue?.id,
-                    isCurrentCueBookmarked: state.isCurrentCueBookmarked,
-                    onPlayCue: viewModel.playCue,
-                    onBookmark: viewModel.toggleBookmark,
-                    onRepeatCue: viewModel.replay,
-                    onNextCue: viewModel.nextCue,
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }

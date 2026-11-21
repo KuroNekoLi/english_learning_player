@@ -128,7 +128,7 @@ void main() {
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('逐句雙語字幕'), findsOneWidget);
+      expect(find.text('逐句字幕'), findsOneWidget);
       expect(find.text('A sentence to learn.'), findsOneWidget);
       expect(find.text('一句練習句。'), findsOneWidget);
       expect(find.byKey(const ValueKey('activeSubtitleCard')), findsNothing);
@@ -218,6 +218,7 @@ void main() {
     (name: 'narrow phone', size: const Size(320, 700), scale: 1.0),
     (name: 'wide desktop', size: const Size(1280, 720), scale: 1.0),
     (name: 'large text', size: const Size(390, 844), scale: 1.8),
+    (name: 'compact with large text', size: const Size(320, 600), scale: 1.8),
   ]) {
     testWidgets('renders ${scenario.name} without layout exceptions', (
       tester,
@@ -234,10 +235,36 @@ void main() {
       audio.advanceTo(1800);
       await tester.pumpAndSettle();
 
-      expect(find.text('A lesson'), findsWidgets);
+      expect(find.text('A lesson'), findsOneWidget);
+      expect(find.text('0:01'), findsOneWidget);
+      expect(find.text('1:00'), findsOneWidget);
+      expect(find.byTooltip('字幕設定').hitTestable(), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('subtitleTranscriptList')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('previewing the timeline seeks only when released', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    final slider = find.byKey(const ValueKey('playbackPositionSlider'));
+    final gesture = await tester.startGesture(tester.getCenter(slider));
+    await gesture.moveBy(const Offset(40, 0));
+    await tester.pump();
+
+    expect(find.text('0:00'), findsNothing);
+    expect(audio.seekCalls, 0);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(audio.seekCalls, 1);
+    expect(audio.snapshot.positionMs, greaterThan(0));
+  });
 
   testWidgets('tapping the current sentence seeks and plays it once', (
     tester,
