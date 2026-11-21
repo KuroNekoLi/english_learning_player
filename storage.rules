@@ -12,7 +12,13 @@ service firebase.storage {
           && request.resource.metadata.sha256 == sha256
           && sha256.matches('^[a-f0-9]{64}$')
           && request.resource.metadata.opId.size() > 0
-          && request.resource.metadata.payloadHash.matches('^[a-f0-9]{64}$');
+          && request.resource.metadata.payloadHash.matches('^[a-f0-9]{64}$')
+          && request.resource.metadata.keys().hasOnly([
+            'ownerId', 'assetId', 'sha256', 'opId', 'payloadHash'
+          ])
+          && request.resource.metadata.keys().hasAll([
+            'ownerId', 'assetId', 'sha256', 'opId', 'payloadHash'
+          ]);
       }
 
       function isOwner() {
@@ -21,20 +27,44 @@ service firebase.storage {
 
       allow read: if isOwner();
       allow create: if isOwner() && resource == null && validUpload();
-      // Objects are immutable. A retry must verify the existing object before reuse.
-      allow update: if false;
-      allow delete: if false;
+      // The content-addressed bytes and application identity remain stable.
+      // Owners may update non-content metadata only when both stored checksums match.
+      allow update: if isOwner() && validUpload()
+        && request.resource.md5Hash == resource.md5Hash
+        && request.resource.crc32c == resource.crc32c
+        && request.resource.metadata.ownerId == resource.metadata.ownerId
+        && request.resource.metadata.assetId == resource.metadata.assetId
+        && request.resource.metadata.sha256 == resource.metadata.sha256
+        && request.resource.metadata.opId == resource.metadata.opId
+        && request.resource.metadata.payloadHash == resource.metadata.payloadHash;
+      allow delete: if isOwner();
     }
 
     match /users/{uid}/subtitles/{materialId}/{sha256} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow create: if request.auth != null && request.auth.uid == uid && resource == null
-        && request.resource.size > 0 && request.resource.size <= 2097152
-        && request.resource.contentType == 'application/x-subrip'
-        && request.resource.metadata.ownerId == uid
-        && request.resource.metadata.sha256 == sha256
-        && sha256.matches('^[a-f0-9]{64}$');
-      allow update, delete: if false;
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      function validSubtitle() {
+        return request.resource != null
+          && request.resource.size > 0 && request.resource.size <= 2097152
+          && request.resource.contentType == 'application/x-subrip'
+          && request.resource.metadata.ownerId == uid
+          && request.resource.metadata.sha256 == sha256
+          && request.resource.metadata.keys().hasOnly(['ownerId', 'sha256'])
+          && request.resource.metadata.keys().hasAll(['ownerId', 'sha256'])
+          && sha256.matches('^[a-f0-9]{64}$');
+      }
+
+      allow read: if isOwner();
+      allow create: if isOwner() && resource == null && validSubtitle();
+      // Keep the content-addressed subtitle bytes and owner identity unchanged.
+      allow update: if isOwner() && validSubtitle()
+        && request.resource.md5Hash == resource.md5Hash
+        && request.resource.crc32c == resource.crc32c
+        && request.resource.metadata.ownerId == resource.metadata.ownerId
+        && request.resource.metadata.sha256 == resource.metadata.sha256;
+      allow delete: if isOwner();
     }
 
     match /{allPaths=**} {

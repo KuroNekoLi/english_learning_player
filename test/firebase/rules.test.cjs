@@ -9,7 +9,7 @@ const {
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing');
 const { doc, getDoc, runTransaction, setDoc } = require('firebase/firestore');
-const { ref, getBytes, getMetadata, uploadBytes } = require('firebase/storage');
+const { deleteObject, ref, getBytes, getMetadata, updateMetadata, uploadBytes } = require('firebase/storage');
 
 const projectId = 'demo-english-learning-player';
 let environment;
@@ -96,7 +96,7 @@ test('Firestore denies anonymous, cross UID, mismatched owner and invalid fields
   ));
 });
 
-test('Storage allows owner read and immutable valid audio only', async () => {
+test('Storage permits owner updates only when bytes and identity stay unchanged', async () => {
   const alice = environment.authenticatedContext('alice').storage();
   const bob = environment.authenticatedContext('bob').storage();
   const anonymous = environment.unauthenticatedContext().storage();
@@ -115,8 +115,12 @@ test('Storage allows owner read and immutable valid audio only', async () => {
   const storedMetadata = await getMetadata(objectRef);
   assert.equal(storedMetadata.contentType, 'audio/mpeg');
   assert.equal(Number(storedMetadata.size), 4);
-  await assertFails(uploadBytes(objectRef, new Uint8Array([1, 2, 3, 4]), metadata));
+  await assertSucceeds(updateMetadata(objectRef, { contentDisposition: 'inline' }));
   await assertFails(uploadBytes(objectRef, new Uint8Array([4, 3, 2, 1]), metadata));
+  await assertFails(uploadBytes(objectRef, new Uint8Array([1, 2, 3, 4]), {
+    ...metadata,
+    customMetadata: { ...metadata.customMetadata, sha256: 'c'.repeat(64) },
+  }));
   await assertFails(getMetadata(ref(bob, storagePath)));
   await assertFails(getMetadata(ref(anonymous, storagePath)));
   await assertFails(uploadBytes(
@@ -129,6 +133,11 @@ test('Storage allows owner read and immutable valid audio only', async () => {
     new Uint8Array([1]),
     { contentType: 'text/plain', customMetadata: metadata.customMetadata },
   ));
+  await assertFails(getMetadata(ref(bob, storagePath)));
+  await assertFails(getMetadata(ref(anonymous, storagePath)));
+  await assertFails(deleteObject(ref(bob, storagePath)));
+  await assertFails(deleteObject(ref(anonymous, storagePath)));
+  await assertSucceeds(deleteObject(objectRef));
 });
 
 // Reference transaction executed on the local emulator as a trusted writer.
@@ -242,7 +251,7 @@ test('receiver can download and verify the published object only under the same 
   await assertFails(getBytes(ref(unauthorized.storage(), storagePath)));
 });
 
-test('subtitle manifests and immutable bytes are restricted to the owner', async () => {
+test('subtitle manifests and mutable object metadata are restricted to the owner', async () => {
   const alice = environment.authenticatedContext('alice');
   const bob = environment.authenticatedContext('bob');
   const anonymous = environment.unauthenticatedContext();
@@ -277,7 +286,10 @@ test('subtitle manifests and immutable bytes are restricted to the owner', async
   await assertSucceeds(uploadBytes(ref(alice.storage(), objectPath), bytes, metadata));
   assert.equal((await getDoc(doc(alice.firestore(), manifestPath))).data().offsetMs, 100);
   assert.deepEqual(Buffer.from(await getBytes(ref(alice.storage(), objectPath))), bytes);
-  await assertFails(uploadBytes(ref(alice.storage(), objectPath), bytes, metadata));
+  await assertSucceeds(updateMetadata(ref(alice.storage(), objectPath), {
+    contentDisposition: 'inline',
+  }));
+  await assertFails(uploadBytes(ref(alice.storage(), objectPath), Buffer.from('changed'), metadata));
   await assertFails(setDoc(doc(alice.firestore(), manifestPath), {
     ...manifest, storagePath: objectPath.replace('alice', 'bob'),
   }));
@@ -285,5 +297,7 @@ test('subtitle manifests and immutable bytes are restricted to the owner', async
     await assertFails(getDoc(doc(outsider.firestore(), manifestPath)));
     await assertFails(setDoc(doc(outsider.firestore(), manifestPath), manifest));
     await assertFails(getBytes(ref(outsider.storage(), objectPath)));
+    await assertFails(deleteObject(ref(outsider.storage(), objectPath)));
   }
+  await assertSucceeds(deleteObject(ref(alice.storage(), objectPath)));
 });

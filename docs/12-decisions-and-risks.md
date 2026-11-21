@@ -35,6 +35,7 @@
 | ADR-027 | ACCEPTED | WP-09 本機 canonical/checkpoint/conflict 與進度 outbox 落 SQLite；雲端交易僅經 ProgressSyncTransport；播放器只在開啟時恢復已確認位置 | SQLite v4→v5 migration、fake receipt/revision/sequence/衝突測試、Player Widget 測試；真實 Firestore transaction 與 Emulator 進度規則仍待 FlutterFire/雲端前置條件 |
 | ADR-028 | ACCEPTED（本機）／OPEN（遠端清單 metadata） | WP-12 完整 scan + account-scoped playlist/source catalog；唯一缺席舊路徑與相同 SHA-256 才視為 rename；缺席不刪教材或收藏 | Drift v5→v6 migration、晚到 SRT、唯一/歧義 rename、掃描錯誤、來源移除與收藏保留測試；既有 sync coordinator 僅派送 material，remote playlist metadata 需後續獨立契約 |
 | ADR-029 | ACCEPTED（本機驗收）／OPEN（遠端發佈） | WP-14 透過 Firebase REST 與 Callable 接入既有同步契約，採測試帳號及手動同步 | 兩個 Emulator 客戶端與 macOS Release 證據見 [WP-14 Firebase 交棒](agent/wp-14-firebase-handoff.md)。正式 Auth、用量及發佈仍依 ADR-010／011／014／017／018 追蹤 |
+| ADR-032 | ACCEPTED（bucket 與 UID 隔離）／OPEN（刪除參照清理、費用上限） | 專案 `english-learning-player-auth` 使用 `english-learning-player-auth.firebasestorage.app`（`us-east1`）；owner 可管理自身 assets/subtitles | Blaze 已由使用者連結。bucket 區域建立後不能變更。內容地址物件更新需保持 bytes checksum 與應用身分 metadata；owner delete 可能留下 Firestore metadata 指向的失效物件，App 刪除/GC 尚未實作。費用上限仍待設定。 |
 
 ## Stage 1 決策細節（2026-11-10）
 

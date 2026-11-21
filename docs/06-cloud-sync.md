@@ -16,6 +16,7 @@
 - 手機預設「按需下載」；顯示 cloud-only/downloading/local-ready/error 狀態；本機快取容量上限可設定。
 - 雲端資料與本地資料分層；FireStore 的離線快取不能取代檔案快取和 outbox 冪等操作。
 - 來源檔案被移除：標記 sourceMissing；除非使用者明確執行刪除，不刪雲端資產或收藏。
+- Firebase Storage 物件只允許 UID 擁有者讀取、上傳與刪除。因音訊及字幕物件路徑含 SHA-256，更新只允許 bytes 的 MD5/CRC32C 保持一致且保留 owner/hash 身分欄位；不同 bytes 必須以新雜湊建立新物件。明確刪除目前不自動清理 Firestore 教材/資產 metadata，故 App 刪除 UI 與參照安全的清理流程完成前，直接刪除物件可能留下失效雲端教材。
 
 重試分類、jitter、持久化 lease 與重送規則見 [ADR-009](12-decisions-and-risks.md)。
 
