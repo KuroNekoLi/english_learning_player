@@ -5,9 +5,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'account_scope.dart';
+import 'account_database_opener.dart';
 import 'local_database.dart';
 
-final class AccountDatabaseService {
+final class AccountDatabaseService implements AccountDatabaseOpener {
   const AccountDatabaseService({required Directory supportDirectory})
     : _supportDirectory = supportDirectory;
 
@@ -29,6 +30,9 @@ final class AccountDatabaseService {
       ),
     );
   }
+
+  @override
+  Future<LocalDatabase> openDatabase(AccountScope scope) => open(scope);
 
   Directory mediaDirectory(AccountScope scope) =>
       Directory(p.join(_supportDirectory.path, 'media', scope.storageKey));

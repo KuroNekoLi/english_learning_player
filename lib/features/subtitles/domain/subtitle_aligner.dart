@@ -54,11 +54,11 @@ final class SubtitleAligner {
           );
           final shorterDuration = (sourceEnd - sourceStart).clamp(
             1,
-            0x7fffffffffffffff,
+            9007199254740991,
           );
           final targetDuration = (targetEnd - targetStart).clamp(
             1,
-            0x7fffffffffffffff,
+            9007199254740991,
           );
           final minimumDuration = shorterDuration < targetDuration
               ? shorterDuration

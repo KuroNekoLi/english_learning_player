@@ -6,6 +6,7 @@ import '../../core/sync/sync_contracts.dart';
 import '../auth/firebase_session_controller.dart';
 import '../library/data/sqlite_material_repository.dart';
 import '../../core/db/account_database_providers.dart';
+import '../../core/db/account_database_service.dart';
 import '../progress/data/sqlite_progress_repository.dart';
 import '../progress/services/progress_sync_coordinator.dart';
 import 'data/firebase_material_transport.dart';
@@ -39,7 +40,7 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
   final database = ref.watch(localDatabaseProvider.future);
   final mediaFiles = ref.watch(accountDatabaseServiceProvider.future);
   final db = await database;
-  final files = await mediaFiles;
+  final files = await mediaFiles as AccountDatabaseService;
   final repository = SqliteMaterialRepository(scope: account, database: db);
   final progress = SqliteProgressRepository(scope: account, db: db);
   final progressTransport = endpoint.progressRegion == null

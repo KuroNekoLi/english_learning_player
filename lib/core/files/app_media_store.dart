@@ -7,8 +7,11 @@ import '../db/account_scope.dart';
 import '../db/account_database_service.dart';
 import '../../features/library/domain/audio_import_source.dart';
 import 'audio_file_type.dart';
+import 'media_store.dart';
 
-final class AppMediaStore {
+export 'media_store.dart' show AudioImportException, ImportedAudio;
+
+final class AppMediaStore implements MediaStore {
   const AppMediaStore({
     required AccountDatabaseService storage,
     required AccountScope scope,
@@ -18,6 +21,7 @@ final class AppMediaStore {
   final AccountDatabaseService _storage;
   final AccountScope _scope;
 
+  @override
   Future<ImportedAudio> copyAndHash(
     AudioImportSource source, {
     Future<void> Function(ImportedAudio)? verifyBeforePublish,
@@ -79,26 +83,13 @@ final class AppMediaStore {
       rethrow;
     }
   }
-}
 
-final class ImportedAudio {
-  const ImportedAudio({
-    required this.sha256,
-    required this.byteLength,
-    required this.mediaType,
-    required this.relativePath,
-  });
-
-  final String sha256;
-  final int byteLength;
-  final String mediaType;
-  final String relativePath;
-}
-
-final class AudioImportException implements Exception {
-  const AudioImportException(this.code);
-
-  final String code;
+  @override
+  Future<StoredMediaReference?> open(String relativePath) async {
+    final file = _storage.resolveMediaFile(_scope, relativePath);
+    if (!await file.exists()) return null;
+    return StoredMediaReference(uri: file.uri);
+  }
 }
 
 final class _DigestSink implements Sink<Digest> {

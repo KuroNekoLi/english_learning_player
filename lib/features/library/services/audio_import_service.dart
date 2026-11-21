@@ -1,21 +1,21 @@
 import 'package:uuid/uuid.dart';
 
-import '../../../core/files/app_media_store.dart';
 import '../../../core/files/audio_file_type.dart';
+import '../../../core/files/media_store.dart';
 import '../domain/audio_import_source.dart';
 import '../material_repository.dart';
 
 final class AudioImportService {
   AudioImportService({
     required MaterialRepository repository,
-    required AppMediaStore mediaStore,
+    required MediaStore mediaStore,
     Uuid uuid = const Uuid(),
   }) : _repository = repository,
        _mediaStore = mediaStore,
        _uuid = uuid;
 
   final MaterialRepository _repository;
-  final AppMediaStore _mediaStore;
+  final MediaStore _mediaStore;
   final Uuid _uuid;
 
   Future<ImportResult> importAudio(AudioImportSource source) async {

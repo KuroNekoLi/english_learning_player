@@ -1,5 +1,6 @@
 import 'package:drift/wasm.dart';
 
+import 'account_database_opener.dart';
 import 'account_scope.dart';
 import 'local_database.dart';
 import 'web_storage_policy.dart';
@@ -8,7 +9,7 @@ import 'web_storage_policy.dart';
 ///
 /// Callers must check [WebAccountDatabase.storageIsSafeForWrites] before
 /// writing. Drift can fall back to modes without cross-tab coordination.
-final class WebAccountDatabaseService {
+final class WebAccountDatabaseService implements AccountDatabaseOpener {
   const WebAccountDatabaseService();
 
   Future<WebAccountDatabase> open(AccountScope scope) async {
@@ -25,6 +26,19 @@ final class WebAccountDatabaseService {
       chosenImplementation: result.chosenImplementation,
       missingFeatures: result.missingFeatures,
     );
+  }
+
+  @override
+  Future<LocalDatabase> openDatabase(AccountScope scope) async {
+    final result = await open(scope);
+    if (!result.storageIsSafeForWrites) {
+      await result.database.close();
+      throw StateError(
+        'Browser storage mode ${result.chosenImplementation.name} is not '
+        'safe for persistent writes.',
+      );
+    }
+    return result.database;
   }
 }
 

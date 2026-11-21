@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'audio_engine.dart';
 import 'audio_player_port.dart';
@@ -52,6 +51,7 @@ final class JustAudioAdapter implements AudioEngine {
   bool _loading = false;
   bool _configuringLoop = false;
   bool _disposed = false;
+  MediaSource? _loadedSource;
 
   @override
   PlaybackSnapshot get snapshot => _snapshot;
@@ -82,13 +82,31 @@ final class JustAudioAdapter implements AudioEngine {
     _error = null;
     _publish();
 
+    var sourceReleased = false;
+    Future<void> releaseSource() async {
+      if (sourceReleased) return;
+      sourceReleased = true;
+      await source.release?.call();
+    }
+
     return _enqueue(() async {
-      if (generation != _loadGeneration) _throwSuperseded();
+      if (generation != _loadGeneration) {
+        await releaseSource();
+        _throwSuperseded();
+      }
       try {
         await _player.pause();
         await _sentenceLoop.clearClip();
         final duration = await _player.load(source.uri);
-        if (generation != _loadGeneration) _throwSuperseded();
+        if (generation != _loadGeneration) {
+          await releaseSource();
+          _throwSuperseded();
+        }
+        final previous = _loadedSource;
+        _loadedSource = source;
+        if (previous?.release != null && !identical(previous, source)) {
+          await previous!.release!.call();
+        }
         _sourceDurationMs =
             _durationInMs(duration) ?? _durationInMs(_player.duration);
         _positionMs = _clampPosition(_durationInMs(_player.position) ?? 0);
@@ -103,6 +121,9 @@ final class JustAudioAdapter implements AudioEngine {
         _error = null;
         _publish();
       } catch (error) {
+        if (!identical(_loadedSource, source)) {
+          await releaseSource();
+        }
         if (generation != _loadGeneration) _throwSuperseded();
         _loading = false;
         _playing = false;
@@ -171,6 +192,9 @@ final class JustAudioAdapter implements AudioEngine {
       try {
         await _player.stop();
         await _player.clearSource();
+        final previous = _loadedSource;
+        _loadedSource = null;
+        await previous?.release?.call();
       } finally {
         if (generation == _loadGeneration) {
           _loading = false;
@@ -273,6 +297,13 @@ final class JustAudioAdapter implements AudioEngine {
     await Future.wait(
       _subscriptions.map((subscription) => subscription.cancel()),
     );
+    try {
+      await _player.clearSource();
+    } finally {
+      final previous = _loadedSource;
+      _loadedSource = null;
+      await previous?.release?.call();
+    }
     await _player.dispose();
     await _events.close();
   }
@@ -449,7 +480,7 @@ final class JustAudioAdapter implements AudioEngine {
     if (error is FormatException) {
       return const AudioEngineException(AudioFailure.unsupportedFormat);
     }
-    if (error is FileSystemException || loadingSource) {
+    if (loadingSource) {
       return const AudioEngineException(AudioFailure.sourceUnavailable);
     }
     return const AudioEngineException(AudioFailure.platform);

@@ -1,10 +1,20 @@
+import 'dart:async';
+
 final class MediaSource {
-  const MediaSource({required this.materialId, required this.uri});
+  const MediaSource({
+    required this.materialId,
+    required this.uri,
+    this.release,
+  });
 
   final String materialId;
 
   /// App-managed file URI or an authorized short-lived remote URI.
   final Uri uri;
+
+  /// Releases temporary browser resources once the engine no longer references
+  /// this source.
+  final FutureOr<void> Function()? release;
 }
 
 final class TimeRange {

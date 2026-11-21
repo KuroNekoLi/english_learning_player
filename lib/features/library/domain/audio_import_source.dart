@@ -1,3 +1,5 @@
+/// A repeatable stream factory; browser storage can replay it to fall back from
+/// OPFS to IndexedDB without persisting a partial object.
 typedef AudioRead = Stream<List<int>> Function();
 
 final class AudioImportSource {

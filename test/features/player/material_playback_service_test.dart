@@ -54,7 +54,7 @@ void main() {
 
     final bundle = await MaterialPlaybackService(
       repository: repository,
-      storage: storage,
+      storage: AppMediaStore(storage: storage, scope: scope),
       scope: scope,
     ).load(imported.material);
 

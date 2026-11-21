@@ -43,11 +43,11 @@ final class SubtitleCueCard extends StatelessWidget {
     final start = subtitleToAudioMs(
       cue.startMs,
       offsetMs,
-    ).clamp(0, 0x7fffffffffffffff);
+    ).clamp(0, 9007199254740991).toInt();
     final end = subtitleToAudioMs(
       cue.endMs,
       offsetMs,
-    ).clamp(0, 0x7fffffffffffffff);
+    ).clamp(0, 9007199254740991).toInt();
     final timeRange = '${playbackTimeLabel(start)} – ${playbackTimeLabel(end)}';
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),

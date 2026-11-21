@@ -11,10 +11,9 @@ final materialPlaybackLoaderProvider = FutureProvider<MaterialPlaybackLoader>((
 ) async {
   final scope = ref.watch(accountScopeProvider);
   final repository = ref.watch(materialRepositoryProvider.future);
-  final storage = ref.watch(accountDatabaseServiceProvider.future);
   return MaterialPlaybackService(
     repository: await repository,
-    storage: await storage,
+    storage: await ref.watch(mediaStoreProvider.future),
     scope: scope,
   );
 }, retry: (_, _) => null);

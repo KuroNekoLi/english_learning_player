@@ -158,7 +158,7 @@ void main() {
 
       final bundle = await MaterialPlaybackService(
         repository: receiver,
-        storage: receiverFiles,
+        storage: AppMediaStore(storage: receiverFiles, scope: scope),
         scope: scope,
       ).load(cached);
       expect(await File.fromUri(bundle.source.uri).readAsBytes(), bytes);

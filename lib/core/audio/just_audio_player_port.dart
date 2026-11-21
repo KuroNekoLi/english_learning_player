@@ -64,6 +64,7 @@ final class JustAudioPlayerPort implements AudioPlayerPort {
     if (uri.scheme == 'https' || uri.scheme == 'http') {
       return _player.setUrl(uri.toString());
     }
+    if (uri.scheme == 'blob') return _player.setUrl(uri.toString());
     throw const AudioEngineException(AudioFailure.unsupportedFormat);
   }
 

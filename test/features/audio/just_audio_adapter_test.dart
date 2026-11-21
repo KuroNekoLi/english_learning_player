@@ -50,6 +50,31 @@ void main() {
       },
     );
 
+    test(
+      'releases browser media references only after unload or replacement',
+      () async {
+        var released = 0;
+        await engine.load(
+          MediaSource(
+            materialId: 'blob-one',
+            uri: Uri.parse('blob:https://localhost/one'),
+            release: () => released++,
+          ),
+        );
+        expect(released, 0);
+        await engine.load(
+          MediaSource(
+            materialId: 'blob-two',
+            uri: Uri.parse('blob:https://localhost/two'),
+            release: () => released++,
+          ),
+        );
+        expect(released, 1);
+        await engine.unload();
+        expect(released, 2);
+      },
+    );
+
     test('T-AUDIO-01 loads media and reports source failures', () async {
       await engine.load(_source('lesson-a'));
       expect(engine.snapshot.materialId, 'lesson-a');

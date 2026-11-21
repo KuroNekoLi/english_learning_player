@@ -1,6 +1,6 @@
 import '../../../core/audio/audio_engine.dart';
-import '../../../core/db/account_database_service.dart';
 import '../../../core/db/account_scope.dart';
+import '../../../core/files/media_store.dart';
 import '../../library/material_repository.dart';
 import '../../subtitles/domain/subtitle_models.dart';
 import '../../subtitles/domain/subtitle_timeline.dart';
@@ -40,14 +40,14 @@ final class MaterialPlaybackBundle {
 final class MaterialPlaybackService implements MaterialPlaybackLoader {
   const MaterialPlaybackService({
     required MaterialRepository repository,
-    required AccountDatabaseService storage,
+    required MediaStore storage,
     required AccountScope scope,
   }) : _repository = repository,
        _storage = storage,
        _scope = scope;
 
   final MaterialRepository _repository;
-  final AccountDatabaseService _storage;
+  final MediaStore _storage;
   final AccountScope _scope;
 
   @override
@@ -59,16 +59,25 @@ final class MaterialPlaybackService implements MaterialPlaybackLoader {
     if (asset == null || asset.id != material.audioAssetId) {
       throw const MaterialPlaybackException('教材音訊資料不存在');
     }
-    final file = _storage.resolveMediaFile(_scope, asset.relativePath);
-    if (!await file.exists()) {
+    final stored = await _storage.open(asset.relativePath);
+    if (stored == null) {
       throw const MaterialPlaybackException('教材音訊檔案遺失');
     }
-    final tracks = await _repository.listSubtitleTracks(material.id);
-    return MaterialPlaybackBundle(
-      material: material,
-      source: MediaSource(materialId: material.id, uri: file.uri),
-      subtitleTracks: tracks,
-    );
+    try {
+      final tracks = await _repository.listSubtitleTracks(material.id);
+      return MaterialPlaybackBundle(
+        material: material,
+        source: MediaSource(
+          materialId: material.id,
+          uri: stored.uri,
+          release: stored.release,
+        ),
+        subtitleTracks: tracks,
+      );
+    } catch (_) {
+      await stored.release?.call();
+      rethrow;
+    }
   }
 }
 
