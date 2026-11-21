@@ -12,6 +12,8 @@ import 'core/db/account_database_providers.dart';
 import 'features/auth/web/web_firebase_auth_adapter.dart';
 import 'features/auth/web/web_firebase_session_controller.dart';
 import 'features/player/player_view_model.dart';
+import 'features/auth/web/web_account_page.dart';
+import 'features/sync/widgets/sync_landing.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,7 +57,11 @@ final class EnglishLearningWebApp extends ConsumerWidget {
       key: ValueKey(uid),
       title: 'English Learning Player',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
-      home: const WebLibraryPage(),
+      home: SyncLanding(
+        uid: uid,
+        library: const WebLibraryPage(),
+        accountPage: const WebAccountPage(),
+      ),
     );
   }
 }

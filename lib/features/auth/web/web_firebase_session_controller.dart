@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/db/account_scope.dart';
-import '../../../core/sync/sync_identity.dart';
+import '../../../core/sync/sync_contracts.dart';
 import '../data/firebase_identity_session.dart';
 import 'web_firebase_auth_port.dart';
 
@@ -123,14 +123,26 @@ final class _WebFirebaseIdentitySession implements FirebaseIdentitySession {
 
   @override
   Future<SyncIdentity?> currentIdentity() async =>
-      uid == null ? null : SyncIdentity(uid!);
+      uid != null && _port.currentUid == uid ? SyncIdentity(uid!) : null;
 
   @override
-  Future<String> tokenFor(String expectedUid) {
-    if (uid != expectedUid) {
-      return Future.error(const WebFirebaseAuthException('auth/user-mismatch'));
+  Future<String> tokenFor(String expectedUid) async {
+    if (uid != expectedUid || _port.currentUid != uid) {
+      throw const SyncFailure(
+        SyncFailureKind.unauthenticated,
+        'account_changed',
+      );
     }
-    return _port.tokenFor(expectedUid);
+    try {
+      return await _port.tokenFor(expectedUid);
+    } on WebFirebaseAuthException catch (error) {
+      throw SyncFailure(
+        error.code == 'auth/network-request-failed'
+            ? SyncFailureKind.transient
+            : SyncFailureKind.unauthenticated,
+        error.code,
+      );
+    }
   }
 }
 

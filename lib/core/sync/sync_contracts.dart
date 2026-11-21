@@ -1,5 +1,3 @@
-import 'dart:io';
-
 export 'sync_identity.dart';
 
 abstract interface class SyncConsentProvider {
@@ -118,7 +116,7 @@ abstract interface class CloudSyncTransport {
   Future<CloudAssetReceipt> uploadAsset({
     required String uid,
     required CloudMediaAsset asset,
-    required File localFile,
+    required Stream<List<int>> Function() openRead,
     required String opId,
     required String payloadHash,
   });

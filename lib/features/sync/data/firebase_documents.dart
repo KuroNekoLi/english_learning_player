@@ -1,15 +1,24 @@
-import 'dart:io';
-
 import '../../../core/sync/sync_contracts.dart';
-import '../../auth/data/firebase_account_session.dart';
+import '../../auth/data/firebase_identity_session.dart';
 import '../../../core/firebase/firebase_endpoint.dart';
 
 final class FirebaseDocuments {
   const FirebaseDocuments(this.endpoint, this.session, this.http);
 
   final FirebaseEndpoint endpoint;
-  final FirebaseAccountSession session;
+  final FirebaseIdentitySession session;
   final FirebaseHttp http;
+
+  Future<void> checkCollectionAccess(String uid, List<String> path) async {
+    _requireOwner(uid, path);
+    final response = await http.send(
+      'GET',
+      endpoint.firestore(path, {'pageSize': '1'}),
+      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+    );
+    await http.requireSuccess(response);
+    await http.read(response).drain<void>();
+  }
 
   Future<List<Map<String, Object>>> listDocuments(
     String uid,
@@ -26,7 +35,7 @@ final class FirebaseDocuments {
           'pageSize': '100',
           if (page != null) 'pageToken': page,
         }),
-        authorization: 'Bearer ${await session.tokenFor(uid)}',
+        authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
       );
       await http.requireSuccess(response);
       final json = await http.json(response);
@@ -49,7 +58,7 @@ final class FirebaseDocuments {
     final response = await http.send(
       'GET',
       endpoint.firestore(path),
-      authorization: 'Bearer ${await session.tokenFor(uid)}',
+      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
     );
     if (response.statusCode == 404) {
       await http.read(response).drain<void>();
@@ -72,8 +81,8 @@ final class FirebaseDocuments {
         path,
         createOnly ? {'currentDocument.exists': 'false'} : null,
       ),
-      authorization: 'Bearer ${await session.tokenFor(uid)}',
-      contentType: ContentType.json,
+      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      contentType: 'application/json',
       bytes: FirebaseHttp.encode({
         'fields': record.map((key, value) => MapEntry(key, _value(value))),
       }),

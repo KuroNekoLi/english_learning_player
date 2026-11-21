@@ -2,6 +2,7 @@
 
 > 狀態：Specification baseline v0.1。Stage 1 契約及 Stage 2 WP-02..10、Stage 3 WP-11～WP-14 已重驗；遠端 playlist metadata 與實機跨裝置 E2E 仍有未完成項目，Gate C 尚未通過。日期：2026-11-17。
 > 優先完成一條可量測的使用者旅程：Mac iCloud 資料夾新增 M4A＋雙 SRT → 自動配對匯入 → 雲端同步 → iPhone 同帳號續播。
+> 2026-11-21 納入 Web 為第四個正式支援目標。Web 實作與發布驗收列入 WP-17。
 
 ## 文件地圖與閱讀順序
 
@@ -21,6 +22,7 @@
 | [11-work-packages.md](11-work-packages.md) | 可單獨執行的工作包 ID、相依與驗收 | Executor |
 | [12-decisions-and-risks.md](12-decisions-and-risks.md) | ADR、未決事項、風險與決策人 | Sol |
 | [13-skills-and-sources.md](13-skills-and-sources.md) | 官方 Skill 安裝、更新、來源與覆寫 | 全體 |
+| [14-web-platform.md](14-web-platform.md) | Web 平台範圍、瀏覽器儲存、Google Web OAuth、WP-17 驗收 | Web Agent / QA |
 
 ## 讀法：接收 → 處理 → 輸出
 每一個元件都要回答：收到上一層什麼？處理哪些規則？交給下一層什麼？如何證明正確？不得堆砌互不相連的檔案名稱。
@@ -35,3 +37,4 @@
 - [WP-14 Firebase 同步交棒](agent/wp-14-firebase-handoff.md) 記錄 App 同步接線、本機 Emulator 驗收及遠端部署前置條件。
 - [WP-15 Stage 4 QA 報告](agent/wp-15-qa-report.md) 記錄 FR 回歸矩陣、失敗注入、Gate D 結果與未解阻礙。
 - [WP-16 架構修正](agent/wp-16-architecture-remediation.md) 記錄元件拆分、行為修正、回歸證據與發布條件。
+- [WP-17 Web 實作交棒](agent/wp-17-implementation-handoff.md) 記錄分段操作、鎖版資產、測試與交回架構審查的條件。第一段可用 [Prompt E](10-agent-prompts.md#prompt-e--wp-17-第一段-web-實作) 開始。

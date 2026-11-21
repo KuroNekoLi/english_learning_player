@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:english_learning_player/core/sync/sync_contracts.dart';
 
 final class FakeSyncIdentityProvider implements SyncIdentityProvider {
@@ -46,7 +44,7 @@ final class FakeCloudSyncTransport implements CloudSyncTransport {
   Future<CloudAssetReceipt> uploadAsset({
     required String uid,
     required CloudMediaAsset asset,
-    required File localFile,
+    required Stream<List<int>> Function() openRead,
     required String opId,
     required String payloadHash,
   }) async {

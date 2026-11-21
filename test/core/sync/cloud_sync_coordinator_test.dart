@@ -39,7 +39,7 @@ void main() {
     consentProvider: consent,
     outbox: outbox,
     materials: materials,
-    mediaFiles: files,
+    mediaStore: AppMediaStore(storage: files, scope: scope),
     transport: transport,
     publishSubtitles: publishSubtitles,
     clock: () => now,
@@ -171,6 +171,18 @@ void main() {
       expect(await coordinator.runOne(), SyncRunResult.uploaded);
     },
   );
+
+  test('releasing consent after upload keeps the operation queued', () async {
+    transport.afterUpload = () async => consent.enabled = false;
+    expect(await coordinator.runOne(), SyncRunResult.waitingForConsent);
+    expect(transport.assetMetadataCount, 0);
+    expect(transport.materialMetadataCount, 0);
+    expect((await _onlyOutboxRow(database)).read<String>('state'), 'queued');
+
+    consent.enabled = true;
+    transport.afterUpload = null;
+    expect(await coordinator.runOne(), SyncRunResult.uploaded);
+  });
 
   test(
     'account change during blob transfer pauses before publishing metadata',
@@ -335,7 +347,7 @@ void main() {
       consentProvider: consent,
       outbox: outbox,
       materials: materials,
-      mediaFiles: files,
+      mediaStore: AppMediaStore(storage: files, scope: scope),
       transport: transport,
       clock: () => now,
       random: () => 0.5,

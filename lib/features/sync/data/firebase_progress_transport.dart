@@ -1,10 +1,8 @@
-import 'dart:io';
-
 import '../../../core/sync/progress_policy.dart';
 import '../../../core/sync/sync_contracts.dart';
 import '../../progress/domain/progress_models.dart';
 import '../../progress/services/progress_sync_coordinator.dart';
-import '../../auth/data/firebase_account_session.dart';
+import '../../auth/data/firebase_identity_session.dart';
 import '../../../core/firebase/firebase_endpoint.dart';
 import 'firebase_documents.dart';
 
@@ -17,7 +15,7 @@ final class FirebaseProgressTransport implements ProgressSyncTransport {
   );
 
   final FirebaseEndpoint endpoint;
-  final FirebaseAccountSession session;
+  final FirebaseIdentitySession session;
   final FirebaseHttp http;
   final FirebaseDocuments documents;
 
@@ -32,8 +30,8 @@ final class FirebaseProgressTransport implements ProgressSyncTransport {
     final response = await http.send(
       'POST',
       endpoint.progressFunction,
-      authorization: 'Bearer ${await session.tokenFor(uid)}',
-      contentType: ContentType.json,
+      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      contentType: 'application/json',
       bytes: FirebaseHttp.encode({
         'data': {
           'opId': opId,

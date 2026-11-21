@@ -1,8 +1,4 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
-import '../sync/sync_contracts.dart';
+export 'firebase_http.dart';
 
 final class FirebaseEndpoint {
   FirebaseEndpoint({
@@ -121,8 +117,13 @@ final class FirebaseEndpoint {
 
   static bool _isLocalHost(String host) {
     if (host == 'localhost') return true;
-    final bytes = InternetAddress.tryParse(host)?.rawAddress;
-    if (bytes == null || bytes.length != 4) return false;
+    final parts = host.split('.');
+    if (parts.length != 4 ||
+        parts.any((p) => !RegExp(r'^(0|[1-9][0-9]{0,2})$').hasMatch(p))) {
+      return false;
+    }
+    final bytes = parts.map(int.parse).toList();
+    if (bytes.any((byte) => byte > 255)) return false;
     final a = bytes[0];
     final b = bytes[1];
     return a == 127 ||
@@ -130,90 +131,4 @@ final class FirebaseEndpoint {
         (a == 192 && b == 168) ||
         (a == 172 && b >= 16 && b <= 31);
   }
-}
-
-final class FirebaseHttp {
-  FirebaseHttp() {
-    _client.connectionTimeout = const Duration(seconds: 15);
-  }
-
-  final HttpClient _client = HttpClient();
-
-  Future<HttpClientResponse> send(
-    String method,
-    Uri uri, {
-    String? authorization,
-    ContentType? contentType,
-    Map<String, String> headers = const {},
-    List<int>? bytes,
-    Stream<List<int>>? body,
-    int? length,
-  }) async {
-    HttpClientRequest? request;
-    try {
-      final outgoing = request = await _client.openUrl(method, uri);
-      outgoing.followRedirects = false;
-      if (authorization != null) {
-        outgoing.headers.set(HttpHeaders.authorizationHeader, authorization);
-      }
-      if (contentType != null) outgoing.headers.contentType = contentType;
-      headers.forEach(outgoing.headers.set);
-      if (length != null) outgoing.contentLength = length;
-      if (bytes != null) outgoing.add(bytes);
-      if (body != null) {
-        await outgoing.addStream(body).timeout(const Duration(minutes: 3));
-      }
-      return await outgoing.close().timeout(const Duration(seconds: 30));
-    } on TimeoutException {
-      request?.abort();
-      throw const SyncFailure(SyncFailureKind.transient, 'network_timeout');
-    } on IOException {
-      request?.abort();
-      throw const SyncFailure(SyncFailureKind.transient, 'network_unavailable');
-    }
-  }
-
-  Future<Map<String, dynamic>> json(HttpClientResponse response) async {
-    try {
-      final data = await utf8.decoder.bind(read(response)).join();
-      return jsonDecode(data) as Map<String, dynamic>;
-    } on FormatException {
-      throw const SyncFailure(
-        SyncFailureKind.invalidData,
-        'invalid_firebase_response',
-      );
-    } on TypeError {
-      throw const SyncFailure(
-        SyncFailureKind.invalidData,
-        'invalid_firebase_response',
-      );
-    }
-  }
-
-  Stream<List<int>> read(HttpClientResponse response) async* {
-    try {
-      yield* response.timeout(const Duration(seconds: 30));
-    } on TimeoutException {
-      throw const SyncFailure(SyncFailureKind.transient, 'network_timeout');
-    } on IOException {
-      throw const SyncFailure(SyncFailureKind.transient, 'network_unavailable');
-    }
-  }
-
-  Future<void> requireSuccess(HttpClientResponse response) async {
-    final code = response.statusCode;
-    if (code >= 200 && code < 300) return;
-    await read(response).drain<void>();
-    throw SyncFailure(switch (code) {
-      401 => SyncFailureKind.unauthenticated,
-      403 => SyncFailureKind.permissionDenied,
-      408 || 409 || 429 => SyncFailureKind.transient,
-      >= 500 => SyncFailureKind.transient,
-      _ => SyncFailureKind.invalidData,
-    }, 'firebase_http_$code');
-  }
-
-  static List<int> encode(Object data) => utf8.encode(jsonEncode(data));
-
-  void close() => _client.close(force: true);
 }

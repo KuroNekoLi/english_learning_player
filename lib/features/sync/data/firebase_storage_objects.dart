@@ -3,23 +3,21 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:uuid/uuid.dart';
 
-import 'dart:io';
-
 import '../../../core/sync/sync_contracts.dart';
-import '../../auth/data/firebase_account_session.dart';
+import '../../auth/data/firebase_identity_session.dart';
 import '../../../core/firebase/firebase_endpoint.dart';
 
 final class FirebaseStorageObjects {
   const FirebaseStorageObjects(this.endpoint, this.session, this.http);
 
   final FirebaseEndpoint endpoint;
-  final FirebaseAccountSession session;
+  final FirebaseIdentitySession session;
   final FirebaseHttp http;
 
   Future<CloudAssetReceipt> uploadAsset({
     required String uid,
     required CloudMediaAsset asset,
-    required File localFile,
+    required Stream<List<int>> Function() openRead,
     required String opId,
     required String payloadHash,
   }) async {
@@ -55,19 +53,15 @@ final class FirebaseStorageObjects {
       final trailing = utf8.encode('\r\n--$boundary--');
       Stream<List<int>> parts() async* {
         yield leading;
-        yield* localFile.openRead();
+        yield* openRead();
         yield trailing;
       }
 
       final response = await http.send(
         'POST',
         endpoint.storage(query: {'name': path}),
-        authorization: 'Firebase ${await session.tokenFor(uid)}',
-        contentType: ContentType(
-          'multipart',
-          'related',
-          parameters: {'boundary': boundary},
-        ),
+        authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
+        contentType: 'multipart/related; boundary=$boundary',
         headers: const {'X-Goog-Upload-Protocol': 'multipart'},
         body: parts(),
         length: leading.length + asset.byteLength + trailing.length,
@@ -129,7 +123,7 @@ final class FirebaseStorageObjects {
     final response = await http.send(
       'GET',
       endpoint.storage(object: path, query: const {'alt': 'media'}),
-      authorization: 'Firebase ${await session.tokenFor(uid)}',
+      authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
     );
     await http.requireSuccess(response);
     yield* http.read(response);
@@ -153,12 +147,8 @@ final class FirebaseStorageObjects {
       final response = await http.send(
         'POST',
         endpoint.storage(query: {'name': path}),
-        authorization: 'Firebase ${await session.tokenFor(uid)}',
-        contentType: ContentType(
-          'multipart',
-          'related',
-          parameters: {'boundary': boundary},
-        ),
+        authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
+        contentType: 'multipart/related; boundary=$boundary',
         headers: const {'X-Goog-Upload-Protocol': 'multipart'},
         bytes: [
           ...utf8.encode(
@@ -194,7 +184,7 @@ final class FirebaseStorageObjects {
     final response = await http.send(
       'GET',
       endpoint.storage(object: path),
-      authorization: 'Firebase ${await session.tokenFor(uid)}',
+      authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
     );
     if (response.statusCode == 404) {
       await http.read(response).drain<void>();

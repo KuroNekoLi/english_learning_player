@@ -5,7 +5,7 @@
 ## 決策表
 | ID | 狀態 | 決策/選項 | 為什麼 / 後續行動 |
 |---|---|---|---|
-| ADR-001 | ACCEPTED | Flutter 支援 Android/iOS/macOS | 使用者要求 |
+| ADR-001 | ACCEPTED | Flutter 支援目標為 Android、iOS、macOS、Web | 使用者要求。Web 依 ADR-031 和 WP-17 驗收。 |
 | ADR-002 | ACCEPTED | M4A/MP3 優先，雙語 SRT 逐句精聽 | 使用者要求 |
 | ADR-003 | ACCEPTED | 同 App 帳號跨平台同步教材、字幕與進度 | 使用者要求 |
 | ADR-004 | ACCEPTED | Mac iCloud 使用者自選資料夾，播放清單綁定 | 使用者要求 |
@@ -35,7 +35,9 @@
 | ADR-027 | ACCEPTED | WP-09 本機 canonical/checkpoint/conflict 與進度 outbox 落 SQLite；雲端交易僅經 ProgressSyncTransport；播放器只在開啟時恢復已確認位置 | SQLite v4→v5 migration、fake receipt/revision/sequence/衝突測試、Player Widget 測試；真實 Firestore transaction 與 Emulator 進度規則仍待 FlutterFire/雲端前置條件 |
 | ADR-028 | ACCEPTED（本機）／OPEN（遠端清單 metadata） | WP-12 完整 scan + account-scoped playlist/source catalog；唯一缺席舊路徑與相同 SHA-256 才視為 rename；缺席不刪教材或收藏 | Drift v5→v6 migration、晚到 SRT、唯一/歧義 rename、掃描錯誤、來源移除與收藏保留測試；既有 sync coordinator 僅派送 material，remote playlist metadata 需後續獨立契約 |
 | ADR-029 | ACCEPTED（本機驗收）／OPEN（遠端發佈） | WP-14 透過 Firebase REST 與 Callable 接入既有同步契約，採測試帳號及手動同步 | 兩個 Emulator 客戶端與 macOS Release 證據見 [WP-14 Firebase 交棒](agent/wp-14-firebase-handoff.md)。正式 Auth、用量及發佈仍依 ADR-010／011／014／017／018 追蹤 |
+| ADR-031 | ACCEPTED（平台與方向）／OPEN（相容性、發布） | Web 為第四個正式支援平台，採 Drift WasmDatabase、瀏覽器私有儲存與 Google Web OAuth | 設立 WP-17。瀏覽器矩陣、部署選項與實際登入／同步由 T-WEB-01..06 驗收。 |
 | ADR-032 | ACCEPTED（bucket 與 UID 隔離）／OPEN（刪除參照清理、費用上限） | 專案 `english-learning-player-auth` 使用 `english-learning-player-auth.firebasestorage.app`（`us-east1`）；owner 可管理自身 assets/subtitles | Blaze 已由使用者連結。bucket 區域建立後不能變更。內容地址物件更新需保持 bytes checksum 與應用身分 metadata；owner delete 可能留下 Firestore metadata 指向的失效物件，App 刪除/GC 尚未實作。費用上限仍待設定。 |
+| ADR-033 | ACCEPTED（裝置同意與執行時同步） | Firebase 教材同步由每裝置、專案與 UID 分別同意，選擇寫入 SQLite v8 | 首次登入詢問，成功同意後消費本機音檔與字幕佇列。程式暫停或關閉後於下次開啟繼續。接收端自動更新雲端清單與晚到字幕。 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -178,6 +180,11 @@
 - 沿用現有 `sync_outbox`。音檔先完成 `uploadMaterial`，字幕發布失敗仍保留音檔的 `cloudReady`。發布中的新選取另外排隊，同教材在有效 lease 期間只會有一筆字幕工作在處理。已選軌更新與 v6 → v7 補排都限本機來源教材，下載快取不發布。
 - 佇列消費仍由既有的前景同步操作觸發。Firestore 路徑、manifest 格式、權限與 Storage SHA-256 驗證沿用 WP-16 已有契約。正式跨裝置與部署證據見 [WP-16 驗收紀錄](agent/wp-16-architecture-remediation.md)。
 
+### ADR-031 — Web 第四平台
+
+- 選用 Drift 官方 `WasmDatabase` 保持現有 SQLite schema、migration 與 Outbox。瀏覽器媒體由專用 adapter 保存，OPFS 優先，IndexedDB Blob 作為候選 fallback。帳號及 origin 隔離、配額、重新載入與多分頁行為須實測。依據：[Drift Web](https://drift.simonbinder.eu/platforms/web/)、[Storage Standard](https://storage.spec.whatwg.org/)。
+- Google Web OAuth 採既有 Firebase 專案與 UID 契約，驗收 popup、redirect 需求和 HTTPS origin。COOP／COEP 的部署選擇須兼顧 Wasm 資料庫與 OAuth。現行方案、實作順序與證據門檻見 [WP-17](14-web-platform.md)。
+
 ## 風險清單
 | 風險 | 嚴重度 | 失敗形態 | 降低方式 / 檢驗 |
 |---|---|---|---|
@@ -191,6 +198,7 @@
 | R-08 外部套件版本變動 | Medium | Flutter 平台 build 壞掉 | lockfile、pin、三平台 spike |
 | R-09 跨帳號殘留 | Critical | 舊用戶本機資料洩漏給新用戶 | UID namespace，登出隔離測試 |
 | R-10 操作時序競爭 | High | 切媒體、seek、loop 時串流倒退 | generation token + cancel + fake clock |
+| R-11 Web 本機儲存與 OAuth 相容性 | High | 分頁競態、配額耗盡、瀏覽器清除離線資料、彈窗受限 | 觀察 Wasm 儲存模式、驗證多分頁和配額失敗、依 browser matrix 驗收授權設定 |
 
 ## ADR 變更模板
 ```md

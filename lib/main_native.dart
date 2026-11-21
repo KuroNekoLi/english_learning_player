@@ -14,6 +14,8 @@ import 'core/db/account_scope.dart';
 import 'core/db/account_database_providers.dart';
 import 'features/auth/firebase_session_controller.dart';
 import 'features/player/player_view_model.dart';
+import 'features/sync/firebase_sync_panel.dart';
+import 'features/sync/widgets/sync_landing.dart';
 
 const audioServiceConfig = service.AudioServiceConfig(
   androidNotificationChannelId: 'com.linli.englishlearningplayer.audio',
@@ -77,7 +79,11 @@ class EnglishLearningPlayer extends ConsumerWidget {
       key: ValueKey(uid),
       title: 'English Learning Player',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
-      home: const LibraryPage(),
+      home: SyncLanding(
+        uid: uid,
+        library: const LibraryPage(),
+        accountPage: const FirebaseSyncPanel(),
+      ),
     );
   }
 }

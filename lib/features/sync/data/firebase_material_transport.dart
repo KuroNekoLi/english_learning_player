@@ -1,7 +1,5 @@
-import 'dart:io';
-
 import '../../../core/sync/sync_contracts.dart';
-import '../../auth/data/firebase_account_session.dart';
+import '../../auth/data/firebase_identity_session.dart';
 import '../../../core/firebase/firebase_endpoint.dart';
 import '../services/cloud_material_download_service.dart';
 import 'firebase_documents.dart';
@@ -11,7 +9,7 @@ final class FirebaseMaterialTransport
     implements CloudSyncTransport, CloudMaterialDownloadTransport {
   FirebaseMaterialTransport(
     FirebaseEndpoint endpoint,
-    FirebaseAccountSession session,
+    FirebaseIdentitySession session,
     FirebaseHttp http,
   ) : documents = FirebaseDocuments(endpoint, session, http),
       objects = FirebaseStorageObjects(endpoint, session, http);
@@ -23,13 +21,13 @@ final class FirebaseMaterialTransport
   Future<CloudAssetReceipt> uploadAsset({
     required String uid,
     required CloudMediaAsset asset,
-    required File localFile,
+    required Stream<List<int>> Function() openRead,
     required String opId,
     required String payloadHash,
   }) => objects.uploadAsset(
     uid: uid,
     asset: asset,
-    localFile: localFile,
+    openRead: openRead,
     opId: opId,
     payloadHash: payloadHash,
   );

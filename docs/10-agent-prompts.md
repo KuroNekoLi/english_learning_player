@@ -47,6 +47,18 @@
 讀 AGENTS.md、docs/00-13、WP-15 測試報告與實際程式碼。本次只執行 WP-16：追查 import→local→sync→remote→download→playback→progress 全鏈路，檢查 P0 資料流失、跨帳號資料外洩、未授權 iCloud 讀取、重覆上傳/刪除、同步衝突、取消/重試時序與跨平台能力宣稱。用可核查代碼/測試證據分級問題，提出修復排序與未通過 Gate；禁止以主觀「看起來正常」批准發佈。勿 push。
 ```
 
+## Prompt E — WP-17 第一段 Web 實作
+
+先讀 [WP-17 實作交棒](agent/wp-17-implementation-handoff.md)，後續每段另開一次任務。
+
+```text
+在 /Users/linli/AndroidStudioProjects/english_learning_player 工作。先檢查 Git 狀態，保留已存在的修改。讀 AGENTS.md、docs/README.md、docs/11-work-packages.md、docs/14-web-platform.md、docs/agent/wp-17-implementation-handoff.md，依專案工程、Flutter 架構及相關測試 Skill 執行。
+
+只執行 WP-17 第一段「Web 入口與 Drift 最小驗證」。沿用鎖定的 Flutter、Drift 和 sqlite3 版本。加入 Web scaffold、官方 worker／WASM、平台 DB adapter 和可重跑的 Chrome smoke 入口。沿用既有 LocalDatabase schema、AccountScope 和 Repository。
+
+用 Chrome 驗證 worker、WASM MIME、兩個 scope 隔離、重新整理／重開資料庫，以及兩個分頁的安全行為。執行 dart format 檢查、Flutter Analyze、Flutter Test 及 smoke Web build。區分 smoke 入口及完整版的 PASS／FAIL／BLOCKED。到第一段為止，提出下一段所需前置條件。不要實作選檔、播放、OAuth 或正式同步，也不變更 SDK 版本、建立雲端資源或推送 Git。按使用者要求於用量低於 30% 時暫停並留下進度。
+```
+
 ## 工作包報告建議格式
 ```text
 WP: WP-xx

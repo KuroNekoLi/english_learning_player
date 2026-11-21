@@ -8,6 +8,7 @@
 | Widget | Library / Player / Favorites RWD 與互動 | `flutter test test/widget` |
 | Integration | 匯入 → 播放 → 收藏 → 恢復、Firebase Emulator | `flutter test integration_test`（依平台適當 `-d`） |
 | Native/Device | Android+iPhone+Mac 音訊背景、iCloud 授權、實際解碼 | 實機、受控 sandbox environment |
+| Web/Browser | Wasm 資料庫、媒體儲存、Web OAuth、離線播放與同步 | 瀏覽器、localhost、Emulator 與核准的 HTTPS 驗收 origin |
 
 Flutter 官方 `integration_test` 依目前 SDK 文件設置；不使用舊式 `enableFlutterDriverExtension()` 當作一般整合測試前置條件。若官方其他 Skill 與此衝突，依本文件為準。
 
@@ -26,6 +27,7 @@ Flutter 官方 `integration_test` 依目前 SDK 文件設置；不使用舊式 `
 | FR-09/10/12 | T-SYNC-01..10 | 雲端假 ready、寫入重覆、離線錯誤覆蓋 |
 | FR-11 | T-FOLDER-01..08 | 遺失資料夾授權、漏掃、刪掉學習資料 |
 | FR-01/14 | T-PLATFORM-01..08 | 平台不能啟動、音訊中斷未恢復 |
+| FR-01..10、12–13 的 Web 驗收 | [T-WEB-01..06](14-web-platform.md) | Web 啟動或登入失敗、重新載入遺失資料、跨 UID 漏讀、播放與同步結果不一致 |
 
 ## 4. 每次提交的最低檢查
 ```sh
@@ -42,6 +44,7 @@ git status --short
 - **Gate B / Stage 2**：各工作包單測+Widget 通過、`flutter analyze` 無新問題；每一 FR 有對應測試 ID。
 - **Gate C / Stage 3**：至少 Mac → 雲端 → iPhone 的真機 E2E 和權限撤銷/斷網測試通過；Android 下載/播放 smoke test。
 - **Gate D / Stage 4**：回歸測試、security rules emulator、schema migration、資料遺失與操作順序審查完成；所有阻礙列清單。
+- **Web 發布門檻 / WP-17**：T-WEB-01..06 有執行證據。記錄 `flutter build web --no-pub`、瀏覽器與版本、Drift 儲存模式、同 UID 的 Mac／Web 往返續播，以及原生三平台 smoke。平台和雲端未驗收項目須列明，既有 Gate C／D 仍依各自證據判定。
 
 ## 6. 報告格式
 每個 Agent 回報：實際 commit/檔案、執行命令、PASS/FAIL/BLOCKED、測試設備及 OS、未測事項、資料遺失風險、下一工作包。測試環境失效不可標成通過，需提供可重跑命令與 blocker。

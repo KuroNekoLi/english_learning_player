@@ -85,6 +85,19 @@ final class AppMediaStore implements MediaStore {
   }
 
   @override
+  Stream<List<int>> read(String relativePath) async* {
+    final file = _storage.resolveMediaFile(_scope, relativePath);
+    if (!await file.exists()) {
+      throw const AudioImportException('storedAssetMissing');
+    }
+    try {
+      yield* file.openRead();
+    } on IOException {
+      throw const AudioImportException('localFileUnavailable');
+    }
+  }
+
+  @override
   Future<StoredMediaReference?> open(String relativePath) async {
     final file = _storage.resolveMediaFile(_scope, relativePath);
     if (!await file.exists()) return null;

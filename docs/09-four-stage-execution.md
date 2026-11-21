@@ -31,6 +31,10 @@
 - WP-16 Sol：跨模組審計（資料刪除、合併、Auth、iCloud、測試證據）；提出必改項與阻斷。
 **Exit Gate**：`docs/08` Gate D，任何高風險未決不宣稱已可上架。
 
+## Web 平台擴充
+
+WP-17 以原生的資料、播放與 Firebase 契約為輸入，依序交付 Web 入口、瀏覽器持久化、Google OAuth 與同帳號往返續播。以 [Web 平台發布門檻](14-web-platform.md) 管理瀏覽器證據。原生四階段的 Gate A–D 照原驗收紀錄判定。
+
 ## Git 策略與交棒規範
 每個 WP 使用獨立 feature branch（推薦 `feat/wp-03-subtitles`），不重寫其他工作包，避免 merge 多個 Agent 未完成作業。完成後短 commit，PR／合併須由使用者或特別授權 Agent 操作。
 交棒輸出 `WP ID / commit / 本次決策 / 規格差異 / PASS/FAIL/BLOCKED / 需要 Sol 的問題`。不可默默修改已批准契約；若需更改，以 ADR + 向下相容 migration 實施。

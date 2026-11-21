@@ -11,7 +11,6 @@ import 'web_firebase_auth_port.dart';
 final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
   WebFirebaseAuthAdapter._({
     required this.isConfigured,
-    required this.currentUid,
     this.unavailableReason,
   });
 
@@ -27,7 +26,7 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
   final bool isConfigured;
 
   @override
-  String? currentUid;
+  String? get currentUid => isConfigured ? _currentFirebaseUid()?.toDart : null;
 
   @override
   final String? unavailableReason;
@@ -39,7 +38,6 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
         _senderId.isEmpty) {
       return WebFirebaseAuthAdapter._(
         isConfigured: false,
-        currentUid: null,
         unavailableReason: '尚未設定 Firebase Web App。',
       );
     }
@@ -50,7 +48,6 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
       )).toDart) {
         return WebFirebaseAuthAdapter._(
           isConfigured: false,
-          currentUid: null,
           unavailableReason: 'Firebase Web SDK 尚未載入；請確認網路連線。',
         );
       }
@@ -71,18 +68,13 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
       if (error is String) {
         return WebFirebaseAuthAdapter._(
           isConfigured: false,
-          currentUid: null,
           unavailableReason: _messageFor(error),
         );
       }
-      return WebFirebaseAuthAdapter._(
-        isConfigured: true,
-        currentUid: result['uid'] as String?,
-      );
+      return WebFirebaseAuthAdapter._(isConfigured: true);
     } catch (_) {
       return WebFirebaseAuthAdapter._(
         isConfigured: false,
-        currentUid: null,
         unavailableReason: 'Firebase 登入服務暫時無法使用。',
       );
     }
@@ -94,7 +86,6 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
     final result = _decode((await _signInWithGoogle().toDart).toDart);
     final uid = result['uid'];
     if (uid is String && uid.isNotEmpty) {
-      currentUid = uid;
       return uid;
     }
     final code = result['error'];
@@ -112,7 +103,6 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
     if (result['error'] case final String error) {
       throw WebFirebaseAuthException(error);
     }
-    currentUid = null;
   }
 
   @override
@@ -165,3 +155,6 @@ external JSPromise<JSString> _signOutFirebase();
 
 @JS('elpFirebaseAuthGetIdToken')
 external JSPromise<JSString> _firebaseIdToken(JSString expectedUid);
+
+@JS('elpFirebaseAuthCurrentUid')
+external JSString? _currentFirebaseUid();

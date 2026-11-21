@@ -170,20 +170,43 @@ final class WebMediaStore implements MediaStore {
 
   @override
   Future<StoredMediaReference?> open(String relativePath) async {
-    final key = mediaObjectKey(_scope, relativePath);
+    final blob = await _findBlob(relativePath);
+    if (blob == null) return null;
+    final url = web.URL.createObjectURL(blob);
+    return StoredMediaReference(
+      uri: Uri.parse(url),
+      release: () => web.URL.revokeObjectURL(url),
+    );
+  }
+
+  @override
+  Stream<List<int>> read(String relativePath) async* {
     try {
-      final directory = await _opfsDirectory(create: false);
-      final handle = await directory
-          .getFileHandle(key, web.FileSystemGetFileOptions(create: false))
-          .toDart;
-      final file = await handle.getFile().toDart;
-      final url = web.URL.createObjectURL(file);
-      return StoredMediaReference(
-        uri: Uri.parse(url),
-        release: () => web.URL.revokeObjectURL(url),
-      );
+      final blob = await _findBlob(relativePath);
+      if (blob == null) throw const AudioImportException('storedAssetMissing');
+      for (var offset = 0; offset < blob.size; offset += 256 * 1024) {
+        final slice = blob.slice(offset, offset + 256 * 1024);
+        yield (await slice.arrayBuffer().toDart).toDart.asUint8List();
+      }
+    } on AudioImportException {
+      rethrow;
     } catch (_) {
-      // Older browser data and OPFS-disabled profiles are read from IndexedDB.
+      throw const AudioImportException('localFileUnavailable');
+    }
+  }
+
+  Future<web.Blob?> _findBlob(String relativePath) async {
+    final key = mediaObjectKey(_scope, relativePath);
+    if (!_forceIndexedDb) {
+      try {
+        final directory = await _opfsDirectory(create: false);
+        final handle = await directory
+            .getFileHandle(key, web.FileSystemGetFileOptions(create: false))
+            .toDart;
+        return await handle.getFile().toDart;
+      } catch (_) {
+        // Older browser data and OPFS-disabled profiles are read from IndexedDB.
+      }
     }
     final database = await _openDatabase();
     try {
@@ -193,11 +216,7 @@ final class WebMediaStore implements MediaStore {
       final value = await _requestResult(request);
       await completed;
       if (value == null || value.isUndefinedOrNull) return null;
-      final url = web.URL.createObjectURL(value as web.Blob);
-      return StoredMediaReference(
-        uri: Uri.parse(url),
-        release: () => web.URL.revokeObjectURL(url),
-      );
+      return value as web.Blob;
     } finally {
       database.close();
     }

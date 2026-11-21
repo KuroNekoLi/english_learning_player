@@ -1,8 +1,8 @@
 # English Learning Player
 
-Flutter 語言學習播放器：Android、iOS、macOS；M4A/MP3 與中英 SRT；逐句精聽、跨裝置進度，以及 macOS iCloud Drive 授權資料夾匯入（規劃中）。
+Flutter 語言學習播放器，正式支援目標為 Android、iOS、macOS、Web。核心功能包含 M4A／MP3、中英 SRT、逐句精聽及跨裝置進度。macOS 提供 iCloud Drive 授權資料夾匯入。
 
-**目前狀態：** Flutter 官方樣板已建立；產品功能尚未實作。需求、架構、四階段模型分工與工作包請從 [docs/README.md](docs/README.md) 開始；Agent 先讀 [AGENTS.md](AGENTS.md)。
+原生版本已有本機匯入與精聽功能；跨裝置與真機驗收見工程文件。Web 實作與發布驗收由 [WP-17](docs/14-web-platform.md) 追蹤。需求、架構與工作包請從 [docs/README.md](docs/README.md) 開始；Agent 先讀 [AGENTS.md](AGENTS.md)。
 
 ## 本機命令
 ```sh
@@ -11,7 +11,7 @@ flutter analyze
 flutter test
 flutter run -d macos
 ```
-Android/iOS 執行時改用對應已連線的裝置；Firebase 與 iCloud 尚未接線，不需先建立雲端資源。
+Android／iOS 執行時改用對應已連線的裝置。本機學習可離線使用；登入與同步需對應的 Firebase 環境。設定方式見 [WP-14 登入補件](docs/agent/wp-14-social-sign-in.md)。
 
 ## Coding Agents
 - 模型分工：[docs/09-four-stage-execution.md](docs/09-four-stage-execution.md)

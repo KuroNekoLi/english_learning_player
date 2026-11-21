@@ -53,3 +53,15 @@ WP-09 的本機實作以 `ProgressRepository` 原子保存 checkpoint 與 `sync_
 - 手機斷線收藏 2 句 → 復線後保留且不重覆。
 - 登出 A 登入 B → 不能看到 A 私人教材或傳輸隊列。
 - A/B 交錯播放進度測試，不發生意外 Seek。
+
+## 7. WP-17 同帳號自動同步
+
+Web 與原生版共用教材佇列、Firestore 資料格式、Storage 路徑和 SHA-256 驗證。登入有同步設定的環境後，在帳號頁選擇「開啟同步」或「稍後」。SQLite v8 在此裝置以 Firebase 專案與 UID 保存選擇。尚未選擇、讀取失敗、登出與同步關閉都不派送雲端工作。離線帳號的匯入仍留在原本的教材庫。
+
+啟用後，App 或網頁處於使用狀態時每五秒讀取本機待送佇列。有到期的音檔或字幕工作才進行上傳前的 Firestore 權限檢查和傳輸。App 重開或回到前景後會重查，傳輸重試以持久化佇列為準。系統暫停程式後，由下次啟動或回到前景接續。「立即同步」仍可手動觸發，與自動上傳共用傳輸工作。
+
+接收裝置用同帳號在本機開啟同步後，自動載入雲端清單。帳號頁可按需下載音檔及已發布的字幕。使用中每兩分鐘重新整理，並補抓已下載教材晚發布的字幕。播放器下次開啟教材時讀取本機更新的字幕。
+
+瀏覽器從 OPFS 或 IndexedDB 讀取音檔，逐段產生 multipart Blob，並在送出前取得目前 UID 的 Firebase ID token。上傳沿用每檔 100 MiB 限制，Blob 組裝與大檔記憶體用量須在目標瀏覽器驗收。下載串流經原有校驗後寫入瀏覽器私有儲存。
+
+本機驗收以 demo Firebase Emulator 的合成音訊驗證。正式環境需要同一 Firebase 專案中的 Firestore `(default)` 資料庫、已部署的 `firestore.rules` 和既有 Storage bucket。正式專案的 Firestore 和 Storage 先前已就緒，Web 開發來源 `http://localhost:7357` 已設定 Storage CORS。正式雙裝置收送仍待驗。進度同步另外需要已部署的 `syncProgress` Callable 與對應區域設定。

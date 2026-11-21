@@ -21,11 +21,12 @@
 | WP-14 | S3 Sol High | 06,10-13 | Mac iCloud folder → Firebase → iPhone / Android → 播放續播 | 實機 E2E 證據。Mac 原生匯入、Emulator 下載和本機雙 profile 接收已驗；iPhone／Android 完整鏈路 BLOCKED，見 [WP-14 交棒](agent/wp-14-handoff.md) |
 | WP-15 | S4 Luna High | 02-14 | FR/fixtures → 回歸與失敗注入 → QA 報告 | docs/08 Gate D 的測試面向；各 FR 有結果 |
 | WP-16 | S4 Sol High | 15 | code/data flow → 架構/安全審查 → findings + release decision | P0/P1 無隱藏 blocker，風險與決策可追 |
+| WP-17 | 平台擴充 | 02–09、14 登入契約 | 瀏覽器選檔 → Drift WasmDatabase＋私有媒體儲存 → Google Web OAuth → Web 本機學習及同帳號同步 | T-WEB-01..06；Web build、離線升級、分頁與 UID 隔離、真實 Google OAuth、跨裝置續播及原生回歸。見 [Web 平台規格](14-web-platform.md)。 |
 
 ## 工作包共通 Definition of Done
 1. 產出既有模組介面可使用，不引入未核准的隱藏相依。
 2. 至少一個成功、一個失敗、一個邊界案例可自動化測試。
-3. 執行 `dart format`, `flutter analyze`, `flutter test`，必要的三平台真機項目照實報告。
+3. 執行 `dart format`, `flutter analyze`, `flutter test`，並照實回報受影響的原生裝置與 Web 瀏覽器結果。WP-17 維護 Web 發布證據。
 4. 影響資料模型與雲端規則需對應 migration / Emulator test。
 5. 不編造資源、不引入真實教材或機密、不自行推送遠端。
 6. 把未完成、阻礙與規格變更提議記到 ADR 或交棒摘要。

@@ -77,19 +77,9 @@ final class SqliteSyncOutbox implements SyncOutbox {
     'mediaType': mediaType,
   });
 
-  @override
-  Future<SyncOperation?> claimNext(String ownerId, DateTime now) async {
-    _checkOwner(ownerId);
-    final nowMs = now.millisecondsSinceEpoch;
-    return _db.transaction(() async {
-      final rows = await _db
-          .customSelect(
-            '''
-        SELECT job.op_id, job.entity_id, job.entity_type, job.payload_json,
-               job.payload_hash, job.attempts
-        FROM sync_outbox AS job
-        WHERE job.owner_id = ? AND job.next_retry_at_ms <= ?
-          AND (job.state = 'queued' OR (job.state = 'leased' AND job.lease_until_ms <= ?))
+  static const _eligibleMedia = '''
+        WHERE job.owner_id = ?1 AND job.next_retry_at_ms <= ?2
+          AND (job.state IN ('queued', 'waitingForAuth') OR (job.state = 'leased' AND job.lease_until_ms <= ?3))
           AND (
             job.entity_type = 'material'
             OR (job.entity_type = 'subtitle'
@@ -101,10 +91,41 @@ final class SqliteSyncOutbox implements SyncOutbox {
                 SELECT 1 FROM sync_outbox AS peer
                 WHERE peer.owner_id = job.owner_id AND peer.entity_id = job.entity_id
                   AND peer.entity_type = 'subtitle' AND peer.state = 'leased'
+                  AND peer.lease_until_ms > ?3
                   AND peer.op_id != job.op_id
               )
             )
           )
+  ''';
+
+  List<Variable<Object>> _dueVariables(String ownerId, int nowMs) => [
+    Variable.withString(ownerId),
+    Variable.withInt(nowMs),
+    Variable.withInt(nowMs),
+  ];
+
+  Future<bool> hasDueMedia(DateTime now) async {
+    final rows = await _db
+        .customSelect(
+          'SELECT 1 FROM sync_outbox AS job $_eligibleMedia LIMIT 1',
+          variables: _dueVariables(_scope.ownerId, now.millisecondsSinceEpoch),
+        )
+        .get();
+    return rows.isNotEmpty;
+  }
+
+  @override
+  Future<SyncOperation?> claimNext(String ownerId, DateTime now) async {
+    _checkOwner(ownerId);
+    final nowMs = now.millisecondsSinceEpoch;
+    return _db.transaction(() async {
+      final rows = await _db
+          .customSelect(
+            '''
+        SELECT job.op_id, job.entity_id, job.entity_type, job.payload_json,
+               job.payload_hash, job.attempts
+        FROM sync_outbox AS job
+        $_eligibleMedia AND job.state != 'waitingForAuth'
         ORDER BY job.created_at_ms, job.op_id LIMIT 1
         ''',
             variables: [

@@ -12,8 +12,9 @@ import 'cloud_material_download_service.dart';
 import 'cloud_sync_coordinator.dart';
 
 final class FirebaseSyncRuntime {
-  const FirebaseSyncRuntime({
+  FirebaseSyncRuntime({
     required this.uid,
+    required this.hasDueMedia,
     required this.transport,
     required this.coordinator,
     required this.downloader,
@@ -26,6 +27,8 @@ final class FirebaseSyncRuntime {
   });
 
   final String uid;
+  final Future<bool> Function(DateTime now) hasDueMedia;
+  Future<SyncRunResult>? _mediaPass;
   final FirebaseMaterialTransport transport;
   final CloudSyncCoordinator coordinator;
   final CloudMaterialDownloadService downloader;
@@ -106,12 +109,34 @@ final class FirebaseSyncRuntime {
   }
 
   /// Bound a foreground sync pass and stop at a retry or authorization boundary.
-  Future<SyncRunResult> sync() async {
+  Future<SyncRunResult> sync({bool mediaOnly = false}) async {
+    final status = await (_mediaPass ??= _runMediaPass());
+    return !mediaOnly && status == SyncRunResult.idle
+        ? _syncProgress()
+        : status;
+  }
+
+  Future<SyncRunResult> _runMediaPass() async {
+    try {
+      return await _syncMedia();
+    } finally {
+      _mediaPass = null;
+    }
+  }
+
+  Future<SyncRunResult> _syncMedia() async {
+    if (!await consent.isCloudSyncEnabled(uid)) {
+      return SyncRunResult.waitingForConsent;
+    }
+    // Check the catalog before uploading any audio to Storage. A project
+    // configured for sign-in and Storage may still lack the Firestore database.
+    await transport.documents.checkCollectionAccess(uid, [
+      'users',
+      uid,
+      'materials',
+    ]);
     for (var i = 0; i < 20; i++) {
       final status = await coordinator.runOne();
-      if (status == SyncRunResult.idle) {
-        return _syncProgress();
-      }
       if (status != SyncRunResult.uploaded) return status;
     }
     return SyncRunResult.uploaded;

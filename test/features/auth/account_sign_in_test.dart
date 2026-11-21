@@ -1,13 +1,19 @@
 import 'dart:async';
 
+import 'package:english_learning_player/core/db/account_database_providers.dart';
+import 'package:english_learning_player/core/db/account_scope.dart';
+import 'package:english_learning_player/features/sync/sync_preference.dart';
 import 'package:english_learning_player/core/sync/sync_contracts.dart';
 import 'package:english_learning_player/features/auth/social_sign_in.dart';
 import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
+import 'package:english_learning_player/features/auth/firebase_session_controller.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_dependencies.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_panel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../fakes/fake_sync_preference.dart';
 
 void main() {
   testWidgets('shows disabled social buttons in an unconfigured build', (
@@ -28,9 +34,10 @@ void main() {
   });
 
   testWidgets(
-    'routes both social buttons and clears UID and consent on logout',
+    'routes both social buttons and retains device consent after logout',
     (tester) async {
       final social = _FakeSocialSignIn();
+      final preferences = FakeSyncPreferencePersistence();
       final closingPlayback = Completer<void>();
       var switches = 0;
       final container = ProviderContainer(
@@ -42,6 +49,12 @@ void main() {
               apiKey: 'test-only',
             ),
           ),
+          accountScopeProvider.overrideWith(
+            (ref) => AccountScope(
+              ref.watch(firebaseSessionProvider).uid ?? 'local-default',
+            ),
+          ),
+          syncPreferenceStoreProvider.overrideWith((ref) async => preferences),
           socialSignInProvider.overrideWithValue(social),
           beforeAccountChangeProvider.overrideWithValue(() async {
             switches++;
@@ -73,10 +86,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('appleSignIn')));
       await tester.pumpAndSettle();
       expect(social.attempts, [SocialProvider.google, SocialProvider.apple]);
-      expect(container.read(firebaseSessionProvider), (
-        uid: 'apple-uid',
-        consent: false,
-      ));
+      expect(container.read(firebaseSessionProvider).uid, 'apple-uid');
 
       final session = container.read(firebaseAuthSessionProvider)!;
       expect(await session.tokenFor('apple-uid'), 'test-firebase-token');
@@ -84,9 +94,12 @@ void main() {
         session.tokenFor('other-uid'),
         throwsA(isA<SyncFailure>()),
       );
-      await tester.tap(find.byType(SwitchListTile));
+      await tester.tap(find.text('開啟同步'));
       await tester.pumpAndSettle();
-      expect(container.read(firebaseSessionProvider).consent, isTrue);
+      expect(
+        preferences.choices[(uid: 'apple-uid', project: 'example-project')],
+        SyncPreference.enabled,
+      );
 
       await tester.tap(find.text('登出'));
       await tester.pump();
@@ -94,10 +107,8 @@ void main() {
       expect(container.read(firebaseSessionProvider).uid, 'apple-uid');
       closingPlayback.complete();
       await tester.pumpAndSettle();
-      expect(container.read(firebaseSessionProvider), (
-        uid: null,
-        consent: false,
-      ));
+      expect(container.read(firebaseSessionProvider).uid, isNull);
+      expect(preferences.choices.values, [SyncPreference.enabled]);
       expect(await session.currentIdentity(), isNull);
       expect(social.signOuts, [SocialProvider.apple]);
       await expectLater(
@@ -179,8 +190,7 @@ void main() {
     expect(container.read(firebaseSessionProvider).uid, 'auth-only-uid');
     expect(find.text('教材同步尚未設定。'), findsOneWidget);
     expect(find.text('立即同步'), findsNothing);
-    container.read(firebaseSessionProvider.notifier).setConsent(true);
-    expect(container.read(firebaseSessionProvider).consent, isFalse);
+    expect(find.text('開啟同步'), findsNothing);
     expect(await container.read(firebaseSyncRuntimeProvider.future), isNull);
     expect(endpoint.storage, throwsStateError);
 

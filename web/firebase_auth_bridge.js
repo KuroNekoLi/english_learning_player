@@ -56,13 +56,17 @@ globalThis.elpFirebaseAuthSignOut = async () => {
   }
 };
 
+globalThis.elpFirebaseAuthCurrentUid = () => auth?.currentUser?.uid ?? null;
+
 globalThis.elpFirebaseAuthGetIdToken = async (expectedUid) => {
   const user = auth?.currentUser;
   if (!user || user.uid !== expectedUid) {
     return result({ error: 'auth/user-mismatch' });
   }
   try {
-    return result({ uid: user.uid, token: await user.getIdToken() });
+    const token = await user.getIdToken();
+    if (auth.currentUser !== user) return result({ error: 'auth/user-mismatch' });
+    return result({ uid: user.uid, token });
   } catch (error) {
     return result({ error: authCode(error) });
   }

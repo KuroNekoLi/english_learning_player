@@ -1,10 +1,17 @@
 import 'package:english_learning_player/core/db/account_scope.dart';
+import 'package:english_learning_player/core/db/account_database_providers.dart';
+import 'package:english_learning_player/features/sync/sync_preference.dart';
+import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
+import 'package:english_learning_player/core/sync/sync_contracts.dart';
 import 'package:english_learning_player/features/auth/web/web_account_page.dart';
 import 'package:english_learning_player/features/auth/web/web_firebase_auth_port.dart';
 import 'package:english_learning_player/features/auth/web/web_firebase_session_controller.dart';
+import 'package:english_learning_player/features/sync/firebase_sync_dependencies.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../fakes/fake_sync_preference.dart';
 
 void main() {
   testWidgets('canceled popup keeps the offline account scope', (tester) async {
@@ -51,7 +58,7 @@ void main() {
     expect(await session.tokenFor('google-user-a'), 'fresh-firebase-id-token');
     await expectLater(
       session.tokenFor('google-user-b'),
-      throwsA(isA<WebFirebaseAuthException>()),
+      throwsA(isA<SyncFailure>()),
     );
 
     await tester.tap(find.byKey(const ValueKey('webSignOut')));
@@ -116,6 +123,58 @@ void main() {
 
     expect(container.read(webAccountScopeProvider).ownerId, 'restored-user');
     expect(find.byKey(const ValueKey('webSignOut')), findsOneWidget);
+  });
+
+  testWidgets('remembers enable and later separately for each account', (
+    tester,
+  ) async {
+    final preferences = FakeSyncPreferencePersistence();
+    final auth = _FakeWebFirebaseAuthPort()..currentUid = 'google-user-a';
+    final container = ProviderContainer(
+      overrides: [
+        webFirebaseAuthPortProvider.overrideWithValue(auth),
+        accountScopeProvider.overrideWith(
+          (ref) => ref.watch(webAccountScopeProvider),
+        ),
+        syncPreferenceStoreProvider.overrideWith((ref) async => preferences),
+        firebaseMediaEndpointProvider.overrideWithValue(
+          FirebaseEndpoint(
+            project: 'example-project',
+            apiKey: 'fixture-key',
+            bucket: 'example-project.firebasestorage.app',
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(_app(container));
+
+    await tester.pumpAndSettle();
+    final syncButton = find.widgetWithText(FilledButton, '立即同步');
+    expect(syncButton, findsNothing);
+    await tester.tap(find.text('開啟同步'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(syncButton).onPressed, isNotNull);
+
+    Future<void> signInAgain(String uid) async {
+      await tester.tap(find.byKey(const ValueKey('webSignOut')));
+      await tester.pumpAndSettle();
+      auth.nextUid = uid;
+      await tester.tap(find.byKey(const ValueKey('webGoogleSignIn')));
+      await tester.pumpAndSettle();
+    }
+
+    await signInAgain('google-user-b');
+    expect(find.text('開啟同步'), findsOneWidget);
+    await tester.tap(find.text('稍後'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(syncButton).onPressed, isNull);
+    await signInAgain('google-user-a');
+    expect(find.text('開啟同步'), findsNothing);
+    expect(tester.widget<FilledButton>(syncButton).onPressed, isNotNull);
+    await signInAgain('google-user-b');
+    expect(find.text('開啟同步'), findsNothing);
+    expect(tester.widget<FilledButton>(syncButton).onPressed, isNull);
   });
 
   testWidgets('disables Google sign in when Web config is unavailable', (

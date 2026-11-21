@@ -9,6 +9,8 @@ abstract interface class MediaStore {
     Future<void> Function(ImportedAudio)? verifyBeforePublish,
   });
 
+  Stream<List<int>> read(String relativePath);
+
   Future<StoredMediaReference?> open(String relativePath);
 }
 

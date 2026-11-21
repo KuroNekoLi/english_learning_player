@@ -1,5 +1,5 @@
 import '../../../core/db/account_scope.dart';
-import '../../../core/files/app_media_store.dart';
+import '../../../core/files/media_store.dart';
 import '../../../core/sync/sync_contracts.dart';
 import '../../library/domain/audio_import_source.dart';
 import '../../library/material_repository.dart';
@@ -19,7 +19,7 @@ final class CloudMaterialDownloadService {
     required SyncConsentProvider consentProvider,
     required CloudMaterialDownloadTransport transport,
     required CloudMaterialCacheRepository repository,
-    required AppMediaStore mediaStore,
+    required MediaStore mediaStore,
   }) : _scope = scope,
        _identity = identityProvider,
        _consent = consentProvider,
@@ -32,7 +32,7 @@ final class CloudMaterialDownloadService {
   final SyncConsentProvider _consent;
   final CloudMaterialDownloadTransport _transport;
   final CloudMaterialCacheRepository _repository;
-  final AppMediaStore _mediaStore;
+  final MediaStore _mediaStore;
 
   Future<LearningMaterial> download(CloudMaterialMetadata metadata) async {
     final uid = _scope.ownerId;
@@ -45,6 +45,7 @@ final class CloudMaterialDownloadService {
         !_segment(metadata.materialId) ||
         !_segment(metadata.assetId) ||
         metadata.byteLength <= 0 ||
+        metadata.byteLength > 104857600 ||
         !RegExp(r'^[a-f0-9]{64}$').hasMatch(metadata.sha256) ||
         metadata.storagePath !=
             'users/$uid/assets/${metadata.assetId}/${metadata.sha256}') {

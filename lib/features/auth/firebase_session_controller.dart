@@ -36,7 +36,7 @@ final beforeAccountChangeProvider = Provider<Future<void> Function()>(
   (ref) => () async {},
 );
 
-typedef FirebaseSessionState = ({String? uid, bool consent});
+typedef FirebaseSessionState = ({String? uid});
 
 final firebaseSessionProvider =
     NotifierProvider<FirebaseSessionController, FirebaseSessionState>(
@@ -48,7 +48,7 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
   bool _changingAccount = false;
 
   @override
-  FirebaseSessionState build() => (uid: null, consent: false);
+  FirebaseSessionState build() => (uid: null);
 
   Future<void> signIn(String email, String password) async {
     await _signIn((session) => session.signIn(email, password));
@@ -102,7 +102,7 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
       }
       if (!ref.mounted) return;
       _signedInProvider = provider;
-      state = (uid: uid, consent: false);
+      state = (uid: uid);
     } finally {
       _changingAccount = false;
     }
@@ -118,20 +118,12 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
       if (!ref.mounted) return;
       ref.read(firebaseAuthSessionProvider)?.signOut();
       _signedInProvider = null;
-      state = (uid: null, consent: false);
+      state = (uid: null);
       if (provider != null && platform != null) {
         await platform.signOut(provider);
       }
     } finally {
       _changingAccount = false;
     }
-  }
-
-  void setConsent(bool enabled) {
-    final uid = state.uid;
-    if (uid == null) return;
-    final canSync =
-        ref.read(firebaseEndpointProvider)?.isMediaSyncConfigured ?? false;
-    state = (uid: uid, consent: enabled && canSync);
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import '../../../core/sync/sync_contracts.dart';
 import '../social_sign_in.dart';
@@ -30,7 +29,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     final response = await http.send(
       'POST',
       endpoint.auth('signInWithPassword'),
-      contentType: ContentType.json,
+      contentType: 'application/json',
       bytes: FirebaseHttp.encode({
         'email': email.trim(),
         'password': password,
@@ -84,7 +83,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
         final response = await http.send(
           'POST',
           endpoint.auth('signInWithIdp'),
-          contentType: ContentType.json,
+          contentType: 'application/json',
           bytes: FirebaseHttp.encode({
             'requestUri': endpoint.isEmulator
                 ? 'http://localhost'
@@ -165,7 +164,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     final response = await http.send(
       'POST',
       endpoint.refresh,
-      contentType: ContentType('application', 'x-www-form-urlencoded'),
+      contentType: 'application/x-www-form-urlencoded',
       bytes: utf8.encode(
         Uri(
           queryParameters: {

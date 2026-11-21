@@ -30,7 +30,7 @@ lib/
   main.dart                # Riverpod composition、AudioEngine、帳號切換
   app/                     # 教材庫主畫面與導航入口
   core/
-    audio/                 # 播放與系統媒體契約、原生 Adapter、單句 clip
+    audio/                 # 播放與系統媒體契約、平台 Adapter、單句 clip
     db/                    # 帳號 scope、DB 選擇、schema 與 migration
     files/                 # App 私有檔案、檔案型態、雜湊與複製
     firebase/              # Firebase 端點與共用 HTTP client
@@ -48,12 +48,15 @@ lib/
 android/app/src/           # Android Activity 與第三方登入來源集
 ios/Runner/                # iOS Flutter host 與第三方登入橋接
 macos/Runner/              # macOS Flutter host、唯讀 bookmark、掃描與監看
+web/                       # WP-17 將加入 Flutter Web host、Wasm 與 worker 資產
 firebase-functions/        # syncProgress Callable、冪等回執與 Firestore 交易
 firestore.rules            # 依 UID 與文件格式限制讀寫
 storage.rules              # 限定 UID 與檔案 metadata 的 Storage 存取
 ```
 
 `View → ViewModel → Repository → Service`。難以被 ViewModel 簡單表達且需重用的規則放 Domain（SubtitleAligner、RepeatPolicy、ProgressConflictResolver、ImportReconciler）。Domain 不 import Flutter UI、Firebase SDK 或 Swift 插件。Repository 不直接依賴其他 Repository，跨源協調用獨立 Coordinator / UseCase。
+
+WP-17 以平台接線選擇 Web 與原生實作。共用 schema、Repository、精聽與字幕規則繼續使用原有契約；DB executor、媒體 bytes 與播放來源、Firebase HTTP 與身分驗證各有平台 Adapter。原生 File／目錄及 Desktop OAuth 留在原生入口。詳細契約見 [Web 平台規格](14-web-platform.md)。
 
 ### 主要資料流與資源持有者
 
@@ -73,8 +76,8 @@ storage.rules              # 限定 UID 與檔案 metadata 的 Storage 存取
 | 狀態管理 | Riverpod（專案選擇） | 模型層 API 暴露 immutable state，禁止 View 做資料持久化 |
 | 音訊 | just_audio + audio_session | 封裝 AudioEngine；背景能力依平台 adapter 驗證 |
 | 桌面/手機背景 | audio_service 或 just_audio_background（待 spike） | 必須先確認 macOS、iOS、Android 差異；不可猜測三平台功能一致 |
-| 本機 | Drift + SQLite、app support directory | metadata authoritative local cache；本機檔案副本 |
-| 雲端 | Firebase Auth / Firestore / Cloud Storage | Android、iOS、macOS plugin 可用性先 smoke test |
+| 本機 | Drift + SQLite | 原生使用 app support directory；Web 規劃以 Drift `WasmDatabase` 開 DB，媒體存於瀏覽器私有儲存。 |
+| 雲端 | Firebase Auth / Firestore / Cloud Storage | 維持 Firebase UID 與同步契約。Web 採 Google Web OAuth，瀏覽器傳輸驗收見 WP-17。 |
 | iCloud folder | macOS Swift + Security-Scoped Bookmark | local-only 授權；檔案掃描與協調 |
 | 字幕 | Dart SRT Parser / matcher | 不依賴播放器內建字幕 UI |
 

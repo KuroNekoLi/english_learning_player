@@ -1,12 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/files/app_media_store.dart';
+import '../../core/firebase/firebase_endpoint.dart';
+import '../../core/db/account_database_providers.dart';
+import '../auth/data/firebase_identity_session.dart';
+import '../library/library_dependencies.dart';
+import 'data/firebase_sync_session_native.dart'
+    if (dart.library.js_interop) 'data/firebase_sync_session_web.dart'
+    as platform;
 import '../../core/sync/sqlite_sync_outbox.dart';
 import '../../core/sync/sync_contracts.dart';
-import '../auth/firebase_session_controller.dart';
 import '../library/data/sqlite_material_repository.dart';
-import '../../core/db/account_database_providers.dart';
-import '../../core/db/account_database_service.dart';
 import '../progress/data/sqlite_progress_repository.dart';
 import '../progress/services/progress_sync_coordinator.dart';
 import 'data/firebase_material_transport.dart';
@@ -15,37 +18,56 @@ import 'data/firebase_subtitle_sync.dart';
 import 'services/cloud_material_download_service.dart';
 import 'services/cloud_sync_coordinator.dart';
 import 'services/firebase_sync_runtime.dart';
+import 'sync_preference.dart';
 
-export '../auth/firebase_session_controller.dart';
 export 'services/firebase_sync_runtime.dart';
+
+final firebaseMediaEndpointProvider = platform.firebaseMediaEndpointProvider;
 
 final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
   ref,
 ) async {
   final account = ref.watch(accountScopeProvider);
-  final endpoint = ref.watch(firebaseEndpointProvider);
-  final session = ref.watch(firebaseAuthSessionProvider);
-  final consent = _Consent((uid) {
-    if (!ref.mounted) return false;
-    final state = ref.read(firebaseSessionProvider);
-    return state.uid == uid && state.consent;
-  });
+  final endpoint = ref.watch(firebaseMediaEndpointProvider);
+  final session = platform.watchSyncSession(ref);
   if (endpoint == null ||
       !endpoint.isMediaSyncConfigured ||
-      session?.uid != account.ownerId) {
+      session == null ||
+      session.uid != account.ownerId) {
     return null;
   }
-  final http = ref.watch(firebaseHttpProvider);
-  final transport = FirebaseMaterialTransport(endpoint, session!, http);
+  final key = (uid: account.ownerId, project: endpoint.project);
+  final preferenceStore = ref.watch(syncPreferenceStoreProvider.future);
+  bool optedInHere(String uid) =>
+      ref.mounted &&
+      uid == account.ownerId &&
+      platform.isCurrentSyncAccount(ref, uid) &&
+      ref.read(syncPreferenceProvider(key)).asData?.value ==
+          SyncPreference.enabled;
+  final consent = _Consent((uid) async {
+    if (!optedInHere(uid)) return false;
+    final stored = await (await preferenceStore).read(key);
+    return stored == SyncPreference.enabled && optedInHere(uid);
+  });
+  final http = FirebaseHttp();
+  ref.onDispose(http.close);
+  final identity = _GuardedSession(session, consent);
+  final transport = FirebaseMaterialTransport(endpoint, identity, http);
   final database = ref.watch(localDatabaseProvider.future);
-  final mediaFiles = ref.watch(accountDatabaseServiceProvider.future);
+  final mediaFiles = ref.watch(mediaStoreProvider.future);
   final db = await database;
-  final files = await mediaFiles as AccountDatabaseService;
+  final files = await mediaFiles;
   final repository = SqliteMaterialRepository(scope: account, database: db);
   final progress = SqliteProgressRepository(scope: account, db: db);
   final progressTransport = endpoint.progressRegion == null
       ? null
-      : FirebaseProgressTransport(endpoint, session, http, transport.documents);
+      : FirebaseProgressTransport(
+          endpoint,
+          identity,
+          http,
+          transport.documents,
+        );
+  final outbox = SqliteSyncOutbox(scope: account, db: db);
   final subtitles = FirebaseSubtitleSync(
     uid: account.ownerId,
     documents: transport.documents,
@@ -55,14 +77,15 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
   );
   return FirebaseSyncRuntime(
     uid: account.ownerId,
+    hasDueMedia: outbox.hasDueMedia,
     transport: transport,
     coordinator: CloudSyncCoordinator(
       scope: account,
       identityProvider: session,
       consentProvider: consent,
-      outbox: SqliteSyncOutbox(scope: account, db: db),
+      outbox: outbox,
       materials: repository,
-      mediaFiles: files,
+      mediaStore: files,
       transport: transport,
       publishSubtitles: subtitles.publish,
     ),
@@ -72,7 +95,7 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
       consentProvider: consent,
       transport: transport,
       repository: repository,
-      mediaStore: AppMediaStore(storage: files, scope: account),
+      mediaStore: files,
     ),
     consent: consent,
     repository: repository,
@@ -96,8 +119,33 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
 final class _Consent implements SyncConsentProvider {
   const _Consent(this.enabled);
 
-  final bool Function(String) enabled;
+  final Future<bool> Function(String) enabled;
 
   @override
-  Future<bool> isCloudSyncEnabled(String uid) async => enabled(uid);
+  Future<bool> isCloudSyncEnabled(String uid) => enabled(uid);
+}
+
+/// Recheck the current UID and consent on every remote request.
+final class _GuardedSession implements FirebaseIdentitySession {
+  const _GuardedSession(this.session, this.consent);
+  final FirebaseIdentitySession session;
+  final SyncConsentProvider consent;
+
+  @override
+  String? get uid => session.uid;
+
+  @override
+  Future<SyncIdentity?> currentIdentity() => session.currentIdentity();
+
+  @override
+  Future<String> tokenFor(String expectedUid) async {
+    final token = await session.tokenFor(expectedUid);
+    if (!await consent.isCloudSyncEnabled(expectedUid)) {
+      throw const SyncFailure(
+        SyncFailureKind.permissionDenied,
+        'consent_required',
+      );
+    }
+    return token;
+  }
 }

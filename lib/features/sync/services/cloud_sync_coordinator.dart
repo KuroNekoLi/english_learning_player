@@ -1,11 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
 import '../../library/material_repository.dart';
-import '../../../core/db/account_database_service.dart';
+import '../../../core/files/media_store.dart';
 import '../../../core/db/account_scope.dart';
 import '../../../core/sync/sqlite_sync_outbox.dart';
 import '../../../core/sync/subtitle_outbox_entry.dart';
@@ -30,7 +29,7 @@ final class CloudSyncCoordinator {
     required SyncConsentProvider consentProvider,
     required SyncOutbox outbox,
     required MaterialRepository materials,
-    required AccountDatabaseService mediaFiles,
+    required MediaStore mediaStore,
     required CloudSyncTransport transport,
     Future<void> Function(String materialId)? publishSubtitles,
     SyncClock? clock,
@@ -40,7 +39,7 @@ final class CloudSyncCoordinator {
        _consentProvider = consentProvider,
        _outbox = outbox,
        _materials = materials,
-       _mediaFiles = mediaFiles,
+       _mediaStore = mediaStore,
        _transport = transport,
        _publishSubtitles = publishSubtitles,
        _clock = clock ?? DateTime.now,
@@ -51,7 +50,7 @@ final class CloudSyncCoordinator {
   final SyncConsentProvider _consentProvider;
   final SyncOutbox _outbox;
   final MaterialRepository _materials;
-  final AccountDatabaseService _mediaFiles;
+  final MediaStore _mediaStore;
   final CloudSyncTransport _transport;
   final Future<void> Function(String materialId)? _publishSubtitles;
   final SyncClock _clock;
@@ -98,8 +97,8 @@ final class CloudSyncCoordinator {
           'local_metadata_mismatch',
         );
       }
-      final file = _mediaFiles.resolveMediaFile(_scope, asset.relativePath);
-      await _verifyLocalFile(file, asset);
+      Stream<List<int>> openRead() => _mediaStore.read(asset.relativePath);
+      await _verifyLocalFile(openRead(), asset);
       if (!await _stillSameIdentity(identity.uid)) {
         await _outbox.deferForAuthentication(
           identity.uid,
@@ -109,6 +108,7 @@ final class CloudSyncCoordinator {
         return SyncRunResult.waitingForAuthentication;
       }
 
+      await _requireConsent(identity.uid);
       final receipt = await _transport.uploadAsset(
         uid: identity.uid,
         asset: CloudMediaAsset(
@@ -117,7 +117,7 @@ final class CloudSyncCoordinator {
           byteLength: asset.byteLength,
           mediaType: asset.mediaType,
         ),
-        localFile: file,
+        openRead: openRead,
         opId: operation.opId,
         payloadHash: operation.payloadHash,
       );
@@ -141,6 +141,7 @@ final class CloudSyncCoordinator {
         opId: operation.opId,
         payloadHash: operation.payloadHash,
       );
+      await _requireConsent(identity.uid);
       await _transport.publishAsset(
         uid: identity.uid,
         metadata: CloudAssetMetadata(
@@ -161,6 +162,7 @@ final class CloudSyncCoordinator {
         );
         return SyncRunResult.waitingForAuthentication;
       }
+      await _requireConsent(identity.uid);
       await _transport.publishMaterial(uid: identity.uid, metadata: metadata);
       if (!await _stillSameIdentity(identity.uid)) {
         await _outbox.deferForAuthentication(
@@ -170,11 +172,11 @@ final class CloudSyncCoordinator {
         );
         return SyncRunResult.waitingForAuthentication;
       }
+      await _requireConsent(identity.uid);
       await _outbox.complete(identity.uid, operation.opId, _clock());
       return SyncRunResult.uploaded;
     } on SyncFailure catch (failure) {
-      if (operation.kind == SyncOperationKind.subtitle &&
-          failure.code == 'consent_required') {
+      if (failure.code == 'consent_required') {
         await _outbox.release(identity.uid, operation.opId, _clock());
         return SyncRunResult.waitingForConsent;
       }
@@ -201,16 +203,21 @@ final class CloudSyncCoordinator {
       return retryable && operation.attempts + 1 < 8
           ? SyncRunResult.retryScheduled
           : SyncRunResult.needsAttention;
-    } on FileSystemException {
+    } on AudioImportException catch (error) {
+      final retryable = error.code != 'storedAssetMissing';
       await _outbox.fail(
         ownerId: identity.uid,
         opId: operation.opId,
-        code: 'local_file_unavailable',
-        retryable: true,
+        code: retryable
+            ? 'local_file_unavailable'
+            : 'local_asset_integrity_mismatch',
+        retryable: retryable,
         now: _clock(),
-        retryAt: nextRetryAt(_clock(), operation.attempts + 1, _random()),
+        retryAt: retryable
+            ? nextRetryAt(_clock(), operation.attempts + 1, _random())
+            : null,
       );
-      return operation.attempts + 1 >= 8
+      return !retryable || operation.attempts + 1 >= 8
           ? SyncRunResult.needsAttention
           : SyncRunResult.retryScheduled;
     }
@@ -277,18 +284,38 @@ final class CloudSyncCoordinator {
     }
   }
 
-  Future<void> _verifyLocalFile(File file, StoredAudioAsset asset) async {
-    if (!await file.exists() || await file.length() != asset.byteLength) {
-      throw const SyncFailure(
-        SyncFailureKind.invalidData,
-        'local_asset_integrity_mismatch',
-      );
+  Future<void> _verifyLocalFile(
+    Stream<List<int>> stream,
+    StoredAudioAsset asset,
+  ) async {
+    if (asset.byteLength <= 0 || asset.byteLength > 104857600) {
+      _invalidLocalAsset();
     }
-    final digest = await sha256.bind(file.openRead()).first;
-    if (digest.toString() != asset.sha256) {
+    var length = 0;
+    final digest = await sha256
+        .bind(
+          stream.map((chunk) {
+            length += chunk.length;
+            if (length > asset.byteLength) _invalidLocalAsset();
+            return chunk;
+          }),
+        )
+        .first;
+    if (length != asset.byteLength || digest.toString() != asset.sha256) {
+      _invalidLocalAsset();
+    }
+  }
+
+  Never _invalidLocalAsset() => throw const SyncFailure(
+    SyncFailureKind.invalidData,
+    'local_asset_integrity_mismatch',
+  );
+
+  Future<void> _requireConsent(String uid) async {
+    if (!await _consentProvider.isCloudSyncEnabled(uid)) {
       throw const SyncFailure(
-        SyncFailureKind.invalidData,
-        'local_asset_integrity_mismatch',
+        SyncFailureKind.permissionDenied,
+        'consent_required',
       );
     }
   }

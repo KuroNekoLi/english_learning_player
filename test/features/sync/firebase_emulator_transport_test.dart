@@ -22,6 +22,10 @@ import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
 import 'package:english_learning_player/features/sync/data/firebase_material_transport.dart';
 import 'package:english_learning_player/features/sync/services/cloud_material_download_service.dart';
 import 'package:english_learning_player/features/sync/services/cloud_sync_coordinator.dart';
+import 'package:english_learning_player/core/db/account_database_providers.dart';
+import 'package:english_learning_player/features/sync/firebase_sync_dependencies.dart';
+import 'package:english_learning_player/features/sync/firebase_sync_view_model.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../fakes/fake_cloud_sync.dart';
@@ -88,7 +92,7 @@ void main() {
         final response = await http.send(
           'POST',
           endpoint.auth('signUp'),
-          contentType: ContentType.json,
+          contentType: 'application/json',
           bytes: FirebaseHttp.encode({
             'email': email,
             'password': password,
@@ -157,13 +161,14 @@ void main() {
         repository: senderRepository,
         consent: consent,
       );
+      final senderOutbox = SqliteSyncOutbox(scope: scope, db: senderDb);
       final coordinator = CloudSyncCoordinator(
         scope: scope,
         identityProvider: sender,
         consentProvider: consent,
-        outbox: SqliteSyncOutbox(scope: scope, db: senderDb),
+        outbox: senderOutbox,
         materials: senderRepository,
-        mediaFiles: senderFiles,
+        mediaStore: AppMediaStore(storage: senderFiles, scope: scope),
         transport: sending,
         publishSubtitles: publishingSubtitles.publish,
       );
@@ -183,14 +188,15 @@ void main() {
         catalog.map((entry) => entry.materialId),
         unorderedEquals([first.material.id, second.material.id]),
       );
-      final downloaded = await CloudMaterialDownloadService(
+      final receiverDownloader = CloudMaterialDownloadService(
         scope: scope,
         identityProvider: receiver,
         consentProvider: consent,
         transport: receiving,
         repository: receiverRepository,
         mediaStore: AppMediaStore(storage: receiverFiles, scope: scope),
-      ).download(catalog.first);
+      );
+      final downloaded = await receiverDownloader.download(catalog.first);
       final asset = (await receiverRepository.audioAssetForMaterial(
         downloaded.id,
       ))!;
@@ -220,8 +226,44 @@ void main() {
         offsetMs: 100,
       );
       expect(imported, hasLength(2));
-      expect(await coordinator.runOne(), SyncRunResult.uploaded);
-      expect(await coordinator.runOne(), SyncRunResult.idle);
+      final sendingRuntime = FirebaseSyncRuntime(
+        uid: uid,
+        hasDueMedia: senderOutbox.hasDueMedia,
+        transport: sending,
+        coordinator: coordinator,
+        downloader: CloudMaterialDownloadService(
+          scope: scope,
+          identityProvider: sender,
+          consentProvider: consent,
+          transport: sending,
+          repository: senderRepository,
+          mediaStore: AppMediaStore(storage: senderFiles, scope: scope),
+        ),
+        consent: consent,
+        repository: senderRepository,
+        subtitles: publishingSubtitles,
+        progress: SqliteProgressRepository(scope: scope, db: senderDb),
+        progressTransport: null,
+        progressCoordinator: null,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          accountScopeProvider.overrideWithValue(scope),
+          firebaseSyncRuntimeProvider.overrideWith(
+            (ref) async => sendingRuntime,
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(firebaseSyncViewModelProvider, (_, _) {});
+      final sync = container.read(firebaseSyncViewModelProvider.notifier);
+      expect(await senderOutbox.hasDueMedia(DateTime.now()), isTrue);
+      consent.enabled = false;
+      await sync.syncAutomatically(refreshCatalog: false);
+      expect(await senderOutbox.hasDueMedia(DateTime.now()), isTrue);
+      consent.enabled = true;
+      await sync.syncAutomatically(refreshCatalog: false);
+      expect(await senderOutbox.hasDueMedia(DateTime.now()), isFalse);
       final subtitleOperation = await senderDb
           .customSelect(
             "SELECT state FROM sync_outbox WHERE entity_type = 'subtitle'",
@@ -235,6 +277,33 @@ void main() {
         repository: receiverRepository,
         consent: consent,
       );
+      final receiverOutbox = SqliteSyncOutbox(scope: scope, db: receiverDb);
+      final receiverRuntime = FirebaseSyncRuntime(
+        uid: uid,
+        hasDueMedia: receiverOutbox.hasDueMedia,
+        transport: receiving,
+        coordinator: CloudSyncCoordinator(
+          scope: scope,
+          identityProvider: receiver,
+          consentProvider: consent,
+          outbox: receiverOutbox,
+          materials: receiverRepository,
+          mediaStore: AppMediaStore(storage: receiverFiles, scope: scope),
+          transport: receiving,
+        ),
+        downloader: receiverDownloader,
+        consent: consent,
+        repository: receiverRepository,
+        subtitles: receivingSubtitles,
+        progress: SqliteProgressRepository(scope: scope, db: receiverDb),
+        progressTransport: null,
+        progressCoordinator: null,
+      );
+      expect(
+        await receiverRepository.listSubtitleTracks(downloaded.id),
+        isEmpty,
+      );
+      expect(await receiverRuntime.refresh(), hasLength(2));
       await receivingSubtitles.download(downloaded.id);
       await receivingSubtitles.download(downloaded.id);
       expect(

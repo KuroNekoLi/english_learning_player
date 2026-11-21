@@ -111,7 +111,7 @@ void main() {
           consentProvider: consent,
           outbox: SqliteSyncOutbox(scope: scope, db: sourceDb),
           materials: source,
-          mediaFiles: sourceFiles,
+          mediaStore: AppMediaStore(storage: sourceFiles, scope: scope),
           transport: upload,
         ).runOne(),
         SyncRunResult.uploaded,

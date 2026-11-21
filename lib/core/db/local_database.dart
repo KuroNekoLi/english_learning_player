@@ -10,7 +10,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -70,6 +70,7 @@ class LocalDatabase extends GeneratedDatabase {
       await _createSyncSchema();
       await _createProgressSchema();
       await _createFolderLibrarySchema();
+      await _createSyncPreferenceSchema();
     },
     onUpgrade: (migrator, from, to) async {
       if (from < 2) await _createSubtitleSchema();
@@ -81,11 +82,21 @@ class LocalDatabase extends GeneratedDatabase {
       if (from < 5) await _createProgressSchema();
       if (from < 6) await _createFolderLibrarySchema();
       if (from < 7) await transaction(_backfillSubtitleSyncOperations);
+      if (from < 8) await _createSyncPreferenceSchema();
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
   );
+
+  Future<void> _createSyncPreferenceSchema() => customStatement('''
+    CREATE TABLE IF NOT EXISTS sync_preferences (
+      owner_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+      PRIMARY KEY (owner_id, project_id)
+    )
+  ''');
 
   Future<void> _createSubtitleSchema() async {
     await customStatement('''
