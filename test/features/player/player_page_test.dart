@@ -343,6 +343,41 @@ void main() {
     expect(audio.seekCalls, 0);
   });
 
+  testWidgets('hide and intensive reveal use the same subtitle visibility', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    audio.advanceTo(1800);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('字幕設定'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('隱藏'));
+    await tester.pumpAndSettle();
+    expect(find.text('A sentence to learn.'), findsNothing);
+    expect(find.text('一句練習句。'), findsNothing);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('雙語'));
+    await tester.pumpAndSettle();
+    expect(find.text('一句練習句。'), findsOneWidget);
+
+    await tester.tap(find.text('精聽'));
+    await tester.pumpAndSettle();
+    expect(find.text('A sentence to learn.'), findsNothing);
+    expect(find.text('一句練習句。'), findsNothing);
+    await tester.tap(find.text('顯示英文'));
+    await tester.pumpAndSettle();
+    expect(find.text('A sentence to learn.'), findsOneWidget);
+    expect(find.text('一句練習句。'), findsNothing);
+    await tester.tap(find.text('顯示中文'));
+    await tester.pumpAndSettle();
+    expect(find.text('一句練習句。'), findsOneWidget);
+    expect(audio.seekCalls, 0);
+  });
+
   testWidgets('current cue can be bookmarked and removed', (tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();

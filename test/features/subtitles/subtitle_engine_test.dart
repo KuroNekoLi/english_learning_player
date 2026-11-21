@@ -230,7 +230,7 @@ Valid
       final shifted = aligner.align(
         sourceCues: const [source],
         targetCues: const [target],
-        targetOffsetMs: 500,
+        sourceOffsetMs: 500,
       );
       expect(shifted.single.targetCueIds, ['zh']);
       expect(shifted.single.overlapMs['zh'], 2000);

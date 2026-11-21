@@ -1,4 +1,5 @@
 import 'subtitle_models.dart';
+import 'subtitle_time.dart';
 
 final class SubtitleAligner {
   const SubtitleAligner({this.minimumShorterCueCoverage = 0.25})
@@ -30,21 +31,21 @@ final class SubtitleAligner {
 
     return List.unmodifiable(
       sourceCues.map((source) {
-        final sourceStart = source.startMs - sourceOffsetMs;
-        final sourceEnd = source.endMs - sourceOffsetMs;
+        final sourceStart = subtitleToAudioMs(source.startMs, sourceOffsetMs);
+        final sourceEnd = subtitleToAudioMs(source.endMs, sourceOffsetMs);
         final matches = <({SubtitleCue cue, int overlap})>[];
         var index = _firstGreaterThan(
           prefixMaximumEnd,
-          sourceStart + targetOffsetMs,
+          audioToSubtitleMs(sourceStart, targetOffsetMs),
         );
         final afterMatches = _firstAtLeastStart(
           sortedTargets,
-          sourceEnd + targetOffsetMs,
+          audioToSubtitleMs(sourceEnd, targetOffsetMs),
         );
         while (index < afterMatches) {
           final target = sortedTargets[index];
-          final targetStart = target.startMs - targetOffsetMs;
-          final targetEnd = target.endMs - targetOffsetMs;
+          final targetStart = subtitleToAudioMs(target.startMs, targetOffsetMs);
+          final targetEnd = subtitleToAudioMs(target.endMs, targetOffsetMs);
           final overlap = _overlap(
             sourceStart,
             sourceEnd,

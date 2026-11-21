@@ -161,6 +161,32 @@ final class JustAudioAdapter implements AudioEngine {
   }
 
   @override
+  Future<void> unload() {
+    _ensureUsable();
+    final generation = ++_loadGeneration;
+    _loading = true;
+    _materialId = null;
+    return _enqueue(() async {
+      try {
+        await _player.stop();
+        await _player.clearSource();
+      } finally {
+        if (generation == _loadGeneration) {
+          _loading = false;
+          _positionMs = 0;
+          _sourceDurationMs = null;
+          _bufferedMs = null;
+          _playing = false;
+          _processingState = AudioProcessingState.idle;
+          _loopRange = null;
+          _error = null;
+          _publish();
+        }
+      }
+    });
+  }
+
+  @override
   Future<void> seekTo(Duration position) {
     _ensureUsable();
     return _enqueue(() async {
@@ -306,12 +332,14 @@ final class JustAudioAdapter implements AudioEngine {
   }
 
   void _onPosition(Duration value) {
+    if (_materialId == null) return;
     if (_loading || _configuringLoop || _disposed) return;
     _positionMs = _clampPosition(value.inMilliseconds);
     _publish();
   }
 
   void _onDuration(Duration? value) {
+    if (_materialId == null) return;
     if (_loading || _configuringLoop || _loopRange != null || _disposed) return;
     _sourceDurationMs = _durationInMs(value);
     _positionMs = _clampPosition(_positionMs);
@@ -319,12 +347,14 @@ final class JustAudioAdapter implements AudioEngine {
   }
 
   void _onBufferedPosition(Duration value) {
+    if (_materialId == null) return;
     if (_loading || _configuringLoop || _disposed) return;
     _bufferedMs = _clampPosition(value.inMilliseconds);
     _publish();
   }
 
   void _onPlaying(bool value) {
+    if (_materialId == null) return;
     if (_loading || _configuringLoop || _disposed) return;
     _playing = value;
     _publish();
@@ -337,6 +367,7 @@ final class JustAudioAdapter implements AudioEngine {
   }
 
   void _onProcessingState(AudioPortProcessingState value) {
+    if (_materialId == null) return;
     if (_loading || _configuringLoop || _disposed) return;
     _processingState = _mapProcessingState(value);
     if (_processingState == AudioProcessingState.error) {
@@ -351,6 +382,7 @@ final class JustAudioAdapter implements AudioEngine {
   }
 
   void _onBackendError(Object error) {
+    if (_materialId == null) return;
     if (_loading || _disposed) return;
     _processingState = AudioProcessingState.error;
     _playing = false;
@@ -363,6 +395,7 @@ final class JustAudioAdapter implements AudioEngine {
       _onBackendError(error);
 
   void _onInterruption(AudioPortInterruption interruption) {
+    if (_materialId == null) return;
     if (_disposed) return;
     if (interruption == AudioPortInterruption.ended) return;
     if (interruption == AudioPortInterruption.began && !_playing) return;

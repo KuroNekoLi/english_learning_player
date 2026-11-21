@@ -85,6 +85,9 @@ final class JustAudioPlayerPort implements AudioPlayerPort {
   Future<void> stop() => _player.stop();
 
   @override
+  Future<void> clearSource() => _player.clearAudioSources();
+
+  @override
   Future<void> seekTo(int positionMs) =>
       _player.seek(Duration(milliseconds: positionMs));
 

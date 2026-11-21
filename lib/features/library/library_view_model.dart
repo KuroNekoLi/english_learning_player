@@ -9,6 +9,8 @@ import 'data/sqlite_material_repository.dart';
 import 'material_repository.dart';
 import 'services/audio_file_picker.dart';
 import 'services/audio_import_service.dart';
+import '../subtitles/services/subtitle_import_service.dart';
+import 'services/media_selection_import_service.dart';
 
 final accountScopeProvider = Provider<AccountScope>(
   (ref) => AccountScope('local-default'),
@@ -63,3 +65,28 @@ final libraryViewModelProvider = FutureProvider<List<LearningMaterial>>((
   final repository = await ref.watch(materialRepositoryProvider.future);
   return repository.listMaterials();
 }, retry: (_, _) => null);
+
+/// Do not start an import if the account changed while the picker was open.
+final libraryImportProvider =
+    Provider<Future<MediaSelectionImportResult?> Function()>((ref) {
+      return () async {
+        final owner = ref.read(accountScopeProvider).ownerId;
+        bool isCurrent() =>
+            ref.mounted && ref.read(accountScopeProvider).ownerId == owner;
+        final files = await ref.read(audioFilePickerProvider).pickMediaFiles();
+        if (files.isEmpty || !isCurrent()) return null;
+        final audioImporter = ref.read(audioImportServiceProvider.future);
+        final repository = await ref.read(materialRepositoryProvider.future);
+        final importer = await audioImporter;
+        if (!isCurrent()) return null;
+        final result = await MediaSelectionImportService(
+          ownerId: owner,
+          repository: repository,
+          audioImporter: importer,
+          subtitleImporter: SubtitleImportService(repository: repository),
+        ).importFiles(files);
+        if (!isCurrent()) return null;
+        ref.invalidate(libraryViewModelProvider);
+        return result;
+      };
+    });

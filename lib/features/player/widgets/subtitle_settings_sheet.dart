@@ -1,0 +1,177 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../learning/domain/learning_session.dart';
+import '../../subtitles/domain/subtitle_models.dart';
+
+final class SubtitleSettingsSheet extends StatefulWidget {
+  const SubtitleSettingsSheet({
+    super.key,
+    required this.tracks,
+    required this.onSelect,
+    required this.onOffsetChanged,
+    required this.onImport,
+    required this.visibility,
+    required this.onVisibilityChanged,
+  });
+
+  final List<SubtitleTrack> tracks;
+  final ValueChanged<SubtitleTrack> onSelect;
+  final Future<void> Function(SubtitleTrack track, int offsetMs)
+  onOffsetChanged;
+  final Future<void> Function() onImport;
+  final SubtitleVisibility visibility;
+  final ValueChanged<SubtitleVisibility> onVisibilityChanged;
+
+  @override
+  State<SubtitleSettingsSheet> createState() => _SubtitleSettingsSheetState();
+}
+
+final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
+  final Map<String, int> _offsets = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final english = _selectedTrack('en');
+    final chinese = _selectedTrack('zh');
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '字幕設定',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'AI 語音辨識（尚未提供）',
+                  onPressed: null,
+                  icon: const Icon(Icons.auto_awesome),
+                ),
+                IconButton(
+                  tooltip: '手動匯入 SRT',
+                  onPressed: () => unawaited(widget.onImport()),
+                  icon: const Icon(Icons.playlist_add),
+                ),
+                IconButton(
+                  tooltip: '字幕樣式（尚未提供）',
+                  onPressed: null,
+                  icon: const Icon(Icons.tune),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final option in const [
+                  (SubtitleVisibility.bilingual, '雙語'),
+                  (SubtitleVisibility.englishOnly, '只顯示英文'),
+                  (SubtitleVisibility.chineseOnly, '只顯示中文'),
+                  (SubtitleVisibility.hidden, '隱藏'),
+                ])
+                  ChoiceChip(
+                    label: Text(option.$2),
+                    selected: widget.visibility == option.$1,
+                    onSelected: (_) => widget.onVisibilityChanged(option.$1),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (widget.tracks.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Text('尚未匯入字幕'),
+              )
+            else ...[
+              _languageGroup(context, '英文', 'en', english),
+              const Divider(),
+              _languageGroup(context, '中文', 'zh', chinese),
+              if (english != null || chinese != null) ...[
+                const Divider(height: 28),
+                if (english != null) _offsetControl(context, english),
+                if (chinese != null) _offsetControl(context, chinese),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _languageGroup(
+    BuildContext context,
+    String label,
+    String language,
+    SubtitleTrack? selected,
+  ) {
+    final tracks = widget.tracks
+        .where((track) => track.languageTag.toLowerCase().startsWith(language))
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.titleMedium),
+        if (tracks.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('沒有可選字幕軌'),
+          )
+        else
+          for (final track in tracks)
+            RadioListTile<String>(
+              value: track.id,
+              groupValue: selected?.id,
+              onChanged: (_) => widget.onSelect(track),
+              title: Text(track.sourceName),
+              subtitle: Text(
+                track.selectionMode == SubtitleSelectionMode.manual
+                    ? '手動指定'
+                    : '自動配對',
+              ),
+              contentPadding: EdgeInsets.zero,
+            ),
+      ],
+    );
+  }
+
+  Widget _offsetControl(BuildContext context, SubtitleTrack track) {
+    final value = _offsets[track.id] ?? track.offsetMs;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${track.languageTag} 偏移：$value ms'),
+        Slider(
+          min: -2000,
+          max: 2000,
+          divisions: 80,
+          value: value.clamp(-2000, 2000).toDouble(),
+          label: '$value ms',
+          onChanged: (next) =>
+              setState(() => _offsets[track.id] = next.round()),
+          onChangeEnd: (next) =>
+              unawaited(widget.onOffsetChanged(track, next.round())),
+        ),
+      ],
+    );
+  }
+
+  SubtitleTrack? _selectedTrack(String language) {
+    for (final track in widget.tracks) {
+      if (track.isSelected &&
+          track.languageTag.toLowerCase().startsWith(language)) {
+        return track;
+      }
+    }
+    return null;
+  }
+}

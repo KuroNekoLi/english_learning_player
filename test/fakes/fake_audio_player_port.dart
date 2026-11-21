@@ -104,6 +104,11 @@ final class FakeAudioPlayerPort implements AudioPlayerPort {
   }
 
   @override
+  Future<void> clearSource() async {
+    loadedUri = null;
+  }
+
+  @override
   Future<void> seekTo(int positionMs) async {
     _position = Duration(milliseconds: positionMs);
     _emitPosition();

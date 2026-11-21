@@ -6,20 +6,20 @@ import '../../progress/domain/progress_models.dart';
 import '../../progress/services/progress_sync_coordinator.dart';
 import 'firebase_account_session.dart';
 import 'firebase_endpoint.dart';
-import 'firebase_material_transport.dart';
+import 'firebase_documents.dart';
 
 final class FirebaseProgressTransport implements ProgressSyncTransport {
   const FirebaseProgressTransport(
     this.endpoint,
     this.session,
     this.http,
-    this.materials,
+    this.documents,
   );
 
   final FirebaseEndpoint endpoint;
   final FirebaseAccountSession session;
   final FirebaseHttp http;
-  final FirebaseMaterialTransport materials;
+  final FirebaseDocuments documents;
 
   @override
   Future<ProgressCommitResult> commit({
@@ -83,7 +83,7 @@ final class FirebaseProgressTransport implements ProgressSyncTransport {
   }
 
   Future<CanonicalProgress?> canonical(String uid, String materialId) async {
-    final record = await materials.readDocument(uid, [
+    final record = await documents.readDocument(uid, [
       'users',
       uid,
       'progress',

@@ -11,83 +11,32 @@ import '../../features/learning/domain/learning_session.dart';
 import '../../features/learning/learning_session_provider.dart';
 import '../../features/bookmarks/bookmark_dependencies.dart';
 import '../../features/bookmarks/bookmark_list_view_model.dart';
-import '../../features/bookmarks/domain/bookmark.dart';
-import '../../features/bookmarks/domain/bookmark_resolver.dart';
-import '../library/library_view_model.dart';
+import '../library/domain/audio_import_source.dart';
 import '../library/material_repository.dart';
 import '../progress/progress_dependencies.dart';
 import '../progress/services/playback_progress_recorder.dart';
 import '../subtitles/domain/subtitle_models.dart';
-import '../subtitles/services/subtitle_import_service.dart';
 import 'player_dependencies.dart';
 import 'services/material_playback_loader.dart';
+import 'services/player_bookmarks.dart';
+import 'services/player_session_resources.dart';
 
-enum PlayerLoadStatus { idle, loading, ready, error }
+import 'player_view_state.dart';
 
-final class PlayerViewState {
-  const PlayerViewState({
-    this.status = PlayerLoadStatus.idle,
-    this.material,
-    this.playback,
-    this.learning,
-    this.englishTrack,
-    this.subtitleTracks = const [],
-    this.errorMessage,
-    this.isCurrentCueBookmarked = false,
-  });
-
-  final PlayerLoadStatus status;
-  final LearningMaterial? material;
-  final PlaybackSnapshot? playback;
-  final LearningSessionState? learning;
-  final SubtitleTrack? englishTrack;
-  final List<SubtitleTrack> subtitleTracks;
-  final String? errorMessage;
-  final bool isCurrentCueBookmarked;
-
-  bool get isLoading => status == PlayerLoadStatus.loading;
-  bool get isReady => status == PlayerLoadStatus.ready;
-
-  PlayerViewState copyWith({
-    PlayerLoadStatus? status,
-    LearningMaterial? material,
-    PlaybackSnapshot? playback,
-    LearningSessionState? learning,
-    SubtitleTrack? englishTrack,
-    List<SubtitleTrack>? subtitleTracks,
-    String? errorMessage,
-    bool clearLearning = false,
-    bool clearEnglishTrack = false,
-    bool clearError = false,
-    bool? isCurrentCueBookmarked,
-  }) => PlayerViewState(
-    status: status ?? this.status,
-    material: material ?? this.material,
-    playback: playback ?? this.playback,
-    learning: clearLearning ? null : learning ?? this.learning,
-    englishTrack: clearEnglishTrack ? null : englishTrack ?? this.englishTrack,
-    subtitleTracks: subtitleTracks ?? this.subtitleTracks,
-    errorMessage: clearError ? null : errorMessage ?? this.errorMessage,
-    isCurrentCueBookmarked:
-        isCurrentCueBookmarked ?? this.isCurrentCueBookmarked,
-  );
-}
+export 'player_view_state.dart';
 
 final class PlayerViewModel extends Notifier<PlayerViewState> {
   late AudioEngine _audioEngine;
   late LearningSessionFactory _sessionFactory;
-  LearningSession? _session;
+  final _resources = PlayerSessionResources();
+  LearningSession? get _session => _resources.learning;
   MaterialPlaybackBundle? _bundle;
-  StreamSubscription<PlaybackSnapshot>? _playbackSubscription;
-  StreamSubscription<LearningSessionState>? _learningSubscription;
-  PlaybackProgressRecorder? _progressRecorder;
-  SubtitleVisibility _normalVisibility = SubtitleVisibility.bilingual;
   int _openGeneration = 0;
   bool _disposed = false;
+  bool _closingAccount = false;
 
-  SubtitleVisibility get normalVisibility => _normalVisibility;
-  final Map<String, Bookmark> _bookmarksByCueKey = {};
-  final BookmarkResolver _bookmarkResolver = const BookmarkResolver();
+  PlayerBookmarkIndex _bookmarks = const {};
+  bool _togglingBookmark = false;
 
   @override
   PlayerViewState build() {
@@ -99,6 +48,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
 
   Future<void> open(LearningMaterial material, {String? initialCueId}) async {
     _ensureUsable();
+    if (_closingAccount) return;
     final generation = ++_openGeneration;
     state = PlayerViewState(
       status: PlayerLoadStatus.loading,
@@ -106,39 +56,47 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     );
     await _releaseSession(finalProgressState: CheckpointState.stopped);
     try {
+      if (!_isCurrent(generation)) return;
       final loader = await ref.read(materialPlaybackLoaderProvider.future);
       final bundle = await loader.load(material);
-      if (generation != _openGeneration) return;
+      if (!_isCurrent(generation)) return;
       _bundle = bundle;
       await _audioEngine.load(bundle.source);
-      if (generation != _openGeneration) return;
-      await _publishMediaItem(material);
-      if (generation != _openGeneration) return;
+      if (!_isCurrent(generation)) return;
+      await _publishMediaItem(material, generation);
+      if (!_isCurrent(generation)) return;
       final progressRepository = await ref.read(
         progressRepositoryProvider.future,
       );
       if (initialCueId == null) {
         final savedProgress = await progressRepository.canonical(material.id);
         final positionMs = savedProgress?.checkpoint.positionMs ?? 0;
+        if (!_isCurrent(generation)) return;
         if (positionMs > 0) {
           await _audioEngine.seekTo(Duration(milliseconds: positionMs));
         }
       }
-      await _loadBookmarkAnchors(material.id, bundle.subtitleTracks);
-      if (generation != _openGeneration) return;
-      await _createSession();
-      if (generation != _openGeneration) return;
-      _progressRecorder = PlaybackProgressRecorder(
+      await _loadBookmarkAnchors(
+        material.id,
+        bundle.subtitleTracks,
+        generation,
+      );
+      if (!_isCurrent(generation)) return;
+      await _createSession(generation);
+      if (!_isCurrent(generation)) return;
+      final deviceId = await progressRepository.deviceId();
+      if (!_isCurrent(generation)) return;
+      _resources.progress = PlaybackProgressRecorder(
         repository: progressRepository,
         stream: (
           ownerId: material.ownerId,
           materialId: material.id,
-          deviceId: await progressRepository.deviceId(),
+          deviceId: deviceId,
           sessionId: const Uuid().v4(),
         ),
         clock: DateTime.now,
       );
-      _playbackSubscription = _audioEngine.snapshots.listen(
+      _resources.playbackSubscription = _audioEngine.snapshots.listen(
         (snapshot) => _updatePlayback(snapshot, generation),
       );
       state = PlayerViewState(
@@ -147,6 +105,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
         playback: _audioEngine.snapshot,
         learning: _session?.state,
         englishTrack: bundle.englishTrack,
+        timeline: bundle.timeline,
         subtitleTracks: bundle.subtitleTracks,
         isCurrentCueBookmarked:
             initialCueId != null ||
@@ -154,6 +113,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       );
       if (initialCueId != null) {
         await _session?.playCue(initialCueId);
+        if (!_isCurrent(generation)) return;
         state = state.copyWith(
           playback: _audioEngine.snapshot,
           learning: _session?.state,
@@ -164,7 +124,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
         );
       }
     } catch (error) {
-      if (generation != _openGeneration) return;
+      if (!_isCurrent(generation)) return;
       final message = error is MaterialPlaybackException
           ? error.message
           : '無法載入教材，請檢查本機音訊檔案。';
@@ -195,7 +155,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   }
 
   Future<void> onLifecycleExit() async {
-    await _progressRecorder?.onLifecycleExit(
+    await _resources.progress?.onLifecycleExit(
       positionMs: _audioEngine.snapshot.positionMs,
     );
   }
@@ -268,7 +228,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   }
 
   void setNormalVisibility(SubtitleVisibility visibility) {
-    _normalVisibility = visibility;
+    state = state.copyWith(normalVisibility: visibility);
     _session?.setNormalVisibility(visibility);
     if (_session != null) _syncLearningState(_session!.state);
   }
@@ -279,38 +239,32 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     await _saveSubtitleTrack(track, manual: true);
   }
 
-  Future<void> importSubtitle({
+  Future<AudioImportSource?> pickSubtitle() async {
+    try {
+      return await ref.read(subtitleFilePickerProvider).pickSubtitle();
+    } catch (_) {
+      if (ref.mounted) state = state.copyWith(errorMessage: '無法開啟字幕檔案。');
+      return null;
+    }
+  }
+
+  Future<bool> importSubtitle({
     required String languageTag,
-    required String sourceName,
-    required List<int> bytes,
+    required AudioImportSource source,
   }) async {
     final material = state.material;
-    if (material == null || !state.isReady) return;
+    final generation = _openGeneration;
+    if (material == null || !state.isReady) return false;
     try {
-      final repository = await ref.read(materialRepositoryProvider.future);
-      final importer = SubtitleImportService(repository: repository);
-      final bilingualTracks = await importer.importBilingualBytes(
-        ownerId: material.ownerId,
-        materialId: material.id,
-        sourceName: sourceName,
-        bytes: bytes,
-        manual: true,
-      );
-      if (bilingualTracks != null) {
-        await _saveSubtitleTrack(bilingualTracks.first, manual: true);
-      } else {
-        final imported = await importer.importBytes(
-          ownerId: material.ownerId,
-          materialId: material.id,
-          languageTag: languageTag,
-          sourceName: sourceName,
-          bytes: bytes,
-          manual: true,
-        );
-        await _saveSubtitleTrack(imported.track, manual: true);
-      }
+      final service = await ref.read(playerSubtitlesProvider.future);
+      if (!_isCurrent(generation)) return false;
+      final tracks = await service.import(material, source, languageTag);
+      return await _applySubtitleTracks(material, tracks, generation);
     } catch (_) {
-      state = state.copyWith(errorMessage: '字幕匯入失敗，請確認 SRT 格式。');
+      if (_isCurrent(generation)) {
+        state = state.copyWith(errorMessage: '字幕匯入失敗，請確認 SRT 格式。');
+      }
+      return false;
     }
   }
 
@@ -326,38 +280,42 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     final material = state.material;
     final track = state.englishTrack;
     final cue = state.learning?.currentCue;
-    if (material == null || track == null || cue == null) return;
-    final key = _cueKey(track, cue);
+    if (_closingAccount ||
+        _togglingBookmark ||
+        material == null ||
+        track == null ||
+        cue == null) {
+      return;
+    }
+    final generation = _openGeneration;
+    final key = PlayerBookmarks.key(track, cue);
+    _togglingBookmark = true;
     try {
-      final repository = await ref.read(bookmarkRepositoryProvider.future);
-      final existing =
-          _bookmarksByCueKey[key] ??
-          await repository.findForAnchor(
-            materialId: material.id,
-            anchor: _anchorFor(track, cue),
-          );
-      if (existing != null) {
-        await repository.removeBookmark(existing.id);
-        _bookmarksByCueKey.remove(key);
-      } else {
-        final bookmark = await repository.addBookmark(
-          Bookmark(
-            id: const Uuid().v4(),
-            ownerId: material.ownerId,
-            materialId: material.id,
-            anchor: _anchorFor(track, cue),
-            createdAt: DateTime.now().toUtc(),
-          ),
-        );
-        _bookmarksByCueKey[key] = bookmark;
-      }
+      final service = PlayerBookmarks(
+        await ref.read(bookmarkRepositoryProvider.future),
+      );
+      if (!_isCurrent(generation)) return;
+      final saved = await service.toggle(material, track, cue, _bookmarks[key]);
+      if (!_isCurrent(generation)) return;
+      _bookmarks = Map.unmodifiable({
+        for (final entry in _bookmarks.entries)
+          if (entry.key != key) entry.key: entry.value,
+        if (saved != null) key: saved,
+      });
       ref.invalidate(bookmarkListViewModelProvider);
       state = state.copyWith(
-        isCurrentCueBookmarked: _bookmarksByCueKey.containsKey(key),
+        isCurrentCueBookmarked: _isBookmarked(
+          state.learning?.currentCue,
+          state.englishTrack,
+        ),
         clearError: true,
       );
     } catch (_) {
-      state = state.copyWith(errorMessage: '收藏儲存失敗，請重試。');
+      if (_isCurrent(generation)) {
+        state = state.copyWith(errorMessage: '收藏儲存失敗，請重試。');
+      }
+    } finally {
+      _togglingBookmark = false;
     }
   }
 
@@ -369,52 +327,73 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     final material = state.material;
     if (material == null || !state.isReady) return;
     try {
-      final repository = await ref.read(materialRepositoryProvider.future);
-      await repository.saveSubtitleTrack(track, manual: manual);
-      final tracks = await repository.listSubtitleTracks(material.id);
-      if (generation != _openGeneration || _bundle == null) return;
-      final wasIntensive = _session?.state.mode == LearningMode.intensive;
-      _bundle = MaterialPlaybackBundle(
-        material: material,
-        source: _bundle!.source,
-        subtitleTracks: tracks,
-      );
-      await _loadBookmarkAnchors(material.id, tracks);
-      await _createSession(wasIntensive: wasIntensive);
-      state = state.copyWith(
-        learning: _session?.state,
-        englishTrack: _bundle!.englishTrack,
-        subtitleTracks: tracks,
-        clearLearning: _session == null,
-        clearEnglishTrack: _bundle!.englishTrack == null,
-        isCurrentCueBookmarked: _isBookmarked(
-          _session?.state.currentCue,
-          _bundle!.englishTrack,
-        ),
-      );
+      final service = await ref.read(playerSubtitlesProvider.future);
+      if (!_isCurrent(generation)) return;
+      final tracks = await service.save(track, manual: manual);
+      await _applySubtitleTracks(material, tracks, generation);
     } catch (_) {
-      state = state.copyWith(errorMessage: '字幕設定儲存失敗');
+      if (_isCurrent(generation)) {
+        state = state.copyWith(errorMessage: '字幕設定儲存失敗');
+      }
     }
   }
 
-  Future<void> _createSession({bool wasIntensive = false}) async {
-    await _releaseLearningSession();
+  Future<bool> _applySubtitleTracks(
+    LearningMaterial material,
+    List<SubtitleTrack> tracks,
+    int generation,
+  ) async {
+    final current = _bundle;
+    if (!_isCurrent(generation) || current == null) return false;
+    final wasIntensive = _session?.state.mode == LearningMode.intensive;
+    final bundle = MaterialPlaybackBundle(
+      material: material,
+      source: current.source,
+      subtitleTracks: tracks,
+    );
+    await _loadBookmarkAnchors(material.id, tracks, generation);
+    if (!_isCurrent(generation)) return false;
+    _bundle = bundle;
+    await _createSession(generation, wasIntensive: wasIntensive);
+    if (!_isCurrent(generation) || !identical(_bundle, bundle)) return false;
+    state = state.copyWith(
+      learning: _session?.state,
+      englishTrack: bundle.englishTrack,
+      subtitleTracks: tracks,
+      timeline: bundle.timeline,
+      clearLearning: _session == null,
+      clearEnglishTrack: bundle.englishTrack == null,
+      isCurrentCueBookmarked: _isBookmarked(
+        _session?.state.currentCue,
+        bundle.englishTrack,
+      ),
+    );
+    return true;
+  }
+
+  Future<void> _createSession(
+    int generation, {
+    bool wasIntensive = false,
+  }) async {
+    await _resources.closeLearning();
+    if (!_isCurrent(generation)) return;
     final bundle = _bundle;
     final english = bundle?.englishTrack;
     if (bundle == null || english == null) return;
     final session = _sessionFactory.create(
       englishTrack: english,
       chineseTrack: bundle.chineseTrack,
-      normalVisibility: _normalVisibility,
+      timeline: bundle.timeline,
+      normalVisibility: state.normalVisibility,
     );
-    _session = session;
+    _resources.learning = session;
     if (wasIntensive) session.enterIntensive();
-    _learningSubscription = session.states.listen(_syncLearningState);
+    _resources.learningSubscription = session.states.listen(_syncLearningState);
   }
 
   void _updatePlayback(PlaybackSnapshot snapshot, int generation) {
     if (_disposed || generation != _openGeneration) return;
-    final recorder = _progressRecorder;
+    final recorder = _resources.progress;
     if (recorder != null) {
       unawaited(
         recorder
@@ -443,24 +422,23 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   Future<void> _loadBookmarkAnchors(
     String materialId,
     List<SubtitleTrack> tracks,
+    int generation,
   ) async {
-    _bookmarksByCueKey.clear();
-    final repository = await ref.read(bookmarkRepositoryProvider.future);
-    final bookmarks = await repository.listBookmarks();
-    for (final bookmark in bookmarks.where(
-      (item) => item.materialId == materialId,
-    )) {
-      final resolution = _bookmarkResolver.resolve(bookmark, tracks);
-      if (resolution.status == BookmarkResolutionStatus.resolved) {
-        _bookmarksByCueKey[_cueKey(resolution.track!, resolution.cue!)] =
-            bookmark;
-      }
-    }
+    final service = PlayerBookmarks(
+      await ref.read(bookmarkRepositoryProvider.future),
+    );
+    if (!_isCurrent(generation)) return;
+    final bookmarks = await service.load(materialId, tracks);
+    if (_isCurrent(generation)) _bookmarks = bookmarks;
   }
 
-  Future<void> _publishMediaItem(LearningMaterial material) async {
+  Future<void> _publishMediaItem(
+    LearningMaterial material,
+    int generation,
+  ) async {
     try {
       final mediaSession = await ref.read(audioMediaSessionProvider.future);
+      if (!_isCurrent(generation)) return;
       await mediaSession.publishMediaItem(
         id: material.id,
         title: material.title,
@@ -474,63 +452,50 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   bool _isBookmarked(SubtitleCue? cue, SubtitleTrack? track) =>
       cue != null &&
       track != null &&
-      _bookmarksByCueKey.containsKey(_cueKey(track, cue));
-
-  String _cueKey(SubtitleTrack track, SubtitleCue cue) =>
-      '${track.id}:${track.revision}:${cue.id}';
-
-  BookmarkCueAnchor _anchorFor(SubtitleTrack track, SubtitleCue cue) {
-    final startMs = cue.startMs + track.offsetMs;
-    final endMs = cue.endMs + track.offsetMs;
-    return BookmarkCueAnchor(
-      trackId: track.id,
-      trackRevision: track.revision,
-      languageTag: track.languageTag,
-      cueId: cue.id,
-      cueText: cue.text,
-      startMs: startMs < 0 ? 0 : startMs,
-      endMs: endMs,
-    );
-  }
+      _bookmarks.containsKey(PlayerBookmarks.key(track, cue));
 
   Future<void> _runAudioCommand(
     Future<void> Function() command, {
     bool persistProgress = false,
   }) async {
-    if (!state.isReady) return;
+    final generation = _openGeneration;
+    if (_closingAccount || !state.isReady) return;
     try {
       await command();
+      if (!_isCurrent(generation)) return;
       state = state.copyWith(playback: _audioEngine.snapshot, clearError: true);
       if (persistProgress) {
         final snapshot = _audioEngine.snapshot;
-        await _progressRecorder?.onSeekCompleted(
+        await _resources.progress?.onSeekCompleted(
           snapshot.positionMs,
           playing: snapshot.playing,
         );
       }
     } catch (_) {
-      state = state.copyWith(errorMessage: '播放操作失敗，請重試。');
+      if (_isCurrent(generation)) {
+        state = state.copyWith(errorMessage: '播放操作失敗，請重試。');
+      }
+    }
+  }
+
+  /// Finish pending progress on the current account, then unload its media.
+  Future<void> closeForAccountChange() async {
+    _closingAccount = true;
+    _openGeneration++;
+    try {
+      await Future.wait([_releaseSession(), _audioEngine.unload()]);
+    } finally {
+      if (!_disposed && ref.mounted) state = const PlayerViewState();
+      _closingAccount = false;
     }
   }
 
   Future<void> _releaseSession({
     CheckpointState finalProgressState = CheckpointState.paused,
   }) async {
-    final recorder = _progressRecorder;
-    _progressRecorder = null;
-    await _playbackSubscription?.cancel();
-    _playbackSubscription = null;
-    await recorder?.dispose(finalState: finalProgressState);
-    await _releaseLearningSession();
     _bundle = null;
-  }
-
-  Future<void> _releaseLearningSession() async {
-    await _learningSubscription?.cancel();
-    _learningSubscription = null;
-    final session = _session;
-    _session = null;
-    await session?.dispose();
+    _bookmarks = const {};
+    await _resources.close(finalProgressState);
   }
 
   Future<void> _disposeResources() async {
@@ -538,6 +503,9 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     _openGeneration++;
     await _releaseSession(finalProgressState: CheckpointState.paused);
   }
+
+  bool _isCurrent(int generation) =>
+      !_disposed && !_closingAccount && generation == _openGeneration;
 
   void _ensureUsable() {
     if (_disposed) throw StateError('PlayerViewModel has been disposed.');

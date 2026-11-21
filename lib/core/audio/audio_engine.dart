@@ -67,6 +67,9 @@ abstract interface class AudioEngine {
   Future<void> play();
   Future<void> pause();
   Future<void> stop();
+
+  /// Stop and discard the current source so it cannot be resumed.
+  Future<void> unload();
   Future<void> seekTo(Duration position);
   Future<void> setSpeed(double speed);
   Future<void> setSentenceLoop(TimeRange? range);

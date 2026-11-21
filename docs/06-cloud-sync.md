@@ -5,6 +5,8 @@
 
 音檔與字幕二進位放 Cloud Storage，metadata/進度/收藏放 Firestore；不得將大型 base64 直接塞 Firestore。
 
+內嵌雙語 SRT 的兩個語言軌可以共用原始檔案內容。字幕 manifest 的選用欄位 `cueProjection` 記錄 `bilingual`（下載後以本機相同規則取出對應語言）或 `original`（使用解析後的原字幕）。舊 manifest 未記錄此欄位時，英中軌的 SHA-256 相同才嘗試拆軌。發布會寫入此欄位的客戶端前，需先部署支援此欄位的 Firestore Rules。
+
 ## 2. 可靠性契約
 - 每項 outbox 有 `opId`（冪等）、`entityId`、`revision`、`attempts`、`nextRetryAt`、`lastError`。
 - 連線錯誤採 exponential backoff + jitter，認證錯誤暫停待登入；對明確不可重試的權限錯誤展示原因。

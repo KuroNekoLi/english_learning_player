@@ -23,6 +23,7 @@ final class EnglishAudioHandler extends service.BaseAudioHandler
     required String title,
     required int? durationMs,
   }) async {
+    if (_audioEngine.snapshot.materialId != id) return;
     mediaItem.add(
       service.MediaItem(
         id: id,
@@ -69,13 +70,18 @@ final class EnglishAudioHandler extends service.BaseAudioHandler
   Future<void> close() => _snapshotSubscription.cancel();
 
   void _publishSnapshot(PlaybackSnapshot snapshot) {
-    final controls = snapshot.playing
+    if (snapshot.materialId == null && mediaItem.value != null) {
+      mediaItem.add(null);
+    }
+    final controls = snapshot.materialId == null
+        ? const <service.MediaControl>[]
+        : snapshot.playing
         ? const [service.MediaControl.pause, service.MediaControl.stop]
         : const [service.MediaControl.play, service.MediaControl.stop];
     playbackState.add(
       service.PlaybackState(
         controls: controls,
-        androidCompactActionIndices: const [0, 1],
+        androidCompactActionIndices: controls.isEmpty ? const [] : const [0, 1],
         systemActions: const {
           service.MediaAction.seek,
           service.MediaAction.seekForward,

@@ -200,22 +200,22 @@ void main() {
       final subtitleImport = SubtitleImportService(
         repository: senderRepository,
       );
-      for (final language in ['en', 'zh-TW']) {
-        await subtitleImport.importBytes(
-          ownerId: uid,
-          materialId: downloaded.id,
-          languageTag: language,
-          sourceName: 'synthetic-$language.srt',
-          bytes: utf8.encode(
-            '1\n00:00:00,300 --> 00:00:03,500\nCloud $language\n',
-          ),
-          manual: false,
-          offsetMs: 100,
-        );
-      }
+      final bilingualBytes = utf8.encode(
+        '1\n00:00:00,300 --> 00:00:03,500\nCloud sentence\n雲端字幕\n',
+      );
+      final imported = await subtitleImport.importBilingualBytes(
+        ownerId: uid,
+        materialId: downloaded.id,
+        sourceName: 'synthetic-bilingual.srt',
+        bytes: bilingualBytes,
+        manual: true,
+        offsetMs: 100,
+      );
+      expect(imported, hasLength(2));
       final publishingSubtitles = FirebaseSubtitleSync(
         uid: uid,
-        transport: sending,
+        documents: sending.documents,
+        objects: sending.objects,
         repository: senderRepository,
         consent: consent,
       );
@@ -223,7 +223,8 @@ void main() {
       await publishingSubtitles.publish(downloaded.id);
       final receivingSubtitles = FirebaseSubtitleSync(
         uid: uid,
-        transport: receiving,
+        documents: receiving.documents,
+        objects: receiving.objects,
         repository: receiverRepository,
         consent: consent,
       );
@@ -244,6 +245,29 @@ void main() {
         isTrue,
       );
 
+      expect(
+        subtitleTracks
+            .singleWhere((track) => track.languageTag == 'en')
+            .cues
+            .single
+            .text,
+        'Cloud sentence',
+      );
+      expect(
+        subtitleTracks
+            .singleWhere((track) => track.languageTag == 'zh-tw')
+            .cues
+            .single
+            .text,
+        '雲端字幕',
+      );
+      expect(
+        subtitleTracks.every(
+          (track) => track.originalBytes.length == bilingualBytes.length,
+        ),
+        isTrue,
+      );
+
       final macProgress = SqliteProgressRepository(scope: scope, db: senderDb);
       final phoneProgress = SqliteProgressRepository(
         scope: scope,
@@ -253,13 +277,13 @@ void main() {
         endpoint,
         sender,
         http,
-        sending,
+        sending.documents,
       );
       final phoneTransport = FirebaseProgressTransport(
         endpoint,
         receiver,
         http,
-        receiving,
+        receiving.documents,
       );
       final now = DateTime.now().toUtc();
       ProgressStream stream(String device) => (

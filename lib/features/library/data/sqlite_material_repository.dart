@@ -4,6 +4,8 @@ import '../../../core/db/account_scope.dart';
 import '../../../core/db/local_database.dart';
 import '../../../core/sync/sqlite_sync_outbox.dart';
 import '../material_repository.dart';
+import 'sqlite_folder_source_store.dart';
+import 'sqlite_subtitle_track_store.dart';
 import '../../subtitles/domain/subtitle_models.dart';
 
 final class SqliteMaterialRepository
@@ -22,65 +24,23 @@ final class SqliteMaterialRepository
 
   Future<void> close() => _database.close();
 
+  SqliteFolderSourceStore get _folders =>
+      SqliteFolderSourceStore(_scope, _database);
+  SqliteSubtitleTrackStore get _subtitles =>
+      SqliteSubtitleTrackStore(_scope, _database);
+
   @override
-  Future<List<FolderSourceRecord>> listFolderSources(String bindingId) async {
-    final rows = await _database
-        .customSelect(
-          '''SELECT relative_path, material_id, content_sha256, present
-         FROM folder_source_entries
-         WHERE owner_id = ? AND binding_id = ?
-         ORDER BY relative_path''',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(bindingId),
-          ],
-        )
-        .get();
-    return List.unmodifiable(
-      rows.map(
-        (row) => FolderSourceRecord(
-          relativePath: row.read<String>('relative_path'),
-          materialId: row.read<String>('material_id'),
-          contentSha256: row.read<String>('content_sha256'),
-          present: row.read<int>('present') == 1,
-        ),
-      ),
-    );
-  }
+  Future<List<FolderSourceRecord>> listFolderSources(String bindingId) =>
+      _folders.listFolderSources(bindingId);
 
   @override
   Future<void> finishFolderScan({
     required String bindingId,
     required Set<String> inventoryPaths,
-  }) async {
-    final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
-    final known = await _database
-        .customSelect(
-          '''SELECT relative_path FROM folder_source_entries
-         WHERE owner_id = ? AND binding_id = ?''',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(bindingId),
-          ],
-        )
-        .get();
-    final missing = known
-        .map((row) => row.read<String>('relative_path'))
-        .where((path) => !inventoryPaths.contains(path))
-        .toList();
-    if (missing.isEmpty) return;
-    await _database.transaction(() async {
-      await _database.batch((batch) {
-        for (final path in missing) {
-          batch.customStatement(
-            '''UPDATE folder_source_entries SET present = 0, updated_at_ms = ?
-               WHERE owner_id = ? AND binding_id = ? AND relative_path = ?''',
-            [nowMs, _scope.ownerId, bindingId, path],
-          );
-        }
-      });
-    });
-  }
+  }) => _folders.finishFolderScan(
+    bindingId: bindingId,
+    inventoryPaths: inventoryPaths,
+  );
 
   @override
   Future<void> saveFolderSource({
@@ -88,83 +48,23 @@ final class SqliteMaterialRepository
     required String relativePath,
     required String materialId,
     required String contentSha256,
-  }) async {
-    await _database.customStatement(
-      '''INSERT INTO folder_source_entries
-           (owner_id, binding_id, relative_path, material_id, content_sha256,
-            present, updated_at_ms)
-         VALUES (?, ?, ?, ?, ?, 1, ?)
-         ON CONFLICT (owner_id, binding_id, relative_path) DO UPDATE SET
-           material_id = excluded.material_id,
-           content_sha256 = excluded.content_sha256,
-           present = 1,
-           updated_at_ms = excluded.updated_at_ms''',
-      [
-        _scope.ownerId,
-        bindingId,
-        relativePath,
-        materialId,
-        contentSha256,
-        DateTime.now().toUtc().millisecondsSinceEpoch,
-      ],
-    );
-  }
+  }) => _folders.saveFolderSource(
+    bindingId: bindingId,
+    relativePath: relativePath,
+    materialId: materialId,
+    contentSha256: contentSha256,
+  );
 
   @override
   Future<void> addToFolderPlaylist({
     required String bindingId,
     required String materialId,
     required String title,
-  }) async {
-    final playlistId = 'folder-$bindingId';
-    await _database.transaction(() async {
-      await _database.customStatement(
-        '''INSERT OR IGNORE INTO playlists
-             (owner_id, id, title, source_binding_id, created_at_ms)
-           VALUES (?, ?, ?, ?, ?)''',
-        [
-          _scope.ownerId,
-          playlistId,
-          title,
-          bindingId,
-          DateTime.now().toUtc().millisecondsSinceEpoch,
-        ],
-      );
-      final exists = await _database
-          .customSelect(
-            '''SELECT 1 FROM playlist_entries
-           WHERE owner_id = ? AND playlist_id = ? AND material_id = ?''',
-            variables: [
-              Variable.withString(_scope.ownerId),
-              Variable.withString(playlistId),
-              Variable.withString(materialId),
-            ],
-          )
-          .get();
-      if (exists.isNotEmpty) return;
-      final next = await _database
-          .customSelect(
-            '''SELECT COALESCE(MAX(position), -1) + 1 AS next_position
-           FROM playlist_entries WHERE owner_id = ? AND playlist_id = ?''',
-            variables: [
-              Variable.withString(_scope.ownerId),
-              Variable.withString(playlistId),
-            ],
-          )
-          .getSingle();
-      await _database.customStatement(
-        '''INSERT INTO playlist_entries
-             (owner_id, playlist_id, material_id, position)
-           VALUES (?, ?, ?, ?)''',
-        [
-          _scope.ownerId,
-          playlistId,
-          materialId,
-          next.read<int>('next_position'),
-        ],
-      );
-    });
-  }
+  }) => _folders.addToFolderPlaylist(
+    bindingId: bindingId,
+    materialId: materialId,
+    title: title,
+  );
 
   Future<Set<String>> uploadedMaterialIds() async {
     final rows = await _database
@@ -451,211 +351,11 @@ final class SqliteMaterialRepository
   Future<SubtitleTrack> saveSubtitleTrack(
     SubtitleTrack track, {
     required bool manual,
-  }) async {
-    if (track.ownerId != _scope.ownerId) {
-      throw ArgumentError.value(track.ownerId, 'track.ownerId');
-    }
-    final languageKey = _languageKey(track.languageTag);
-    return _database.transaction(() async {
-      final existing = await _database
-          .customSelect(
-            'SELECT selection_mode FROM subtitle_tracks '
-            'WHERE owner_id = ? AND id = ?',
-            variables: [
-              Variable.withString(_scope.ownerId),
-              Variable.withString(track.id),
-            ],
-          )
-          .get();
-      if (existing.isNotEmpty &&
-          existing.single.read<String>('selection_mode') == 'manual' &&
-          !manual) {
-        return (await listSubtitleTracks(
-          track.materialId,
-        )).firstWhere((item) => item.id == track.id);
-      }
-
-      var selected = manual;
-      if (manual) {
-        await _database.customStatement(
-          '''
-          UPDATE subtitle_tracks SET is_selected = 0
-          WHERE owner_id = ? AND material_id = ?
-            AND CASE
-              WHEN lower(language_tag) LIKE 'en%' THEN 'en'
-              WHEN lower(language_tag) LIKE 'zh%' THEN 'zh'
-              ELSE lower(language_tag)
-            END = ?
-          ''',
-          [_scope.ownerId, track.materialId, languageKey],
-        );
-      } else {
-        final manualSelection = await _database
-            .customSelect(
-              '''
-              SELECT 1 FROM subtitle_tracks
-              WHERE owner_id = ? AND material_id = ?
-                AND CASE
-                  WHEN lower(language_tag) LIKE 'en%' THEN 'en'
-                  WHEN lower(language_tag) LIKE 'zh%' THEN 'zh'
-                  ELSE lower(language_tag)
-                END = ?
-                AND selection_mode = 'manual' AND is_selected = 1
-              LIMIT 1
-              ''',
-              variables: [
-                Variable.withString(_scope.ownerId),
-                Variable.withString(track.materialId),
-                Variable.withString(languageKey),
-              ],
-            )
-            .get();
-        selected = manualSelection.isEmpty;
-        if (selected) {
-          await _database.customStatement(
-            '''
-            UPDATE subtitle_tracks SET is_selected = 0
-            WHERE owner_id = ? AND material_id = ?
-              AND CASE
-                WHEN lower(language_tag) LIKE 'en%' THEN 'en'
-                WHEN lower(language_tag) LIKE 'zh%' THEN 'zh'
-                ELSE lower(language_tag)
-              END = ?
-            ''',
-            [_scope.ownerId, track.materialId, languageKey],
-          );
-        }
-      }
-
-      await _database.customStatement(
-        '''
-        INSERT INTO subtitle_tracks
-          (owner_id, id, material_id, language_tag, source_name, original_srt,
-           revision, offset_ms, selection_mode, is_selected)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (owner_id, id) DO UPDATE SET
-          material_id = excluded.material_id,
-          language_tag = excluded.language_tag,
-          source_name = excluded.source_name,
-          original_srt = excluded.original_srt,
-          revision = excluded.revision,
-          offset_ms = excluded.offset_ms,
-          selection_mode = excluded.selection_mode,
-          is_selected = excluded.is_selected
-        ''',
-        [
-          _scope.ownerId,
-          track.id,
-          track.materialId,
-          track.languageTag,
-          track.sourceName,
-          Uint8List.fromList(track.originalBytes),
-          track.revision,
-          track.offsetMs,
-          manual ? 'manual' : 'automatic',
-          selected ? 1 : 0,
-        ],
-      );
-      await _database.customStatement(
-        'DELETE FROM subtitle_cues WHERE owner_id = ? AND track_id = ?',
-        [_scope.ownerId, track.id],
-      );
-      if (track.cues.isNotEmpty) {
-        await _database.batch((batch) {
-          for (var ordinal = 0; ordinal < track.cues.length; ordinal++) {
-            final cue = track.cues[ordinal];
-            batch.customStatement(
-              '''
-              INSERT INTO subtitle_cues
-                (owner_id, track_id, cue_id, ordinal, sequence, start_ms,
-                 end_ms, text)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-              ''',
-              [
-                _scope.ownerId,
-                track.id,
-                cue.id,
-                ordinal,
-                cue.sequence,
-                cue.startMs,
-                cue.endMs,
-                cue.text,
-              ],
-            );
-          }
-        });
-      }
-      return track.copyWith(
-        selectionMode: manual
-            ? SubtitleSelectionMode.manual
-            : SubtitleSelectionMode.automatic,
-        isSelected: selected,
-      );
-    });
-  }
+  }) => _subtitles.saveSubtitleTrack(track, manual: manual);
 
   @override
-  Future<List<SubtitleTrack>> listSubtitleTracks(String materialId) async {
-    final tracks = await _database
-        .customSelect(
-          '''
-          SELECT id, owner_id, material_id, language_tag, source_name,
-                 original_srt, revision, offset_ms, selection_mode, is_selected
-          FROM subtitle_tracks
-          WHERE owner_id = ? AND material_id = ?
-          ORDER BY language_tag, is_selected DESC, revision DESC, id
-          ''',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(materialId),
-          ],
-        )
-        .get();
-    final result = <SubtitleTrack>[];
-    for (final row in tracks) {
-      final cueRows = await _database
-          .customSelect(
-            '''
-            SELECT cue_id, sequence, start_ms, end_ms, text
-            FROM subtitle_cues
-            WHERE owner_id = ? AND track_id = ?
-            ORDER BY ordinal
-            ''',
-            variables: [
-              Variable.withString(_scope.ownerId),
-              Variable.withString(row.read<String>('id')),
-            ],
-          )
-          .get();
-      result.add(
-        SubtitleTrack(
-          id: row.read<String>('id'),
-          ownerId: row.read<String>('owner_id'),
-          materialId: row.read<String>('material_id'),
-          languageTag: row.read<String>('language_tag'),
-          sourceName: row.read<String>('source_name'),
-          originalBytes: row.read<Uint8List>('original_srt'),
-          revision: row.read<int>('revision'),
-          offsetMs: row.read<int>('offset_ms'),
-          selectionMode: SubtitleSelectionMode.values.byName(
-            row.read<String>('selection_mode'),
-          ),
-          isSelected: row.read<int>('is_selected') == 1,
-          cues: [
-            for (final cueRow in cueRows)
-              SubtitleCue(
-                id: cueRow.read<String>('cue_id'),
-                sequence: cueRow.read<int>('sequence'),
-                startMs: cueRow.read<int>('start_ms'),
-                endMs: cueRow.read<int>('end_ms'),
-                text: cueRow.read<String>('text'),
-              ),
-          ],
-        ),
-      );
-    }
-    return List.unmodifiable(result);
-  }
+  Future<List<SubtitleTrack>> listSubtitleTracks(String materialId) =>
+      _subtitles.listSubtitleTracks(materialId);
 
   LearningMaterial _materialFromRow(QueryRow row) => LearningMaterial(
     id: row.read<String>('id'),
@@ -668,11 +368,4 @@ final class SqliteMaterialRepository
       isUtc: true,
     ),
   );
-
-  String _languageKey(String languageTag) {
-    final lower = languageTag.toLowerCase();
-    if (lower == 'en' || lower.startsWith('en-')) return 'en';
-    if (lower == 'zh' || lower.startsWith('zh-')) return 'zh';
-    return lower;
-  }
 }

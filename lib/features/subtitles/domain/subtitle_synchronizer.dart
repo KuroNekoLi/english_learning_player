@@ -1,4 +1,5 @@
 import 'subtitle_models.dart';
+import 'subtitle_time.dart';
 
 /// Resolves half-open cue intervals with O(log n + overlapping cues) lookups.
 final class SubtitleSynchronizer {
@@ -16,7 +17,7 @@ final class SubtitleSynchronizer {
   final List<int> _prefixMaxEnd = [];
 
   SubtitleCue? at(int positionMs, {String? previousCueId}) {
-    final subtitleTimeMs = positionMs - offsetMs;
+    final subtitleTimeMs = audioToSubtitleMs(positionMs, offsetMs);
     if (subtitleTimeMs < 0 || _cues.isEmpty) return null;
 
     var low = 0;

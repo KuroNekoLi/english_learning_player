@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import '../../../core/audio/audio_engine.dart';
-import '../../subtitles/domain/subtitle_aligner.dart';
+import '../../subtitles/domain/subtitle_time.dart';
+import '../../subtitles/domain/subtitle_timeline.dart';
 import '../../subtitles/domain/subtitle_models.dart';
 import '../../subtitles/domain/subtitle_synchronizer.dart';
 
@@ -39,10 +40,10 @@ final class LearningSession {
     required AudioEngine audioEngine,
     required SubtitleTrack englishTrack,
     SubtitleTrack? chineseTrack,
+    SubtitleTimeline? timeline,
     this.normalVisibility = SubtitleVisibility.bilingual,
   }) : _audioEngine = audioEngine,
        _englishTrack = englishTrack,
-       _chineseTrack = chineseTrack,
        _englishSynchronizer = SubtitleSynchronizer(
          cues: englishTrack.cues,
          offsetMs: englishTrack.offsetMs,
@@ -65,21 +66,20 @@ final class LearningSession {
         final byTime = _audioStart(a).compareTo(_audioStart(b));
         return byTime != 0 ? byTime : a.id.compareTo(b.id);
       });
-    _translationsByEnglishCue = _buildTranslations();
+    _timeline = timeline ?? SubtitleTimeline(englishTrack, chineseTrack);
     _state = _createState(_audioEngine.snapshot);
     _audioSubscription = _audioEngine.snapshots.listen(_onPlaybackSnapshot);
   }
 
   final AudioEngine _audioEngine;
   final SubtitleTrack _englishTrack;
-  final SubtitleTrack? _chineseTrack;
   final SubtitleSynchronizer _englishSynchronizer;
   final StreamController<LearningSessionState> _events =
       StreamController<LearningSessionState>.broadcast(sync: true);
 
   late final Map<String, SubtitleCue> _cuesById;
   late final List<SubtitleCue> _sortedCues;
-  late final Map<String, List<SubtitleCue>> _translationsByEnglishCue;
+  late final SubtitleTimeline _timeline;
   late final StreamSubscription<PlaybackSnapshot> _audioSubscription;
   late LearningSessionState _state;
   LearningMode _mode = LearningMode.normal;
@@ -273,26 +273,6 @@ final class LearningSession {
     await _events.close();
   }
 
-  Map<String, List<SubtitleCue>> _buildTranslations() {
-    final chineseTrack = _chineseTrack;
-    if (chineseTrack == null) return const {};
-    final matches = const SubtitleAligner().align(
-      sourceCues: _englishTrack.cues,
-      targetCues: chineseTrack.cues,
-      sourceOffsetMs: _englishTrack.offsetMs,
-      targetOffsetMs: chineseTrack.offsetMs,
-    );
-    final chineseById = {for (final cue in chineseTrack.cues) cue.id: cue};
-    return {
-      for (final match in matches)
-        match.sourceCueId: List.unmodifiable(
-          match.targetCueIds
-              .map((id) => chineseById[id])
-              .whereType<SubtitleCue>(),
-        ),
-    };
-  }
-
   LearningSessionState _createState(PlaybackSnapshot snapshot) {
     _currentCue = snapshot.materialId != _englishTrack.materialId
         ? null
@@ -307,7 +287,7 @@ final class LearningSession {
       currentCue: _currentCue,
       translationCues: _currentCue == null
           ? const []
-          : _translationsByEnglishCue[_currentCue!.id] ?? const [],
+          : _timeline.translationsFor(_currentCue!.id),
     );
   }
 
@@ -320,7 +300,8 @@ final class LearningSession {
     };
   }
 
-  int _audioStart(SubtitleCue cue) => cue.startMs + _englishTrack.offsetMs;
+  int _audioStart(SubtitleCue cue) =>
+      subtitleToAudioMs(cue.startMs, _englishTrack.offsetMs);
 
   bool get _isActiveMaterial =>
       _audioEngine.snapshot.materialId == _englishTrack.materialId;
@@ -332,7 +313,7 @@ final class LearningSession {
 
   TimeRange? _audioRangeFor(SubtitleCue cue) {
     final startMs = _audioStart(cue);
-    final endMs = cue.endMs + _englishTrack.offsetMs;
+    final endMs = subtitleToAudioMs(cue.endMs, _englishTrack.offsetMs);
     final durationMs = _audioEngine.snapshot.durationMs;
     final boundedStart = startMs < 0 ? 0 : startMs;
     final boundedEnd = durationMs != null && endMs > durationMs

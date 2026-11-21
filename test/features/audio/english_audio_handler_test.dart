@@ -39,6 +39,23 @@ void main() {
     },
   );
 
+  test('unload clears system media item and prevents resume', () async {
+    await handler.publishMediaItem(
+      id: 'lesson-1',
+      title: 'Previous account lesson',
+      durationMs: 60000,
+    );
+    await handler.play();
+    await engine.unload();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(engine.snapshot.materialId, isNull);
+    expect(engine.snapshot.playing, isFalse);
+    expect(handler.mediaItem.value, isNull);
+    expect(handler.playbackState.value.controls, isEmpty);
+    await expectLater(handler.play(), throwsA(isA<AudioEngineException>()));
+  });
+
   test(
     'system pause, seek, stop and speed commands use AudioEngine only',
     () async {

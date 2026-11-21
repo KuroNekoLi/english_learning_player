@@ -26,6 +26,7 @@ abstract interface class AudioPlayerPort {
   Future<void> play();
   Future<void> pause();
   Future<void> stop();
+  Future<void> clearSource();
   Future<void> seekTo(int positionMs);
   Future<void> setSpeed(double speed);
   Future<void> setClip(TimeRange? range);

@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -10,6 +9,8 @@ import '../../../core/sync/progress_policy.dart';
 import '../../../core/sync/sync_contracts.dart';
 import '../domain/progress_models.dart';
 import 'progress_repository.dart';
+import 'progress_payload_codec.dart';
+import 'sqlite_progress_queue.dart';
 
 final class SqliteProgressRepository implements ProgressRepository {
   SqliteProgressRepository({
@@ -102,7 +103,7 @@ final class SqliteProgressRepository implements ProgressRepository {
         sequence: sequence,
         baseRevision: baseRevision,
       );
-      final payload = _encodeCheckpoint(checkpoint);
+      final payload = encodeProgressCheckpoint(checkpoint);
       final opId = _uuid.v4();
       await _db.customStatement(
         '''
@@ -117,7 +118,7 @@ final class SqliteProgressRepository implements ProgressRepository {
           opId,
           stream.materialId,
           payload,
-          _hash(payload),
+          hashProgressPayload(payload),
           nowMs,
           nowMs,
           nowMs,
@@ -230,56 +231,11 @@ final class SqliteProgressRepository implements ProgressRepository {
         .toList(growable: false);
   }
 
+  SqliteProgressQueue get _queue => SqliteProgressQueue(_scope, _db);
+
   @override
-  Future<PendingProgressOperation?> claimNext(DateTime now) async {
-    final nowMs = now.millisecondsSinceEpoch;
-    return _db.transaction(() async {
-      final rows = await _db
-          .customSelect(
-            '''
-        SELECT op_id, operation, payload_json, payload_hash, attempts FROM sync_outbox
-        WHERE owner_id = ? AND entity_type = 'progress' AND next_retry_at_ms <= ?
-          AND (state = 'queued' OR (state = 'leased' AND lease_until_ms <= ?))
-        ORDER BY created_at_ms, op_id LIMIT 1
-      ''',
-            variables: [
-              Variable.withString(_scope.ownerId),
-              Variable.withInt(nowMs),
-              Variable.withInt(nowMs),
-            ],
-          )
-          .get();
-      if (rows.isEmpty) return null;
-      final row = rows.single;
-      await _db.customStatement(
-        '''UPDATE sync_outbox SET state = 'leased', lease_until_ms = ?, updated_at_ms = ?
-        WHERE owner_id = ? AND op_id = ?''',
-        [
-          nowMs + const Duration(minutes: 2).inMilliseconds,
-          nowMs,
-          _scope.ownerId,
-          row.read<String>('op_id'),
-        ],
-      );
-      final payload =
-          jsonDecode(row.read<String>('payload_json')) as Map<String, dynamic>;
-      final resolution = row.read<String>('operation') == 'resolveProgress'
-          ? ProgressResolution(
-              candidateId: payload['resolveCandidateId'] as String,
-              observedCanonicalRevision:
-                  payload['observedCanonicalRevision'] as int,
-              useCandidatePosition: payload['useCandidatePosition'] as bool,
-            )
-          : null;
-      return PendingProgressOperation(
-        opId: row.read<String>('op_id'),
-        checkpoint: _decodeCheckpoint(jsonEncode(payload)),
-        payloadHash: row.read<String>('payload_hash'),
-        attempts: row.read<int>('attempts'),
-        resolution: resolution,
-      );
-    });
-  }
+  Future<PendingProgressOperation?> claimNext(DateTime now) =>
+      _queue.claimNext(now);
 
   @override
   Future<void> defer({
@@ -288,74 +244,25 @@ final class SqliteProgressRepository implements ProgressRepository {
     required bool retryable,
     required DateTime now,
     required DateTime retryAt,
-  }) async {
-    final rows = await _db
-        .customSelect(
-          '''SELECT attempts FROM sync_outbox
-      WHERE owner_id = ? AND op_id = ? AND entity_type = 'progress' AND state = 'leased' ''',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(opId),
-          ],
-        )
-        .get();
-    if (rows.isEmpty) throw StateError('Progress operation is not leased.');
-    final attempts = rows.single.read<int>('attempts') + (retryable ? 1 : 0);
-    final state = retryable && attempts < 8 ? 'queued' : 'needsAttention';
-    await _db.customStatement(
-      '''UPDATE sync_outbox SET state = ?, attempts = ?, next_retry_at_ms = ?,
-      lease_until_ms = NULL, last_error = ?, updated_at_ms = ? WHERE owner_id = ? AND op_id = ?''',
-      [
-        state,
-        attempts,
-        retryAt.millisecondsSinceEpoch,
-        code,
-        now.millisecondsSinceEpoch,
-        _scope.ownerId,
-        opId,
-      ],
-    );
-  }
+  }) => _queue.defer(
+    opId: opId,
+    code: code,
+    retryable: retryable,
+    now: now,
+    retryAt: retryAt,
+  );
 
   @override
-  Future<void> waitForAuthentication(String opId, DateTime now) async {
-    await _db.customStatement(
-      '''UPDATE sync_outbox SET state = 'waitingForAuth', lease_until_ms = NULL,
-      last_error = 'unauthenticated', updated_at_ms = ?
-      WHERE owner_id = ? AND op_id = ? AND entity_type = 'progress' ''',
-      [now.millisecondsSinceEpoch, _scope.ownerId, opId],
-    );
-  }
+  Future<void> waitForAuthentication(String opId, DateTime now) =>
+      _queue.waitForAuthentication(opId, now);
 
   @override
-  Future<void> resumeAuthenticated(DateTime now) async {
-    await _db.customStatement(
-      '''UPDATE sync_outbox SET state = 'queued', next_retry_at_ms = ?,
-      last_error = NULL, updated_at_ms = ? WHERE owner_id = ? AND entity_type = 'progress'
-      AND state = 'waitingForAuth' ''',
-      [now.millisecondsSinceEpoch, now.millisecondsSinceEpoch, _scope.ownerId],
-    );
-  }
+  Future<void> resumeAuthenticated(DateTime now) =>
+      _queue.resumeAuthenticated(now);
 
   @override
-  Future<void> retryNeedsAttention(String opId, DateTime now) async {
-    final nowMs = now.millisecondsSinceEpoch;
-    final changed = await _db.customUpdate(
-      '''UPDATE sync_outbox SET state = 'queued', attempts = 0, next_retry_at_ms = ?,
-        lease_until_ms = NULL, last_error = NULL, updated_at_ms = ?
-        WHERE owner_id = ? AND op_id = ? AND entity_type = 'progress' AND state = 'needsAttention' ''',
-      variables: [
-        Variable.withInt(nowMs),
-        Variable.withInt(nowMs),
-        Variable.withString(_scope.ownerId),
-        Variable.withString(opId),
-      ],
-      updates: const {},
-    );
-    if (changed == 0) {
-      throw StateError('Progress operation is not awaiting attention.');
-    }
-  }
+  Future<void> retryNeedsAttention(String opId, DateTime now) =>
+      _queue.retryNeedsAttention(opId, now);
 
   @override
   Future<void> applyCommitResult({
@@ -380,10 +287,10 @@ final class SqliteProgressRepository implements ProgressRepository {
       if (rows.isEmpty) throw StateError('Progress operation does not exist.');
       final row = rows.single;
       final payload = row.read<String>('payload_json');
-      if (_hash(payload) != payloadHash) {
+      if (hashProgressPayload(payload) != payloadHash) {
         throw StateError('Progress operation payload hash mismatch.');
       }
-      final checkpoint = _decodeCheckpoint(payload);
+      final checkpoint = decodeProgressCheckpoint(payload);
       final snapshot = result.canonicalCheckpoint;
       if (checkpoint.stream.ownerId != _scope.ownerId ||
           checkpoint.stream.materialId != row.read<String>('entity_id') ||
@@ -542,7 +449,7 @@ final class SqliteProgressRepository implements ProgressRepository {
       if (chosen == null) {
         throw StateError('No canonical position exists to retain.');
       }
-      final payload = _encodeCheckpoint(
+      final payload = encodeProgressCheckpoint(
         ProgressCheckpoint(
           stream: resolutionStream,
           positionMs: chosen.positionMs,
@@ -619,7 +526,7 @@ final class SqliteProgressRepository implements ProgressRepository {
         stream.materialId,
         operation,
         payload,
-        _hash(payload),
+        hashProgressPayload(payload),
         nowMs,
         nowMs,
         nowMs,
@@ -683,37 +590,6 @@ final class SqliteProgressRepository implements ProgressRepository {
     sequence: row.read<int>('sequence'),
     baseRevision: row.read<int>('base_revision'),
   );
-
-  String _encodeCheckpoint(ProgressCheckpoint value) => jsonEncode({
-    'schemaVersion': 1,
-    'ownerId': value.stream.ownerId,
-    'materialId': value.stream.materialId,
-    'deviceId': value.stream.deviceId,
-    'sessionId': value.stream.sessionId,
-    'positionMs': value.positionMs,
-    'state': value.state.name,
-    'sequence': value.sequence,
-    'baseRevision': value.baseRevision,
-  });
-
-  ProgressCheckpoint _decodeCheckpoint(String payload) {
-    final value = jsonDecode(payload) as Map<String, dynamic>;
-    return ProgressCheckpoint(
-      stream: (
-        ownerId: value['ownerId'] as String,
-        materialId: value['materialId'] as String,
-        deviceId: value['deviceId'] as String,
-        sessionId: value['sessionId'] as String,
-      ),
-      positionMs: value['positionMs'] as int,
-      state: CheckpointState.values.byName(value['state'] as String),
-      sequence: value['sequence'] as int,
-      baseRevision: value['baseRevision'] as int,
-    );
-  }
-
-  String _hash(String payload) =>
-      sha256.convert(utf8.encode(payload)).toString();
 
   void _checkOwner(String ownerId) {
     if (ownerId != _scope.ownerId) {

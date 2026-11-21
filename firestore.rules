@@ -77,7 +77,7 @@ service cloud.firestore {
         return language in ['en', 'zh']
           && data.keys().hasOnly([
             'schemaVersion', 'ownerId', 'materialId', 'languageTag', 'sha256',
-            'byteLength', 'revision', 'offsetMs', 'storagePath'
+            'byteLength', 'revision', 'offsetMs', 'storagePath', 'cueProjection'
           ])
           && data.schemaVersion == 1 && data.ownerId == uid && data.materialId == materialId
           && data.languageTag is string
@@ -85,6 +85,7 @@ service cloud.firestore {
           && data.sha256 is string && data.sha256.matches('^[a-f0-9]{64}$')
           && data.byteLength is int && data.byteLength > 0 && data.byteLength <= 2097152
           && data.revision is int && data.revision > 0 && data.offsetMs is int
+          && data.get('cueProjection', 'original') in ['original', 'bilingual']
           && data.storagePath == 'users/' + uid + '/subtitles/' + materialId + '/' + data.sha256;
       }
 

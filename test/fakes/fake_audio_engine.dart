@@ -82,6 +82,15 @@ final class FakeAudioEngine implements AudioEngine {
   }
 
   @override
+  Future<void> unload() async {
+    _source = null;
+    _durationMs = null;
+    _bufferedMs = null;
+    _error = null;
+    await stop();
+  }
+
+  @override
   Future<void> seekTo(Duration position) async {
     _requireSource();
     seekCalls++;

@@ -31,6 +31,8 @@ void main() {
     'routes both social buttons and clears UID and consent on logout',
     (tester) async {
       final social = _FakeSocialSignIn();
+      final closingPlayback = Completer<void>();
+      var switches = 0;
       final container = ProviderContainer(
         overrides: [
           firebaseEndpointProvider.overrideWithValue(
@@ -41,6 +43,10 @@ void main() {
             ),
           ),
           socialSignInProvider.overrideWithValue(social),
+          beforeAccountChangeProvider.overrideWithValue(() async {
+            switches++;
+            if (switches == 2) await closingPlayback.future;
+          }),
         ],
       );
       addTearDown(container.dispose);
@@ -83,6 +89,10 @@ void main() {
       expect(container.read(firebaseSessionProvider).consent, isTrue);
 
       await tester.tap(find.text('登出'));
+      await tester.pump();
+      expect(switches, 2);
+      expect(container.read(firebaseSessionProvider).uid, 'apple-uid');
+      closingPlayback.complete();
       await tester.pumpAndSettle();
       expect(container.read(firebaseSessionProvider), (
         uid: null,

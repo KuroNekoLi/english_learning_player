@@ -32,7 +32,8 @@ bilingualShown
 
 ## 4. 字幕顯示
 `SubtitleVisibility`: `bilingual`, `englishOnly`, `chineseOnly`, `hidden`。
-- 點一句英文：先結束或重新指定 loop，再 Seek 至 cue.start；若點相同句且正在循環則重新從起點播放。
+- 點字幕卡只播放該句，抵達句尾即暫停。單句循環由獨立按鈕控制。字幕清單跟著目前播放句捲動。
+- 工具列與設定面板共用一般字幕設定。精聽模式依目前揭露階段顯示當前句，其他句保留時間但遮蔽文字。
 - 點收藏：收藏以 cue anchor 記錄；將 track 更新後需要重定位，不可假設舊 cue index 不變。
 - 下載中、缺翻譯、登入過期、衝突均有明確狀態，不單用 Toast 導致訊息消失。
 

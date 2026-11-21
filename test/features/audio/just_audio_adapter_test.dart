@@ -36,6 +36,20 @@ void main() {
       await engine.dispose();
     });
 
+    test(
+      'unload clears the source and prevents playback until another load',
+      () async {
+        await engine.load(_source('old-lesson'));
+        await engine.play();
+        await engine.unload();
+        expect(player.loadedUri, isNull);
+        expect(engine.snapshot.materialId, isNull);
+        expect(engine.snapshot.playing, isFalse);
+        expect(engine.snapshot.processingState, AudioProcessingState.idle);
+        await expectLater(engine.play(), throwsA(isA<AudioEngineException>()));
+      },
+    );
+
     test('T-AUDIO-01 loads media and reports source failures', () async {
       await engine.load(_source('lesson-a'));
       expect(engine.snapshot.materialId, 'lesson-a');

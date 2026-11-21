@@ -12,7 +12,8 @@ import 'core/audio/just_audio_adapter.dart';
 import 'app/library_page.dart';
 import 'core/db/account_scope.dart';
 import 'features/library/library_view_model.dart';
-import 'features/sync/firebase_sync_dependencies.dart';
+import 'features/auth/firebase_session_controller.dart';
+import 'features/player/player_view_model.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +31,12 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
+        beforeAccountChangeProvider.overrideWith(
+          (ref) =>
+              () => ref
+                  .read(playerViewModelProvider.notifier)
+                  .closeForAccountChange(),
+        ),
         accountScopeProvider.overrideWith((ref) {
           final uid = ref.watch(
             firebaseSessionProvider.select((state) => state.uid),

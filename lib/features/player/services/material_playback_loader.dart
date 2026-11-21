@@ -3,6 +3,7 @@ import '../../../core/db/account_database_service.dart';
 import '../../../core/db/account_scope.dart';
 import '../../library/material_repository.dart';
 import '../../subtitles/domain/subtitle_models.dart';
+import '../../subtitles/domain/subtitle_timeline.dart';
 
 abstract interface class MaterialPlaybackLoader {
   Future<MaterialPlaybackBundle> load(LearningMaterial material);
@@ -18,6 +19,11 @@ final class MaterialPlaybackBundle {
   final LearningMaterial material;
   final MediaSource source;
   final List<SubtitleTrack> subtitleTracks;
+
+  late final SubtitleTimeline? timeline = switch (englishTrack) {
+    final english? => SubtitleTimeline(english, chineseTrack),
+    null => null,
+  };
 
   SubtitleTrack? get englishTrack => _selectedTrack('en');
   SubtitleTrack? get chineseTrack => _selectedTrack('zh');

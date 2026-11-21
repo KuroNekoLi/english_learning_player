@@ -5,22 +5,26 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/sync/sync_contracts.dart';
 import '../../library/material_repository.dart';
+import '../../subtitles/domain/bilingual_subtitle_splitter.dart';
 import '../../subtitles/domain/srt_parser.dart';
 import '../../subtitles/domain/subtitle_models.dart';
-import 'firebase_material_transport.dart';
+import 'firebase_documents.dart';
+import 'firebase_storage_objects.dart';
 
 /// The origin device publishes selected tracks; receiving devices cache copies.
 final class FirebaseSubtitleSync {
   const FirebaseSubtitleSync({
     required this.uid,
-    required this.transport,
+    required this.documents,
+    required this.objects,
     required this.repository,
     required this.consent,
   });
 
   static const maxBytes = 2 * 1024 * 1024;
   final String uid;
-  final FirebaseMaterialTransport transport;
+  final FirebaseDocuments documents;
+  final FirebaseStorageObjects objects;
   final MaterialRepository repository;
   final SyncConsentProvider consent;
 
@@ -47,6 +51,9 @@ final class FirebaseSubtitleSync {
       final digest = sha256.convert(bytes).toString();
       final object = _object(materialId, digest);
       final manifestPath = [..._collection(materialId), key];
+      final projected =
+          track.cues.isNotEmpty &&
+          track.cues.every((cue) => cue.id.endsWith('-$key'));
       final manifest = {
         'schemaVersion': 1,
         'ownerId': uid,
@@ -57,8 +64,9 @@ final class FirebaseSubtitleSync {
         'revision': track.revision,
         'offsetMs': track.offsetMs,
         'storagePath': object,
+        'cueProjection': projected ? 'bilingual' : 'original',
       };
-      final existing = await transport.readDocument(uid, manifestPath);
+      final existing = await documents.readDocument(uid, manifestPath);
       if (existing != null &&
           manifest.entries.every(
             (field) => existing[field.key] == field.value,
@@ -66,7 +74,7 @@ final class FirebaseSubtitleSync {
         continue;
       }
       await _checkConsent();
-      await transport.putSubtitleObject(
+      await objects.putSubtitleObject(
         uid: uid,
         path: object,
         bytes: bytes,
@@ -74,13 +82,13 @@ final class FirebaseSubtitleSync {
       );
       await _verifiedRead(object, digest, bytes.length);
       await _checkConsent();
-      await transport.writeDocument(uid, manifestPath, manifest);
+      await documents.writeDocument(uid, manifestPath, manifest);
     }
   }
 
   Future<void> download(String materialId) async {
     await _checkConsent();
-    final manifests = await transport.listDocuments(
+    final manifests = await documents.listDocuments(
       uid,
       _collection(materialId),
     );
@@ -91,6 +99,7 @@ final class FirebaseSubtitleSync {
       final size = manifest['byteLength'];
       final revision = manifest['revision'];
       final offsetMs = manifest['offsetMs'];
+      final projection = manifest['cueProjection'];
       if (manifest['schemaVersion'] != 1 ||
           manifest['ownerId'] != uid ||
           manifest['materialId'] != materialId ||
@@ -104,12 +113,27 @@ final class FirebaseSubtitleSync {
           size > maxBytes ||
           revision is! int ||
           revision <= 0 ||
-          offsetMs is! int) {
+          offsetMs is! int ||
+          (projection != null &&
+              projection != 'original' &&
+              projection != 'bilingual')) {
         _invalid();
       }
+      // Older manifests shared the original object between both projected tracks.
+      final wantsProjection =
+          projection == 'bilingual' ||
+          (projection == null &&
+              manifests.any(
+                (other) =>
+                    other['languageTag'] is String &&
+                    (other['languageTag'] as String).split('-').first !=
+                        language.split('-').first &&
+                    other['sha256'] == digest,
+              ));
       final id = const Uuid().v5(
         Namespace.url.value,
-        'firebase-subtitle:$uid/$materialId/$language/$digest/$revision/$offsetMs',
+        'firebase-subtitle:$uid/$materialId/$language/$digest/$revision/$offsetMs'
+        '${wantsProjection ? '/bilingual' : ''}',
       );
       if (tracks.any((track) => track.id == id && track.isSelected)) continue;
       final bytes = await _verifiedRead(
@@ -119,6 +143,15 @@ final class FirebaseSubtitleSync {
       );
       final parsed = const SrtParser().parse(bytes);
       if (parsed.cues.isEmpty) _invalid();
+      final split = wantsProjection
+          ? const BilingualSubtitleSplitter().split(parsed.cues)
+          : null;
+      if (projection == 'bilingual' && split == null) _invalid();
+      final cues = split == null
+          ? parsed.cues
+          : language.startsWith('en')
+          ? split.english
+          : split.chinese;
       await _checkConsent();
       await repository.saveSubtitleTrack(
         SubtitleTrack(
@@ -132,7 +165,7 @@ final class FirebaseSubtitleSync {
           offsetMs: offsetMs,
           selectionMode: SubtitleSelectionMode.automatic,
           isSelected: false,
-          cues: parsed.cues,
+          cues: cues,
         ),
         manual: false,
       );
@@ -145,7 +178,7 @@ final class FirebaseSubtitleSync {
     int size,
   ) async {
     final builder = BytesBuilder(copy: false);
-    await for (final chunk in transport.readObject(uid, object)) {
+    await for (final chunk in objects.readObject(uid, object)) {
       if (builder.length + chunk.length > size) _invalid();
       builder.add(chunk);
     }

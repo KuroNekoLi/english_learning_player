@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/library/library_view_model.dart';
-import '../features/library/folder_source_panel.dart';
 import '../features/library/folder_source_view_model.dart';
 import '../features/library/material_repository.dart';
-import '../features/library/services/media_selection_import_service.dart';
-import '../features/subtitles/services/subtitle_import_service.dart';
-import '../features/bookmarks/bookmarks_page.dart';
+import '../features/library/widgets/library_add_menu.dart';
+import '../features/library/widgets/library_material_list.dart';
+import '../features/library/widgets/source_management_page.dart';
 import '../features/player/player_page.dart';
-import '../features/sync/firebase_sync_panel.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -30,28 +28,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   }
 
   Future<void> _importAudio(BuildContext context) async {
-    final owner = ref.read(accountScopeProvider).ownerId;
-    final picker = ref.read(audioFilePickerProvider);
-    final files = await picker.pickMediaFiles();
-    if (files.isEmpty ||
-        !context.mounted ||
-        ref.read(accountScopeProvider).ownerId != owner) {
-      return;
-    }
     try {
-      final importer = await ref.read(audioImportServiceProvider.future);
-      final repository = await ref.read(materialRepositoryProvider.future);
-      if (!context.mounted || ref.read(accountScopeProvider).ownerId != owner) {
-        return;
-      }
-      final result = await MediaSelectionImportService(
-        ownerId: owner,
-        repository: repository,
-        audioImporter: importer,
-        subtitleImporter: SubtitleImportService(repository: repository),
-      ).importFiles(files);
-      ref.invalidate(libraryViewModelProvider);
-      if (!context.mounted) return;
+      final result = await ref.read(libraryImportProvider)();
+      if (result == null || !context.mounted) return;
       if (result.audioFailures > 0 || result.subtitleFailures > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -89,19 +68,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
   void _openSourceManagement() {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const _SourceManagementPage()),
+      MaterialPageRoute<void>(builder: (_) => const SourceManagementPage()),
     );
-  }
-
-  void _selectAddAction(String action) {
-    switch (action) {
-      case 'media':
-        _importAudio(context);
-      case 'folder':
-        ref.read(folderSourceViewModelProvider.notifier).connect();
-      default:
-        break;
-    }
   }
 
   @override
@@ -140,41 +108,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             }),
             icon: Icon(_searching ? Icons.close : Icons.search),
           ),
-          MenuAnchor(
-            menuChildren: [
-              MenuItemButton(
-                leadingIcon: const Icon(Icons.download_outlined),
-                onPressed: library.isLoading
-                    ? null
-                    : () => _selectAddAction('media'),
-                child: const Text('匯入媒體'),
-              ),
-              const MenuItemButton(
-                leadingIcon: Icon(Icons.photo_library_outlined),
-                onPressed: null,
-                child: Text('從相簿匯入（尚未提供）'),
-              ),
-              MenuItemButton(
-                leadingIcon: const Icon(Icons.drive_folder_upload_outlined),
-                onPressed: () => _selectAddAction('folder'),
-                child: const Text('匯入資料夾'),
-              ),
-              const MenuItemButton(
-                leadingIcon: Icon(Icons.subtitles_outlined),
-                onPressed: null,
-                child: Text('匯入字幕（尚未提供）'),
-              ),
-              const MenuItemButton(
-                leadingIcon: Icon(Icons.create_new_folder_outlined),
-                onPressed: null,
-                child: Text('新增資料夾（尚未提供）'),
-              ),
-            ],
-            builder: (context, controller, child) => IconButton(
-              tooltip: '新增',
-              onPressed: () => controller.open(),
-              icon: const Icon(Icons.add),
-            ),
+          LibraryAddMenu(
+            onImportMedia: library.isLoading
+                ? null
+                : () => _importAudio(context),
+            onImportFolder: () =>
+                ref.read(folderSourceViewModelProvider.notifier).connect(),
           ),
           IconButton(
             tooltip: _gridMode ? '切換為清單' : '切換為網格',
@@ -193,12 +132,16 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
           final body = Column(
             children: [
               Expanded(
-                child: _libraryContent(
-                  context,
-                  ref,
-                  library,
-                  visibleMaterials,
+                child: LibraryMaterialList(
+                  library: library,
+                  materials: visibleMaterials,
                   gridMode: _gridMode,
+                  onRetry: () => ref.invalidate(libraryViewModelProvider),
+                  onOpen: (material) => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PlayerPage(material: material),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -240,116 +183,4 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       ),
     );
   }
-
-  Widget _libraryContent(
-    BuildContext context,
-    WidgetRef ref,
-    AsyncValue<List<LearningMaterial>> library,
-    List<LearningMaterial> materials, {
-    required bool gridMode,
-  }) => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 920),
-      child: library.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => Center(
-          child: TextButton(
-            onPressed: () => ref.invalidate(libraryViewModelProvider),
-            child: const Text('無法讀取教材，重試'),
-          ),
-        ),
-        data: (_) => materials.isEmpty
-            ? const Center(child: Text('目前沒有教材'))
-            : gridMode
-            ? GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 360,
-                  mainAxisExtent: 124,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: materials.length,
-                itemBuilder: (context, index) => _MaterialTile(
-                  material: materials[index],
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => PlayerPage(material: materials[index]),
-                    ),
-                  ),
-                ),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: materials.length,
-                itemBuilder: (context, index) => _MaterialTile(
-                  material: materials[index],
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => PlayerPage(material: materials[index]),
-                    ),
-                  ),
-                ),
-              ),
-      ),
-    ),
-  );
-}
-
-final class _SourceManagementPage extends ConsumerWidget {
-  const _SourceManagementPage();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
-    appBar: AppBar(title: const Text('設定與來源管理')),
-    body: ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const FolderSourcePanel(),
-        ListTile(
-          leading: const Icon(Icons.manage_accounts_outlined),
-          title: const Text('帳號與同步'),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const FirebaseSyncPanel()),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.bookmarks_outlined),
-          title: const Text('我的收藏'),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => const BookmarksPage()),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-final class _MaterialTile extends StatelessWidget {
-  const _MaterialTile({required this.material, required this.onTap});
-
-  final LearningMaterial material;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: ListTile(
-      onTap: onTap,
-      minVerticalPadding: 12,
-      leading: const CircleAvatar(child: Icon(Icons.headphones_rounded)),
-      title: Text(material.title),
-      subtitle: Text(_statusLabel(material.status)),
-      trailing: const Icon(Icons.chevron_right),
-    ),
-  );
-
-  String _statusLabel(MaterialStatus status) => switch (status) {
-    MaterialStatus.importing => '匯入中',
-    MaterialStatus.localReady => '已下載，可離線播放',
-    MaterialStatus.uploading => '同步中',
-    MaterialStatus.cloudReady => '已同步',
-    MaterialStatus.error => '需要檢查',
-    MaterialStatus.archived => '已封存',
-  };
 }
