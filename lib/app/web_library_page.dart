@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/library/library_view_model.dart';
 import '../features/library/material_repository.dart';
 import '../features/library/widgets/library_material_list.dart';
+import '../features/auth/web/web_account_page.dart';
 import '../features/player/player_page.dart';
 
 final class WebLibraryPage extends ConsumerWidget {
@@ -39,6 +40,13 @@ final class WebLibraryPage extends ConsumerWidget {
               }
             },
             icon: const Icon(Icons.add),
+          ),
+          IconButton(
+            tooltip: '帳號與同步',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const WebAccountPage()),
+            ),
+            icon: const Icon(Icons.account_circle_outlined),
           ),
         ],
       ),

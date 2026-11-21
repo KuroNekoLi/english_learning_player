@@ -33,6 +33,16 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script>
+    globalThis.elpFirebaseAuthBridgeReady = new Promise((resolve) => {
+      globalThis.elpFirebaseAuthBridgeResolve = resolve;
+    });
+  </script>
+  <script
+    type="module"
+    src="firebase_auth_bridge_bootstrap.js"
+    onerror="globalThis.elpFirebaseAuthBridgeResolve?.(false)">
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

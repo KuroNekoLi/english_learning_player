@@ -1,14 +1,6 @@
 import 'dart:io';
 
-final class SyncIdentity {
-  const SyncIdentity(this.uid);
-
-  final String uid;
-}
-
-abstract interface class SyncIdentityProvider {
-  Future<SyncIdentity?> currentIdentity();
-}
+export 'sync_identity.dart';
 
 abstract interface class SyncConsentProvider {
   Future<bool> isCloudSyncEnabled(String uid);

@@ -4,9 +4,10 @@ import 'dart:io';
 import '../../../core/sync/sync_contracts.dart';
 import '../social_sign_in.dart';
 import '../../../core/firebase/firebase_endpoint.dart';
+import 'firebase_identity_session.dart';
 
 /// The active account used by all Firebase synchronization transports.
-final class FirebaseAccountSession implements SyncIdentityProvider {
+final class FirebaseAccountSession implements FirebaseIdentitySession {
   FirebaseAccountSession(this.endpoint, this.http);
 
   final FirebaseEndpoint endpoint;
@@ -16,6 +17,7 @@ final class FirebaseAccountSession implements SyncIdentityProvider {
   Future<_Credentials>? _renewing;
   int _generation = 0;
 
+  @override
   String? get uid => _credentials?.uid ?? _nativeUser?.uid;
 
   @override
@@ -128,6 +130,7 @@ final class FirebaseAccountSession implements SyncIdentityProvider {
     _renewing = null;
   }
 
+  @override
   Future<String> tokenFor(String expectedUid) async {
     final native = _nativeUser;
     if (native != null) {
