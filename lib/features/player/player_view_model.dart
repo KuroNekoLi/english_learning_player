@@ -14,6 +14,7 @@ import '../library/domain/audio_import_source.dart';
 import '../library/material_repository.dart';
 import '../progress/progress_dependencies.dart';
 import '../subtitles/domain/subtitle_models.dart';
+import '../subtitles/services/subtitle_import_service.dart';
 import 'player_dependencies.dart';
 import 'services/material_playback_loader.dart';
 import 'services/player_bookmarks.dart';
@@ -233,18 +234,20 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     }
   }
 
-  Future<bool> importSubtitle({
-    required String languageTag,
-    required AudioImportSource source,
-  }) async {
+  Future<bool> importSubtitle({required AudioImportSource source}) async {
     final material = state.material;
     final generation = _openGeneration;
     if (material == null || !state.isReady) return false;
     try {
       final service = await ref.read(playerSubtitlesProvider.future);
       if (!_isCurrent(generation)) return false;
-      final tracks = await service.import(material, source, languageTag);
+      final tracks = await service.import(material, source);
       return await _applySubtitleTracks(material, tracks, generation);
+    } on SubtitleLanguageDetectionException {
+      if (_isCurrent(generation)) {
+        state = state.copyWith(errorMessage: '無法判斷字幕語言或雙語格式，請檢查 SRT 內容與檔名。');
+      }
+      return false;
     } catch (_) {
       if (_isCurrent(generation)) {
         state = state.copyWith(errorMessage: '字幕匯入失敗，請確認 SRT 格式。');

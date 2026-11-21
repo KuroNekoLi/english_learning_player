@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../library/material_repository.dart';
 import '../domain/bilingual_subtitle_splitter.dart';
+import '../domain/subtitle_language_detector.dart';
 import '../domain/srt_parser.dart';
 import '../domain/subtitle_models.dart';
 
@@ -10,13 +11,17 @@ final class SubtitleImportService {
   SubtitleImportService({
     required MaterialRepository repository,
     SrtParser parser = const SrtParser(),
+    SubtitleLanguageDetector languageDetector =
+        const SubtitleLanguageDetector(),
     Uuid uuid = const Uuid(),
   }) : _repository = repository,
        _parser = parser,
+       _languageDetector = languageDetector,
        _uuid = uuid;
 
   final MaterialRepository _repository;
   final SrtParser _parser;
+  final SubtitleLanguageDetector _languageDetector;
   final Uuid _uuid;
 
   Future<SubtitleImportResult> importBytes({
@@ -70,6 +75,81 @@ final class SubtitleImportService {
     final document = _parser.parse(bytes);
     final pair = const BilingualSubtitleSplitter().split(document.cues);
     if (pair == null) return null;
+    return _saveBilingualTracks(
+      ownerId: ownerId,
+      materialId: materialId,
+      sourceName: sourceName,
+      originalBytes: document.originalBytes,
+      pair: pair,
+      manual: manual,
+      revision: revision,
+      offsetMs: offsetMs,
+    );
+  }
+
+  /// Imports a manually selected SRT without asking the user to choose its
+  /// language. Bilingual files become English and Chinese tracks; a
+  /// single-language file is detected from its name and text.
+  Future<List<SubtitleTrack>> importAutoDetectedBytes({
+    required String ownerId,
+    required String materialId,
+    required String sourceName,
+    required List<int> bytes,
+    required bool manual,
+    int revision = 1,
+    int offsetMs = 0,
+  }) async {
+    if (revision < 1) throw ArgumentError.value(revision, 'revision');
+    final document = _parser.parse(bytes);
+    final pair = const BilingualSubtitleSplitter().split(document.cues);
+    if (pair != null) {
+      return _saveBilingualTracks(
+        ownerId: ownerId,
+        materialId: materialId,
+        sourceName: sourceName,
+        originalBytes: document.originalBytes,
+        pair: pair,
+        manual: manual,
+        revision: revision,
+        offsetMs: offsetMs,
+      );
+    }
+
+    final languageTag = _languageDetector.detect(
+      sourceName: sourceName,
+      cues: document.cues,
+    );
+    if (languageTag == null) {
+      throw const SubtitleLanguageDetectionException();
+    }
+    final track = SubtitleTrack(
+      id: _uuid.v4(),
+      ownerId: ownerId,
+      materialId: materialId,
+      languageTag: languageTag,
+      sourceName: p.basename(sourceName),
+      originalBytes: document.originalBytes,
+      revision: revision,
+      offsetMs: offsetMs,
+      selectionMode: manual
+          ? SubtitleSelectionMode.manual
+          : SubtitleSelectionMode.automatic,
+      isSelected: false,
+      cues: document.cues,
+    );
+    return [await _repository.saveSubtitleTrack(track, manual: manual)];
+  }
+
+  Future<List<SubtitleTrack>> _saveBilingualTracks({
+    required String ownerId,
+    required String materialId,
+    required String sourceName,
+    required List<int> originalBytes,
+    required BilingualSubtitlePair pair,
+    required bool manual,
+    required int revision,
+    required int offsetMs,
+  }) async {
     final basename = p.basename(sourceName);
     final mode = manual
         ? SubtitleSelectionMode.manual
@@ -81,7 +161,7 @@ final class SubtitleImportService {
         materialId: materialId,
         languageTag: 'en',
         sourceName: '$basename · EN',
-        originalBytes: document.originalBytes,
+        originalBytes: originalBytes,
         revision: revision,
         offsetMs: offsetMs,
         selectionMode: mode,
@@ -94,7 +174,7 @@ final class SubtitleImportService {
         materialId: materialId,
         languageTag: 'zh-TW',
         sourceName: '$basename · 繁中',
-        originalBytes: document.originalBytes,
+        originalBytes: originalBytes,
         revision: revision,
         offsetMs: offsetMs,
         selectionMode: mode,
@@ -108,6 +188,10 @@ final class SubtitleImportService {
     }
     return List.unmodifiable(saved);
   }
+}
+
+final class SubtitleLanguageDetectionException implements Exception {
+  const SubtitleLanguageDetectionException();
 }
 
 final class SubtitleImportResult {

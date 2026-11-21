@@ -188,28 +188,19 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
               onImport: () async {
                 final source = await viewModel.pickSubtitle();
                 if (source == null || !context.mounted) return;
-                final language = await showDialog<String>(
-                  context: context,
-                  builder: (dialogContext) => AlertDialog(
-                    title: const Text('選擇字幕語言'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, 'en'),
-                        child: const Text('英文'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, 'zh-TW'),
-                        child: const Text('中文'),
-                      ),
-                    ],
-                  ),
-                );
-                if (language == null || !context.mounted) return;
-                final imported = await viewModel.importSubtitle(
-                  languageTag: language,
-                  source: source,
-                );
-                if (!imported) return;
+                final imported = await viewModel.importSubtitle(source: source);
+                if (!imported) {
+                  if (!context.mounted) return;
+                  final message = ref
+                      .read(playerViewModelProvider)
+                      .errorMessage;
+                  if (message != null) {
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(SnackBar(content: Text(message)));
+                  }
+                  return;
+                }
                 if (context.mounted) Navigator.of(context).pop();
               },
               onSelect: (track) async {

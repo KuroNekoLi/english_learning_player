@@ -35,6 +35,7 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
   Widget build(BuildContext context) {
     final english = _selectedTrack('en');
     final chinese = _selectedTrack('zh');
+    final groups = _groupTracks(widget.tracks);
     return ConstrainedBox(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.82,
@@ -70,6 +71,11 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
               ],
             ),
             const SizedBox(height: 12),
+            Text(
+              '匯入 SRT 後會自動辨識單語或雙語字幕來源。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
@@ -87,15 +93,17 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
               ],
             ),
             const SizedBox(height: 12),
-            if (widget.tracks.isEmpty)
+            const SizedBox(height: 12),
+            Text('已匯入字幕來源', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            if (groups.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('尚未匯入字幕'),
+                child: Text('尚未匯入字幕來源'),
               )
             else ...[
-              _languageGroup(context, '英文', 'en', english),
-              const Divider(),
-              _languageGroup(context, '中文', 'zh', chinese),
+              for (final group in groups)
+                _sourceGroup(context, group, english, chinese),
               if (english != null || chinese != null) ...[
                 const Divider(height: 28),
                 if (english != null) _offsetControl(context, english),
@@ -108,41 +116,95 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
     );
   }
 
-  Widget _languageGroup(
+  Widget _sourceGroup(
     BuildContext context,
-    String label,
-    String language,
-    SubtitleTrack? selected,
+    _SubtitleSourceGroup group,
+    SubtitleTrack? selectedEnglish,
+    SubtitleTrack? selectedChinese,
   ) {
-    final tracks = widget.tracks
-        .where((track) => track.languageTag.toLowerCase().startsWith(language))
-        .toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.titleMedium),
-        if (tracks.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Text('沒有可選字幕軌'),
-          )
-        else
-          for (final track in tracks)
-            RadioListTile<String>(
-              value: track.id,
-              groupValue: selected?.id,
-              onChanged: (_) => widget.onSelect(track),
-              title: Text(track.sourceName),
-              subtitle: Text(
-                track.selectionMode == SubtitleSelectionMode.manual
-                    ? '手動指定'
-                    : '自動配對',
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.subtitles_outlined, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      group.sourceName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(group.languageLabel),
+                  ),
+                ],
               ),
-              contentPadding: EdgeInsets.zero,
             ),
-      ],
+            for (final track in group.tracks)
+              RadioListTile<String>(
+                value: track.id,
+                groupValue: _isEnglish(track)
+                    ? selectedEnglish?.id
+                    : selectedChinese?.id,
+                onChanged: (_) => widget.onSelect(track),
+                title: Text(_isEnglish(track) ? '英文字幕軌' : '中文字幕軌'),
+                subtitle: Text(
+                  track.selectionMode == SubtitleSelectionMode.manual
+                      ? '手動指定'
+                      : '自動配對',
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                dense: true,
+              ),
+          ],
+        ),
+      ),
     );
   }
+
+  List<_SubtitleSourceGroup> _groupTracks(List<SubtitleTrack> tracks) {
+    final groups = <_SubtitleSourceGroup>[];
+    for (final track in tracks) {
+      final sourceName = _sourceName(track.sourceName);
+      final index = groups.indexWhere(
+        (group) =>
+            group.sourceName == sourceName &&
+            _sameBytes(group.tracks.first.originalBytes, track.originalBytes),
+      );
+      if (index < 0) {
+        groups.add(_SubtitleSourceGroup(sourceName, [track]));
+      } else {
+        groups[index].tracks.add(track);
+      }
+    }
+    return groups;
+  }
+
+  String _sourceName(String value) => value.replaceFirst(
+    RegExp(r'\s+·\s+(?:EN|繁中)$', caseSensitive: false),
+    '',
+  );
+
+  bool _sameBytes(List<int> left, List<int> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
+  }
+
+  bool _isEnglish(SubtitleTrack track) =>
+      track.languageTag.toLowerCase().startsWith('en');
 
   Widget _offsetControl(BuildContext context, SubtitleTrack track) {
     final value = _offsets[track.id] ?? track.offsetMs;
@@ -173,5 +235,44 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
       }
     }
     return null;
+  }
+}
+
+final class _SubtitleSourceGroup {
+  _SubtitleSourceGroup(this.sourceName, List<SubtitleTrack> tracks)
+    : tracks = List.of(tracks);
+
+  final String sourceName;
+  final List<SubtitleTrack> tracks;
+
+  String get languageLabel {
+    final english = tracks
+        .where((track) => track.languageTag.toLowerCase().startsWith('en'))
+        .toList();
+    final chinese = tracks
+        .where((track) => track.languageTag.toLowerCase().startsWith('zh'))
+        .toList();
+    if (english.isNotEmpty && chinese.isNotEmpty) {
+      return _hasLanguageOnlyCue(english, han: false) &&
+              _hasLanguageOnlyCue(chinese, han: true)
+          ? '雙語來源'
+          : '多語軌';
+    }
+    if (english.isNotEmpty) return '英文';
+    if (chinese.isNotEmpty) return '中文';
+    return '未辨識';
+  }
+
+  bool _hasLanguageOnlyCue(
+    List<SubtitleTrack> candidates, {
+    required bool han,
+  }) {
+    final expected = RegExp(han ? r'[\u3400-\u9FFF]' : r'[A-Za-z]');
+    final other = RegExp(han ? r'[A-Za-z]' : r'[\u3400-\u9FFF]');
+    return candidates.any(
+      (track) => track.cues.any(
+        (cue) => expected.hasMatch(cue.text) && !other.hasMatch(cue.text),
+      ),
+    );
   }
 }

@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:english_learning_player/features/subtitles/domain/srt_parser.dart';
+import 'package:english_learning_player/features/subtitles/domain/bilingual_subtitle_splitter.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_aligner.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_filename_matcher.dart';
+import 'package:english_learning_player/features/subtitles/domain/subtitle_language_detector.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_synchronizer.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -173,6 +175,119 @@ Valid
         );
       },
     );
+  });
+
+  group('SubtitleLanguageDetector', () {
+    const detector = SubtitleLanguageDetector();
+
+    test('detects single-language files from script content', () {
+      expect(
+        detector.detect(
+          sourceName: 'lesson.srt',
+          cues: const [
+            SubtitleCue(
+              id: 'en',
+              sequence: 1,
+              startMs: 1000,
+              endMs: 2500,
+              text: 'A sentence to learn.',
+            ),
+          ],
+        ),
+        'en',
+      );
+      expect(
+        detector.detect(
+          sourceName: 'lesson.srt',
+          cues: const [
+            SubtitleCue(
+              id: 'zh',
+              sequence: 1,
+              startMs: 1000,
+              endMs: 2500,
+              text: '這是一句中文字幕。',
+            ),
+          ],
+        ),
+        'zh-TW',
+      );
+    });
+
+    test('uses explicit filename language when script alone is mixed', () {
+      expect(
+        detector.detect(
+          sourceName: 'lesson.zh-TW.srt',
+          cues: const [
+            SubtitleCue(
+              id: 'mixed',
+              sequence: 1,
+              startMs: 1000,
+              endMs: 2500,
+              text: 'AI 幫助學習。',
+            ),
+          ],
+        ),
+        'zh-TW',
+      );
+    });
+
+    test(
+      'returns unknown for mixed-language text it cannot classify safely',
+      () {
+        expect(
+          detector.detect(
+            sourceName: 'lesson.srt',
+            cues: const [
+              SubtitleCue(
+                id: 'mixed',
+                sequence: 1,
+                startMs: 1000,
+                endMs: 2500,
+                text: 'Learn English 學習中文',
+              ),
+            ],
+          ),
+          isNull,
+        );
+      },
+    );
+  });
+
+  group('BilingualSubtitleSplitter', () {
+    const splitter = BilingualSubtitleSplitter();
+
+    test('joins wrapped lines while splitting a bilingual cue', () {
+      final pair = splitter.split(const [
+        SubtitleCue(
+          id: 'cue-0',
+          sequence: 7,
+          startMs: 1000,
+          endMs: 2500,
+          text: 'This is a long English line\nthat wraps.\n這是一句\n換行的中文。',
+        ),
+      ]);
+
+      expect(
+        pair?.english.single.text,
+        'This is a long English line\nthat wraps.',
+      );
+      expect(pair?.chinese.single.text, '這是一句\n換行的中文。');
+    });
+
+    test('keeps ordinary multiline single-language cues intact', () {
+      expect(
+        splitter.split(const [
+          SubtitleCue(
+            id: 'en',
+            sequence: 1,
+            startMs: 1000,
+            endMs: 2500,
+            text: 'A long subtitle line\ncontinues on the next line',
+          ),
+        ]),
+        isNull,
+      );
+    });
   });
 
   group('SubtitleAligner', () {

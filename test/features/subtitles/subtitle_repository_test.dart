@@ -155,6 +155,59 @@ void main() {
   );
 
   test(
+    'auto-detects SRT language and bilingual tracks on manual import',
+    () async {
+      final importer = _importer(repository);
+      final english = await importer.importAutoDetectedBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'English lesson.srt',
+        bytes: _srt('A sentence to learn.'),
+        manual: true,
+      );
+      final chinese = await importer.importAutoDetectedBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'Chinese lesson.srt',
+        bytes: _srt('這是一句中文字幕。'),
+        manual: true,
+      );
+      final bilingualBytes = utf8.encode(
+        '1\n00:00:00,000 --> 00:00:01,000\nA bilingual sentence.\n這是一句雙語字幕。',
+      );
+      final bilingual = await importer.importAutoDetectedBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'Bilingual lesson.srt',
+        bytes: bilingualBytes,
+        manual: true,
+      );
+
+      expect(english.single.languageTag, 'en');
+      expect(chinese.single.languageTag, 'zh-TW');
+      expect(bilingual.map((track) => track.languageTag), ['en', 'zh-TW']);
+      expect(bilingual.every((track) => track.isSelected), isTrue);
+      for (final track in bilingual) {
+        expect(track.originalBytes, orderedEquals(bilingualBytes));
+      }
+    },
+  );
+
+  test('does not guess when mixed language content cannot be split', () async {
+    await expectLater(
+      _importer(repository).importAutoDetectedBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'mixed.srt',
+        bytes: _srt('Learn English 學習中文'),
+        manual: true,
+      ),
+      throwsA(isA<SubtitleLanguageDetectionException>()),
+    );
+    expect(await repository.listSubtitleTracks('material-1'), isEmpty);
+  });
+
+  test(
     'leaves ordinary multiline subtitle files as a single language track',
     () async {
       final result = await _importer(repository).importBilingualBytes(

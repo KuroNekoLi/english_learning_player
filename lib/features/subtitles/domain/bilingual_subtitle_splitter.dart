@@ -2,10 +2,10 @@ import 'subtitle_models.dart';
 
 /// Splits one cue-per-language bilingual SRT into paired subtitle cues.
 ///
-/// The split is accepted only when every cue has exactly two non-empty lines:
-/// an English line followed by a line containing Han characters. This keeps
-/// ordinary multi-line subtitles intact and leaves the original SRT bytes in
-/// each generated track for lossless recovery.
+/// The split is accepted only when every cue has at least one English-only
+/// line and one Chinese-only line. Wrapped lines for either language are
+/// joined. Ordinary multi-line subtitles remain a single track, and the
+/// original SRT bytes are retained in both generated tracks.
 final class BilingualSubtitleSplitter {
   const BilingualSubtitleSplitter();
 
@@ -23,19 +23,33 @@ final class BilingualSubtitleSplitter {
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .toList(growable: false);
-      if (lines.length != 2 ||
-          !_latin.hasMatch(lines.first) ||
-          _han.hasMatch(lines.first) ||
-          !_han.hasMatch(lines.last)) {
-        return null;
+      final englishLines = <String>[];
+      final chineseLines = <String>[];
+      List<String>? lastLanguageLines;
+      for (final line in lines) {
+        final hasLatin = _latin.hasMatch(line);
+        final hasHan = _han.hasMatch(line);
+        if (hasLatin && hasHan) return null;
+        if (hasLatin) {
+          englishLines.add(line);
+          lastLanguageLines = englishLines;
+        } else if (hasHan) {
+          chineseLines.add(line);
+          lastLanguageLines = chineseLines;
+        } else if (lastLanguageLines != null) {
+          lastLanguageLines.add(line);
+        } else {
+          return null;
+        }
       }
+      if (englishLines.isEmpty || chineseLines.isEmpty) return null;
       english.add(
         SubtitleCue(
           id: '${cue.id}-en',
           sequence: cue.sequence,
           startMs: cue.startMs,
           endMs: cue.endMs,
-          text: lines.first,
+          text: englishLines.join('\n'),
         ),
       );
       chinese.add(
@@ -44,7 +58,7 @@ final class BilingualSubtitleSplitter {
           sequence: cue.sequence,
           startMs: cue.startMs,
           endMs: cue.endMs,
-          text: lines.last,
+          text: chineseLines.join('\n'),
         ),
       );
     }

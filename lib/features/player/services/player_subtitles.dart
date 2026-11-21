@@ -11,27 +11,16 @@ final class PlayerSubtitles {
   Future<List<SubtitleTrack>> import(
     LearningMaterial material,
     AudioImportSource source,
-    String languageTag,
   ) async {
     final bytes = await source.openRead().expand((chunk) => chunk).toList();
     final importer = SubtitleImportService(repository: repository);
-    final bilingual = await importer.importBilingualBytes(
+    await importer.importAutoDetectedBytes(
       ownerId: material.ownerId,
       materialId: material.id,
       sourceName: source.name,
       bytes: bytes,
       manual: true,
     );
-    if (bilingual == null) {
-      await importer.importBytes(
-        ownerId: material.ownerId,
-        materialId: material.id,
-        languageTag: languageTag,
-        sourceName: source.name,
-        bytes: bytes,
-        manual: true,
-      );
-    }
     return repository.listSubtitleTracks(material.id);
   }
 
