@@ -11,7 +11,7 @@ android {
     sourceSets.getByName("main").java.srcDir(
         if (appleAuthEnabled) "src/appleAuth/kotlin" else "src/noAppleAuth/kotlin"
     )
-    namespace = "com.example.english_learning_player"
+    namespace = "com.linli.englishlearningplayer"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -25,8 +25,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.english_learning_player"
+        applicationId = "com.linli.englishlearningplayer"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = if (appleAuthEnabled) maxOf(23, flutter.minSdkVersion) else flutter.minSdkVersion

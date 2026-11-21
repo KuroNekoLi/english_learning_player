@@ -9,6 +9,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/sync/sync_contracts.dart';
 import 'social_sign_in.dart';
+import 'google_desktop_oauth.dart';
 
 final class PlatformSocialSignIn implements SocialSignIn {
   PlatformSocialSignIn({required this.project, required this.apiKey});
@@ -23,6 +24,12 @@ final class PlatformSocialSignIn implements SocialSignIn {
   static const _enableApple = bool.fromEnvironment('ELP_ENABLE_APPLE_SIGN_IN');
   static const _googleServerId = String.fromEnvironment(
     'ELP_GOOGLE_SERVER_CLIENT_ID',
+  );
+  static const _googleDesktopId = String.fromEnvironment(
+    'ELP_GOOGLE_DESKTOP_CLIENT_ID',
+  );
+  static const _googleDesktopSecret = String.fromEnvironment(
+    'ELP_GOOGLE_DESKTOP_CLIENT_SECRET',
   );
   static Future<void>? _googleInitialization;
 
@@ -40,8 +47,11 @@ final class PlatformSocialSignIn implements SocialSignIn {
   bool isConfigured(SocialProvider provider) => switch (provider) {
     SocialProvider.google => switch (defaultTargetPlatform) {
       TargetPlatform.android => _googleServerId.isNotEmpty,
-      TargetPlatform.iOS || TargetPlatform.macOS =>
+      TargetPlatform.iOS =>
         _googleClientId.isNotEmpty && _googleServerId.isNotEmpty,
+      TargetPlatform.macOS =>
+        (_googleDesktopId.isNotEmpty && _googleDesktopSecret.isNotEmpty) ||
+            (_googleClientId.isNotEmpty && _googleServerId.isNotEmpty),
       _ => false,
     },
     SocialProvider.apple =>
@@ -68,6 +78,14 @@ final class PlatformSocialSignIn implements SocialSignIn {
   }
 
   Future<ProviderIdToken?> _signInWithGoogle() async {
+    if (defaultTargetPlatform == TargetPlatform.macOS &&
+        _googleDesktopId.isNotEmpty) {
+      final token = await GoogleDesktopOAuth(
+        clientId: _googleDesktopId,
+        clientSecret: _googleDesktopSecret,
+      ).authenticate();
+      return token == null ? null : ProviderIdToken(token);
+    }
     final google = GoogleSignIn.instance;
     await (_googleInitialization ??= google.initialize(
       clientId: _googleClientId.isEmpty ? null : _googleClientId,

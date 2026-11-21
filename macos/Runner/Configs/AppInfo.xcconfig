@@ -8,10 +8,10 @@
 PRODUCT_NAME = english_learning_player
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.englishLearningPlayer
+PRODUCT_BUNDLE_IDENTIFIER = com.linli.englishlearningplayer
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 English Learning Player. All rights reserved.
 
 ELP_GOOGLE_REVERSED_CLIENT_ID = elp-google-signin-disabled
 #include? "SocialSignIn.local.xcconfig"

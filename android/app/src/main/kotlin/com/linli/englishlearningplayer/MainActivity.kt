@@ -1,4 +1,4 @@
-package com.example.english_learning_player
+package com.linli.englishlearningplayer
 
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine

@@ -8,7 +8,7 @@ import 'audio_media_session_port.dart';
 import 'english_audio_handler.dart';
 
 const audioServiceConfig = service.AudioServiceConfig(
-  androidNotificationChannelId: 'com.example.english_learning_player.audio',
+  androidNotificationChannelId: 'com.linli.englishlearningplayer.audio',
   androidNotificationChannelName: 'English Learning Player',
   androidNotificationOngoing: false,
   androidStopForegroundOnPause: false,

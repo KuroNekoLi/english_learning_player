@@ -22,13 +22,14 @@ macOS 最低版本由 10.14 調至 10.15，以配合 Google 官方 Flutter 外�
 
 在專案根目錄建立 Git 忽略的 `.env.firebase-auth`，以 `KEY=value` 記錄該環境的 Firebase Project ID、Firebase Web API key、Google Web OAuth client ID 及目標平台的 Google client ID。欄位名稱見上方。用 `flutter run -d macos --dart-define-from-file=.env.firebase-auth` 驗收 macOS，換成 `flutter devices` 列出的裝置 ID 可建置 Android 或 iOS。Apple 平台仍需完成上述 callback URL scheme 與簽章設定，啟用 Apple 登入時也須先備妥 App ID capability。
 
-Android 的 Firebase 登錄識別為 `com.example.english_learning_player`，iOS 與 macOS 的 Runner 目前以 `com.example.englishLearningPlayer` 建置。Google 的 Android SHA-1 須取自實際要測試或發佈的簽章。正式發佈使用 Play App Signing 時，登記 Play 提供的 app signing certificate。客戶端建置設定只使用 Firebase API key 與 OAuth client ID，Apple 私鑰和 OAuth client secret 直接填入對應後台。
+Android 的 Firebase 登錄識別為 `com.linli.englishlearningplayer`，iOS 與 macOS 的 Runner 目前以 `com.linli.englishlearningplayer` 建置。Google 的 Android SHA-1 須取自實際要測試或發佈的簽章。正式發佈使用 Play App Signing 時，登記 Play 提供的 app signing certificate。客戶端建置設定只使用 Firebase API key 與 OAuth client ID，Apple 私鑰和 OAuth client secret 直接填入對應後台。
 
 ## 正式 Google OAuth 設定進度（2026-11-21）
 
 - 已建立 Spark 專案 `english-learning-player-auth`，顯示名稱為 English Learning Player Auth。Firebase Console 已確認 Google provider 啟用，支援信箱依使用者指定。此專案目前用於登入。
 - App 的登入建置可以省略 Storage bucket。格式檢查、Flutter Analyze、146 項 Flutter 測試、6 項 Emulator 規則測試、2 項 Emulator 整合案例及 macOS Debug 建置通過。
 - 待完成目標平台的 Firebase App 註冊、實際簽章或 callback URL 設定、寫入本機建置組態，以及以真實帳號完成登入登出。這次 macOS 沒有可用的程式碼簽章身分，Android 目前沒有連線中的裝置。Apple provider 待 Apple Developer Program 與對應 capability 就緒。
+- macOS 追查記錄：目前執行的是本機 Debug App。其簽章為 ad hoc、沒有 TeamIdentifier，Google 回呼仍是 `elp-google-signin-disabled`，根目錄與 macOS 本機 OAuth 設定檔均缺席，簽章查詢回傳 0 個有效身分。恢復工作時先完成 Apple 平台的 Google OAuth client 註冊及建置設定，再用可用的 Apple 簽章重建並驗收實際登入登出。Codex 5 小時窗口剩餘 29%，依使用者設定暫停。
 
 ## 驗證方式
 

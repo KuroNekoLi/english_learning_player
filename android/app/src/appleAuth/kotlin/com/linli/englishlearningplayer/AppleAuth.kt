@@ -1,4 +1,4 @@
-package com.example.english_learning_player
+package com.linli.englishlearningplayer
 
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions

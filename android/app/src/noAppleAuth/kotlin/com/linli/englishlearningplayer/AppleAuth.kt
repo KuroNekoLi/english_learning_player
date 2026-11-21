@@ -1,4 +1,4 @@
-package com.example.english_learning_player
+package com.linli.englishlearningplayer
 
 import io.flutter.embedding.engine.FlutterEngine
 
