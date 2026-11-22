@@ -274,6 +274,39 @@ void main() {
     },
   );
 
+  test(
+    'imports bilingual subtitles when a few translated cues omit English',
+    () async {
+      final bytes = utf8.encode(
+        '1\n00:00:00,000 --> 00:00:01,000\n'
+        'Introverts can succeed without pretending.\n'
+        '內向者不必假裝外向也能成功。\n\n'
+        '2\n00:00:01,000 --> 00:00:02,000\n'
+        'They may prefer a quiet place.\n'
+        '他們可能偏好安靜的地方。\n\n'
+        '3\n00:00:02,000 --> 00:00:03,000\n'
+        '有些人會在 Harvard 找到適合自己的社群。',
+      );
+
+      final tracks = await _importer(repository).importAutoDetectedBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        sourceName: 'How_Introverts_Succeed_Without_Faking_Extroversion.srt',
+        bytes: bytes,
+        manual: true,
+      );
+
+      expect(tracks.map((track) => track.languageTag), ['en', 'zh-TW']);
+      expect(tracks.first.cues, hasLength(2));
+      expect(tracks.last.cues, hasLength(3));
+      expect(tracks.last.cues.last.text, '有些人會在 Harvard 找到適合自己的社群。');
+      for (final track in tracks) {
+        expect(track.originalBytes, orderedEquals(bytes));
+        expect(track.isSelected, isTrue);
+      }
+    },
+  );
+
   test('does not guess when mixed language content cannot be split', () async {
     await expectLater(
       _importer(repository).importAutoDetectedBytes(

@@ -17,6 +17,7 @@ final class BilingualSubtitleSplitter {
     if (cues.isEmpty) return null;
     final english = <SubtitleCue>[];
     final chinese = <SubtitleCue>[];
+    var bilingualCueCount = 0;
 
     for (final cue in cues) {
       final lines = cue.text
@@ -48,25 +49,41 @@ final class BilingualSubtitleSplitter {
           return null;
         }
       }
-      if (englishLines.isEmpty || chineseLines.isEmpty) return null;
-      english.add(
-        SubtitleCue(
-          id: '${cue.id}-en',
-          sequence: cue.sequence,
-          startMs: cue.startMs,
-          endMs: cue.endMs,
-          text: englishLines.join('\n'),
-        ),
-      );
-      chinese.add(
-        SubtitleCue(
-          id: '${cue.id}-zh',
-          sequence: cue.sequence,
-          startMs: cue.startMs,
-          endMs: cue.endMs,
-          text: chineseLines.join('\n'),
-        ),
-      );
+      if (englishLines.isNotEmpty && chineseLines.isNotEmpty) {
+        bilingualCueCount++;
+      }
+      if (englishLines.isNotEmpty) {
+        english.add(
+          SubtitleCue(
+            id: '${cue.id}-en',
+            sequence: cue.sequence,
+            startMs: cue.startMs,
+            endMs: cue.endMs,
+            text: englishLines.join('\n'),
+          ),
+        );
+      }
+      if (chineseLines.isNotEmpty) {
+        chinese.add(
+          SubtitleCue(
+            id: '${cue.id}-zh',
+            sequence: cue.sequence,
+            startMs: cue.startMs,
+            endMs: cue.endMs,
+            text: chineseLines.join('\n'),
+          ),
+        );
+      }
+    }
+
+    // A few cues may have no translation. Require at least half of the file
+    // to contain distinct English and Chinese sections before treating the
+    // whole source as bilingual. This avoids turning an ordinary mixed-script
+    // subtitle into two tracks based on only one accidental cue.
+    if (english.isEmpty ||
+        chinese.isEmpty ||
+        bilingualCueCount * 2 < cues.length) {
+      return null;
     }
     return BilingualSubtitlePair(english: english, chinese: chinese);
   }

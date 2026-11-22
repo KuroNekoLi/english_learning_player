@@ -325,6 +325,74 @@ Valid
       ]);
     });
 
+    test('keeps untranslated cues in a mostly bilingual file', () {
+      final pair = splitter.split(const [
+        SubtitleCue(
+          id: 'cue-1',
+          sequence: 1,
+          startMs: 0,
+          endMs: 1000,
+          text: 'The first English line.\n第一句中文。',
+        ),
+        SubtitleCue(
+          id: 'cue-2',
+          sequence: 2,
+          startMs: 1000,
+          endMs: 2000,
+          text: 'The second English line.\n第二句中文。',
+        ),
+        SubtitleCue(
+          id: 'cue-3',
+          sequence: 3,
+          startMs: 2000,
+          endMs: 3000,
+          text: '這句翻譯保留 Harvard 這個英文名稱。',
+        ),
+      ]);
+
+      expect(pair?.english.map((cue) => cue.text), [
+        'The first English line.',
+        'The second English line.',
+      ]);
+      expect(pair?.chinese.map((cue) => cue.text), [
+        '第一句中文。',
+        '第二句中文。',
+        '這句翻譯保留 Harvard 這個英文名稱。',
+      ]);
+    });
+
+    test(
+      'requires at least half the cues to have distinct bilingual lines',
+      () {
+        expect(
+          splitter.split(const [
+            SubtitleCue(
+              id: 'bilingual',
+              sequence: 1,
+              startMs: 0,
+              endMs: 1000,
+              text: 'A bilingual line.\n雙語字幕。',
+            ),
+            SubtitleCue(
+              id: 'english-1',
+              sequence: 2,
+              startMs: 1000,
+              endMs: 2000,
+              text: 'English only.',
+            ),
+            SubtitleCue(
+              id: 'english-2',
+              sequence: 3,
+              startMs: 2000,
+              endMs: 3000,
+              text: 'Also English only.',
+            ),
+          ]),
+          isNull,
+        );
+      },
+    );
+
     test('keeps ordinary multiline single-language cues intact', () {
       expect(
         splitter.split(const [
