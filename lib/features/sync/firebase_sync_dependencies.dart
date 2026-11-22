@@ -10,6 +10,8 @@ import 'data/firebase_sync_session_native.dart'
 import '../../core/sync/sqlite_sync_outbox.dart';
 import '../../core/sync/sync_contracts.dart';
 import '../library/data/sqlite_material_repository.dart';
+import '../library/data/sqlite_library_changes.dart';
+import 'data/firebase_library_sync.dart';
 import '../progress/data/sqlite_progress_repository.dart';
 import '../progress/services/progress_sync_coordinator.dart';
 import 'data/firebase_material_transport.dart';
@@ -75,9 +77,17 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
     repository: repository,
     consent: consent,
   );
+  final library = FirebaseLibrarySync(
+    uid: account.ownerId,
+    documents: transport.documents,
+    local: SqliteLibraryChanges(db, account.ownerId),
+    consent: consent,
+  );
   return FirebaseSyncRuntime(
     uid: account.ownerId,
-    hasDueMedia: outbox.hasDueMedia,
+    hasDueMedia: (now) async =>
+        await outbox.hasDueMedia(now) || await library.hasDue(now),
+    library: library,
     transport: transport,
     coordinator: CloudSyncCoordinator(
       scope: account,

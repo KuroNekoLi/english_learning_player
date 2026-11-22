@@ -6,6 +6,7 @@ import '../features/library/library_folder_view_model.dart';
 import '../features/library/library_view_model.dart';
 import '../features/library/widgets/library_material_list.dart';
 import '../features/library/widgets/library_material_picker.dart';
+import '../features/library/widgets/library_item_actions.dart';
 import '../features/player/player_page.dart';
 
 void openLibraryFolder(BuildContext context, LibraryFolder folder) {
@@ -59,9 +60,19 @@ final class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
   Widget build(BuildContext context) {
     final provider = folderMaterialsProvider(widget.folder.id);
     final materials = ref.watch(provider);
+    final folders = ref.watch(libraryFoldersProvider);
+    final current = folders.value
+        ?.where((item) => item.id == widget.folder.id)
+        .firstOrNull;
+    if (folders.hasValue && current == null) {
+      return Scaffold(
+        appBar: AppBar(title: Text(widget.folder.title)),
+        body: const Center(child: Text('這個資料夾已移除。')),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.folder.title),
+        title: Text(current?.title ?? widget.folder.title),
         actions: [
           IconButton(
             tooltip: '加入教材',
@@ -74,7 +85,20 @@ final class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
         library: materials,
         materials: materials.value ?? const [],
         gridMode: false,
+        folders: (folders.value ?? const [])
+            .where((item) => item.parentId == widget.folder.id)
+            .toList(),
+        onOpenFolder: (folder) => openLibraryFolder(context, folder),
         emptyMessage: '此資料夾尚無教材',
+        onFolderAction: (folder, action) =>
+            handleFolderLibraryAction(context, ref, folder, action),
+        onMaterialAction: (material, action) => handleMaterialLibraryAction(
+          context,
+          ref,
+          material,
+          action,
+          sourceFolderId: widget.folder.id,
+        ),
         onRetry: () {
           ref.invalidate(libraryViewModelProvider);
           ref.invalidate(provider);

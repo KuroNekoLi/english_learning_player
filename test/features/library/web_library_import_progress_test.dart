@@ -147,4 +147,71 @@ void main() {
     expect(find.text('Lesson'), findsOneWidget);
     expect(await repository.materialIds('folder-0'), {'lesson'});
   });
+  testWidgets(
+    'row menu saves a rename, moves to a folder and requires delete confirmation',
+    (tester) async {
+      final repository = FakeLibraryFolderRepository();
+      await repository.createFolder('精聽');
+      final material = LearningMaterial(
+        id: 'lesson',
+        ownerId: 'local-default',
+        title: 'Lesson',
+        audioAssetId: 'asset',
+        status: MaterialStatus.localReady,
+        createdAt: DateTime.utc(2026),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            libraryViewModelProvider.overrideWith(
+              (ref) async =>
+                  repository.deleted.contains(material.id) ? [] : [material],
+            ),
+            libraryFolderRepositoryProvider.overrideWith(
+              (ref) async => repository,
+            ),
+          ],
+          child: const MaterialApp(home: WebLibraryPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Future<void> itemAction(String name) async {
+        await tester.tap(
+          find.descendant(
+            of: find.widgetWithText(ListTile, 'Lesson'),
+            matching: find.byTooltip('更多選項'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(name));
+        await tester.pumpAndSettle();
+      }
+
+      await itemAction('重新命名');
+      await tester.enterText(find.byType(TextField), '新名稱');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '儲存'));
+      await tester.pumpAndSettle();
+      expect(repository.titles['lesson'], '新名稱');
+
+      await itemAction('移動');
+      await tester.tap(find.widgetWithText(SimpleDialogOption, '精聽'));
+      await tester.pumpAndSettle();
+      expect(find.text('Lesson'), findsNothing);
+      await tester.tap(find.text('精聽'));
+      await tester.pumpAndSettle();
+      expect(find.text('Lesson'), findsOneWidget);
+
+      await itemAction('刪除');
+      await tester.tap(find.widgetWithText(TextButton, '取消'));
+      await tester.pumpAndSettle();
+      expect(repository.deleted, isEmpty);
+      await itemAction('刪除');
+      await tester.tap(find.widgetWithText(FilledButton, '刪除'));
+      await tester.pumpAndSettle();
+      expect(repository.deleted, {'lesson'});
+      expect(find.text('Lesson'), findsNothing);
+    },
+  );
 }

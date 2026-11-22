@@ -2,6 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart';
+import 'package:english_learning_player/core/db/local_database.dart';
+import 'package:english_learning_player/features/library/data/sqlite_library_folder_repository.dart';
+import 'package:english_learning_player/features/library/data/sqlite_library_changes.dart';
+import 'package:english_learning_player/features/library/material_repository.dart';
+import 'package:english_learning_player/features/sync/data/firebase_documents.dart';
+import 'package:english_learning_player/features/sync/data/firebase_library_sync.dart';
 import 'package:english_learning_player/core/db/account_database_service.dart';
 import 'package:english_learning_player/core/db/account_scope.dart';
 import 'package:english_learning_player/core/files/app_media_store.dart';
@@ -226,9 +233,22 @@ void main() {
         offsetMs: 100,
       );
       expect(imported, hasLength(2));
-      final sendingRuntime = FirebaseSyncRuntime(
+      final librarySending = FirebaseLibrarySync(
         uid: uid,
-        hasDueMedia: senderOutbox.hasDueMedia,
+        documents: sending.documents,
+        local: SqliteLibraryChanges(senderDb, uid),
+        consent: consent,
+      );
+      await SqliteLibraryFolderRepository(
+        scope,
+        senderDb,
+      ).createFolder('Synced empty folder');
+      final sendingRuntime = FirebaseSyncRuntime(
+        library: librarySending,
+        uid: uid,
+        hasDueMedia: (now) async =>
+            await senderOutbox.hasDueMedia(now) ||
+            await librarySending.hasDue(now),
         transport: sending,
         coordinator: coordinator,
         downloader: CloudMaterialDownloadService(
@@ -280,6 +300,12 @@ void main() {
       final receiverOutbox = SqliteSyncOutbox(scope: scope, db: receiverDb);
       final receiverRuntime = FirebaseSyncRuntime(
         uid: uid,
+        library: FirebaseLibrarySync(
+          uid: uid,
+          documents: receiving.documents,
+          local: SqliteLibraryChanges(receiverDb, uid),
+          consent: consent,
+        ),
         hasDueMedia: receiverOutbox.hasDueMedia,
         transport: receiving,
         coordinator: CloudSyncCoordinator(
@@ -304,6 +330,13 @@ void main() {
         isEmpty,
       );
       expect(await receiverRuntime.refresh(), hasLength(2));
+      expect(
+        (await SqliteLibraryFolderRepository(
+          scope,
+          receiverDb,
+        ).listFolders()).single.title,
+        'Synced empty folder',
+      );
       await receivingSubtitles.download(downloaded.id);
       await receivingSubtitles.download(downloaded.id);
       expect(
@@ -445,5 +478,113 @@ void main() {
     skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1'
         ? 'Run with Auth, Firestore and Storage Firebase Emulators.'
         : false,
+  );
+  test(
+    'Firebase emulator: two clients converge on folders, placements and deletion',
+    () async {
+      final endpoint = FirebaseEndpoint(
+        project: 'demo-english-learning-player',
+        bucket: 'demo-english-learning-player.appspot.com',
+        apiKey: 'fake-api-key',
+        emulatorHost: '127.0.0.1',
+      );
+      final http = FirebaseHttp();
+      addTearDown(http.close);
+      final first = FirebaseAccountSession(endpoint, http);
+      final second = FirebaseAccountSession(endpoint, http);
+      Future<SocialSignInResult?> authorize() async => ProviderIdToken(
+        jsonEncode({
+          'sub': 'folder-test-${DateTime.now().microsecondsSinceEpoch}',
+          'email': 'folders@example.test',
+          'email_verified': true,
+        }),
+      );
+      final credential = await authorize();
+      final uid = (await first.signInWithProvider(
+        SocialProvider.google,
+        () async => credential,
+      ))!;
+      expect(
+        await second.signInWithProvider(
+          SocialProvider.google,
+          () async => credential,
+        ),
+        uid,
+      );
+      final scope = AccountScope(uid);
+      final a = LocalDatabase(NativeDatabase.memory());
+      final b = LocalDatabase(NativeDatabase.memory());
+      addTearDown(a.close);
+      addTearDown(b.close);
+      final folderA = SqliteLibraryFolderRepository(scope, a);
+      final folderB = SqliteLibraryFolderRepository(scope, b);
+      final syncA = FirebaseLibrarySync(
+        uid: uid,
+        documents: FirebaseDocuments(endpoint, first, http),
+        local: SqliteLibraryChanges(a, uid),
+        consent: FakeSyncConsentProvider(),
+      );
+      final syncB = FirebaseLibrarySync(
+        uid: uid,
+        documents: FirebaseDocuments(endpoint, second, http),
+        local: SqliteLibraryChanges(b, uid),
+        consent: FakeSyncConsentProvider(),
+      );
+      await folderA.createFolder('Parent');
+      await folderA.createFolder('Child');
+      final [child, parent] = await folderA.listFolders();
+      await folderA.moveFolder(child.id, parent.id);
+      final materialA = SqliteMaterialRepository(scope: scope, database: a);
+      final materialB = SqliteMaterialRepository(scope: scope, database: b);
+      const asset = StoredAudioAsset(
+        id: 'asset',
+        sha256: 'hash',
+        byteLength: 1,
+        mediaType: 'audio/mpeg',
+        relativePath: 'asset.mp3',
+      );
+      await materialA.insertAudio(
+        asset: asset,
+        sourceKey: 'asset',
+        title: 'Original',
+        materialId: 'lesson',
+        createdAt: DateTime.utc(2026),
+      );
+      await folderA.moveMaterial('lesson', child.id);
+      await folderA.renameMaterial('lesson', 'Updated');
+      expect(await syncA.push(), isTrue);
+      await syncB.pull();
+      expect((await folderB.listFolders()).first.parentId, parent.id);
+      expect(await folderB.materialIds(child.id), isEmpty);
+
+      await materialB.cacheCloudAudio(
+        materialId: 'lesson',
+        asset: asset,
+        cachedAt: DateTime.utc(2026),
+        title: 'Original',
+      );
+      expect(await folderB.materialIds(child.id), {'lesson'});
+      expect((await materialB.listMaterials()).single.title, 'Updated');
+
+      // Two offline changes to the same field use the stable version ordering.
+      await folderA.renameFolder(child.id, 'Child A');
+      await folderB.renameFolder(child.id, 'Child B');
+      await Future.wait([syncA.push(), syncB.push()]);
+      await syncA.pull();
+      await syncB.pull();
+      expect(
+        (await folderA.listFolders()).first.title,
+        (await folderB.listFolders()).first.title,
+      );
+
+      await folderB.deleteFolder(child.id);
+      await folderB.deleteMaterial('lesson');
+      await syncB.push();
+      await syncA.pull();
+      expect((await folderA.listFolders()).single.id, parent.id);
+      expect(await materialA.listMaterials(), isEmpty);
+      expect(await syncA.local.materialDeleted('lesson'), isTrue);
+    },
+    skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1',
   );
 }

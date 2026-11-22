@@ -31,6 +31,14 @@ final folderMaterialsProvider = FutureProvider.autoDispose
           .toList();
     }, retry: (_, _) => null);
 
+final libraryAssignedMaterialsProvider =
+    FutureProvider.autoDispose<Set<String>>((ref) async {
+      final repository = await ref.watch(
+        libraryFolderRepositoryProvider.future,
+      );
+      return repository.assignedMaterialIds();
+    }, retry: (_, _) => null);
+
 final class LibraryFolderViewModel extends AsyncNotifier<List<LibraryFolder>> {
   @override
   Future<List<LibraryFolder>> build() async {
@@ -43,13 +51,43 @@ final class LibraryFolderViewModel extends AsyncNotifier<List<LibraryFolder>> {
 
   Future<void> add(String folderId, LearningMaterial material) => _write(
     (repository) => repository.addMaterial(folderId, material.id),
-    folderId: folderId,
     expectedOwner: material.ownerId,
+  );
+
+  Future<void> renameFolder(String id, String title) =>
+      _write((repository) => repository.renameFolder(id, title));
+
+  Future<void> moveFolder(String id, String? destination) =>
+      _write((repository) => repository.moveFolder(id, destination));
+
+  Future<void> deleteFolder(String id) =>
+      _write((repository) => repository.deleteFolder(id));
+
+  Future<void> renameMaterial(LearningMaterial item, String title) => _write(
+    (repository) => repository.renameMaterial(item.id, title),
+    expectedOwner: item.ownerId,
+  );
+
+  Future<void> moveMaterial(
+    LearningMaterial item,
+    String? destination, {
+    String? sourceFolderId,
+  }) => _write(
+    (repository) => repository.moveMaterial(
+      item.id,
+      destination,
+      sourceFolderId: sourceFolderId,
+    ),
+    expectedOwner: item.ownerId,
+  );
+
+  Future<void> deleteMaterial(LearningMaterial item) => _write(
+    (repository) => repository.deleteMaterial(item.id),
+    expectedOwner: item.ownerId,
   );
 
   Future<void> _write(
     Future<void> Function(LibraryFolderRepository) action, {
-    String? folderId,
     String? expectedOwner,
   }) async {
     final owner = ref.read(accountScopeProvider).ownerId;
@@ -60,7 +98,9 @@ final class LibraryFolderViewModel extends AsyncNotifier<List<LibraryFolder>> {
     if (!isCurrent()) return;
     await action(repository);
     if (!isCurrent()) return;
-    if (folderId != null) ref.invalidate(folderMaterialsProvider(folderId));
+    ref.invalidate(libraryViewModelProvider);
+    ref.invalidate(folderMaterialsProvider);
+    ref.invalidate(libraryAssignedMaterialsProvider);
     ref.invalidateSelf();
   }
 }

@@ -8,7 +8,7 @@ const {
   assertSucceeds,
   initializeTestEnvironment,
 } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, runTransaction, setDoc } = require('firebase/firestore');
+const { deleteDoc, doc, getDoc, runTransaction, setDoc } = require('firebase/firestore');
 const { deleteObject, ref, getBytes, getMetadata, updateMetadata, uploadBytes } = require('firebase/storage');
 
 const projectId = 'demo-english-learning-player';
@@ -300,4 +300,28 @@ test('subtitle manifests and mutable object metadata are restricted to the owner
     await assertFails(deleteObject(ref(outsider.storage(), objectPath)));
   }
   await assertSucceeds(deleteObject(ref(alice.storage(), objectPath)));
+});
+
+test('library structure is UID-scoped and validates placement and persistent tombstones', async () => {
+  const alice = environment.authenticatedContext('alice').firestore();
+  const bob = environment.authenticatedContext('bob').firestore();
+  const anonymous = environment.unauthenticatedContext().firestore();
+  const base = 'users/alice/libraryChanges';
+  const placement = doc(alice, `${base}/materialFolders_lesson`);
+  const tombstone = doc(alice, `${base}/materialDeleted_lesson`);
+  const data = {
+    ownerId: 'alice', schemaVersion: 1, field: 'materialFolders',
+    entityId: 'lesson', value: '["parent","child"]', revision: 2,
+    opId: '23000000-0000-4000-8000-000000000000',
+  };
+  await assertSucceeds(setDoc(placement, data));
+  await assertFails(setDoc(placement, { ...data, revision: 1 }));
+  await assertFails(setDoc(placement, { ...data, value: '["../../private"]' }));
+  await assertFails(setDoc(placement, { ...data, sourcePath: '/private/file' }));
+  await assertFails(getDoc(doc(bob, placement.path)));
+  await assertFails(getDoc(doc(anonymous, placement.path)));
+  await assertFails(setDoc(doc(bob, placement.path), data));
+  await assertSucceeds(setDoc(tombstone, { ...data, field: 'materialDeleted', value: '1' }));
+  await assertFails(setDoc(tombstone, { ...data, field: 'materialDeleted', value: '0', revision: 3 }));
+  await assertFails(deleteDoc(tombstone));
 });

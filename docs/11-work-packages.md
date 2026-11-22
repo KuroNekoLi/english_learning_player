@@ -16,7 +16,7 @@
 | WP-09 | S2 Luna High | 04,08 | progress events → local checkpoint/outbox/merge → canonical progress | T-SYNC-01..10；不可遠端強制 seek |
 | WP-10 | S2 Luna High | 04 | 音訊事件 → platform media session → background controls | Android/iOS smoke + Mac 限制清單 |
 | WP-11 | S3 Sol High | 01,02,08 | Mac 用戶 folder 授權 → bookmark/scan events → Gateway result | 權限恢復/撤銷、部分下載、sandbox package |
-| WP-12 | S3 Sol High | 03,08,11 | folder scan → reconcile playlist + import/outbox → remote metadata | 本機掃描重整／清單／素材 outbox 已完成；遠端 playlist metadata BLOCKED，列為後續整合項（不納 WP-13）。現有 outbox 只派送 material，Firebase adapter 未接線。晚到 SRT、rename、刪來源不刪收藏已自動測試 |
+| WP-12 | S3 Sol High | 03,08,11 | folder scan → reconcile playlist + import/outbox → remote metadata | 本機掃描重整／清單／素材 outbox 已完成；後續已接入 App 分類樹、教材歸屬及刪除標記的 Firebase 同步，正式跨裝置驗收待發布。來源綁定依裝置管理。晚到 SRT、rename、刪來源不刪收藏已自動測試 |
 | WP-13 | S3 Sol High | 08,09 | 多裝置離線操作 → conflict/auth/queued writes → safe merge | 本機 fake ledger 交錯寫、consent 後/claim 後切帳號、提交後切帳號同 opId 回放、權限拒絕均已測；Firebase/實機跨裝置 BLOCKED |
 | WP-14 | S3 Sol High | 06,10-13 | Mac iCloud folder → Firebase → iPhone / Android → 播放續播 | 實機 E2E 證據。Mac 原生匯入、Emulator 下載和本機雙 profile 接收已驗；iPhone／Android 完整鏈路 BLOCKED，見 [WP-14 交棒](agent/wp-14-handoff.md) |
 | WP-15 | S4 Luna High | 02-14 | FR/fixtures → 回歸與失敗注入 → QA 報告 | docs/08 Gate D 的測試面向；各 FR 有結果 |

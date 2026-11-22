@@ -1,88 +1,201 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/db/account_scope.dart';
 import '../../../core/db/local_database.dart';
+import '../domain/library_change.dart';
+import '../domain/library_structure.dart';
 import '../library_folder_repository.dart';
+import 'sqlite_library_changes.dart';
 
 final class SqliteLibraryFolderRepository implements LibraryFolderRepository {
   const SqliteLibraryFolderRepository(this._scope, this._database);
 
   final AccountScope _scope;
   final LocalDatabase _database;
+  SqliteLibraryChanges get _changes =>
+      SqliteLibraryChanges(_database, _scope.ownerId);
 
-  @override
-  Future<List<LibraryFolder>> listFolders() async {
+  Future<LibraryStructure> _structure() async =>
+      LibraryStructure(await _changes.read());
+
+  Future<Set<String>> _localIds() async {
     final rows = await _database
         .customSelect(
-          '''
-      SELECT p.id, p.title, COUNT(e.material_id) AS material_count
-      FROM playlists p
-      LEFT JOIN playlist_entries e
-        ON e.owner_id = p.owner_id AND e.playlist_id = p.id
-      WHERE p.owner_id = ? AND p.source_binding_id IS NULL
-      GROUP BY p.id, p.title, p.created_at_ms
-      ORDER BY p.created_at_ms DESC, p.id
-      ''',
+          'SELECT id FROM materials WHERE owner_id = ?',
           variables: [Variable.withString(_scope.ownerId)],
         )
         .get();
-    return List.unmodifiable(
-      rows.map(
-        (row) => LibraryFolder(
-          id: row.read<String>('id'),
-          title: row.read<String>('title'),
-          materialCount: row.read<int>('material_count'),
-        ),
-      ),
-    );
+    return rows.map((row) => row.read<String>('id')).toSet();
   }
 
-  @override
-  Future<void> createFolder(String title) {
-    final name = title.trim();
-    if (name.isEmpty) throw ArgumentError('The folder name is empty.');
-    return _database.customStatement(
-      '''INSERT INTO playlists (owner_id, id, title, created_at_ms)
-         VALUES (?, ?, ?, ?)''',
-      [
-        _scope.ownerId,
-        const Uuid().v4(),
-        name,
-        DateTime.now().millisecondsSinceEpoch,
-      ],
-    );
-  }
+  Future<bool> _materialExists(String id) async =>
+      (await _database
+          .customSelect(
+            'SELECT 1 FROM materials WHERE owner_id = ? AND id = ?',
+            variables: [
+              Variable.withString(_scope.ownerId),
+              Variable.withString(id),
+            ],
+          )
+          .getSingleOrNull()) !=
+      null;
 
   @override
-  Future<Set<String>> materialIds(String folderId) async {
-    final rows = await _database
-        .customSelect(
-          '''SELECT e.material_id FROM playlist_entries e
-         JOIN playlists p ON p.owner_id = e.owner_id AND p.id = e.playlist_id
-         WHERE e.owner_id = ? AND e.playlist_id = ? AND p.source_binding_id IS NULL''',
-          variables: [
-            Variable.withString(_scope.ownerId),
-            Variable.withString(folderId),
-          ],
-        )
-        .get();
-    return Set.unmodifiable(rows.map((row) => row.read<String>('material_id')));
-  }
+  Future<List<LibraryFolder>> listFolders() => _database.transaction(() async {
+    final structure = await _structure();
+    final counts = <String, int>{};
+    for (final id in await _localIds()) {
+      if (structure.removedMaterials.contains(id)) continue;
+      for (final folder in structure.foldersFor(id)) {
+        counts.update(folder, (count) => count + 1, ifAbsent: () => 1);
+      }
+    }
+    return [
+      for (final entry in structure.names.entries)
+        if (structure.folderExists(entry.key))
+          LibraryFolder(
+            id: entry.key,
+            title: entry.value,
+            parentId: structure.parentOf(entry.key),
+            materialCount: counts[entry.key] ?? 0,
+          ),
+    ]..sort((a, b) {
+      final order = a.title.compareTo(b.title);
+      return order != 0 ? order : a.id.compareTo(b.id);
+    });
+  });
+
+  @override
+  Future<Set<String>> materialIds(String folderId) =>
+      _database.transaction(() async {
+        final structure = await _structure();
+        return {
+          for (final id in await _localIds())
+            if (!structure.removedMaterials.contains(id))
+              if (structure.foldersFor(id).contains(folderId)) id,
+        };
+      });
+
+  @override
+  Future<Set<String>> assignedMaterialIds() => _database.transaction(() async {
+    final structure = await _structure();
+    return {
+      for (final id in await _localIds())
+        if (structure.foldersFor(id).isNotEmpty) id,
+    };
+  });
+
+  @override
+  Future<void> createFolder(String title) => _database.transaction(
+    () =>
+        _changes.edit(LibraryField.folderName, const Uuid().v4(), title.trim()),
+  );
+
+  @override
+  Future<void> renameFolder(String folderId, String title) =>
+      _editFolder(folderId, LibraryField.folderName, title.trim());
+
+  @override
+  Future<void> deleteFolder(String folderId) =>
+      _editFolder(folderId, LibraryField.folderDeleted, '1');
+
+  Future<void> _editFolder(String id, LibraryField field, String value) =>
+      _database.transaction(() async {
+        _requireFolder(await _structure(), id);
+        await _changes.edit(field, id, value);
+      });
+
+  @override
+  Future<void> moveFolder(
+    String folderId,
+    String? destination,
+  ) => _database.transaction(() async {
+    final structure = await _structure();
+    _requireFolder(structure, folderId);
+    _requireFolder(structure, destination);
+    var parent = destination;
+    while (parent != null) {
+      if (parent == folderId) throw ArgumentError('Invalid folder destination');
+      parent = structure.parentOf(parent);
+    }
+    await _changes.edit(LibraryField.folderParent, folderId, destination ?? '');
+  });
 
   @override
   Future<void> addMaterial(String folderId, String materialId) =>
-      _database.customStatement(
-        '''
-        INSERT INTO playlist_entries (owner_id, playlist_id, material_id, position)
-        SELECT p.owner_id, p.id, m.id,
-          (SELECT COALESCE(MAX(e.position), -1) + 1 FROM playlist_entries e
-           WHERE e.owner_id = p.owner_id AND e.playlist_id = p.id)
-        FROM playlists p
-        JOIN materials m ON m.owner_id = p.owner_id AND m.id = ?
-        WHERE p.owner_id = ? AND p.id = ? AND p.source_binding_id IS NULL
-        ON CONFLICT (owner_id, playlist_id, material_id) DO NOTHING
-        ''',
-        [materialId, _scope.ownerId, folderId],
-      );
+      _updatePlacement(materialId, folderId, add: true);
+
+  @override
+  Future<void> moveMaterial(
+    String materialId,
+    String? destination, {
+    String? sourceFolderId,
+  }) => _updatePlacement(materialId, destination, source: sourceFolderId);
+
+  Future<void> _updatePlacement(
+    String id,
+    String? destination, {
+    bool add = false,
+    String? source,
+  }) => _database.transaction(() async {
+    final structure = await _structure();
+    if (add &&
+        (!await _materialExists(id) || !structure.folderExists(destination!))) {
+      return;
+    }
+    await _requireMaterial(structure, id);
+    _requireFolder(structure, destination);
+    final placements = structure.placementsForEdit(id);
+    if (add && placements.contains(destination)) return;
+    if (!add) {
+      if (source != null) {
+        _requireFolder(structure, source);
+        if (!placements.remove(source)) {
+          throw StateError('Material is no longer in folder');
+        }
+      } else {
+        placements.clear();
+      }
+    }
+    // Moving to root removes all memberships so the item is visible there.
+    if (destination == null) {
+      placements.clear();
+    } else {
+      placements.add(destination);
+    }
+    await _changes.edit(
+      LibraryField.materialFolders,
+      id,
+      jsonEncode(placements.toList()..sort()),
+    );
+  });
+
+  @override
+  Future<void> renameMaterial(String materialId, String title) =>
+      _editMaterial(materialId, LibraryField.materialTitle, title.trim());
+
+  @override
+  Future<void> deleteMaterial(String materialId) =>
+      _editMaterial(materialId, LibraryField.materialDeleted, '1');
+
+  Future<void> _editMaterial(String id, LibraryField field, String value) =>
+      _database.transaction(() async {
+        await _requireMaterial(await _structure(), id);
+        await _changes.edit(field, id, value);
+      });
+
+  void _requireFolder(LibraryStructure structure, String? id) {
+    if (id != null && !structure.folderExists(id)) {
+      throw StateError('Folder unavailable');
+    }
+  }
+
+  Future<void> _requireMaterial(LibraryStructure structure, String id) async {
+    if (structure.removedMaterials.contains(id) || !await _materialExists(id)) {
+      throw StateError('Material unavailable');
+    }
+  }
 }

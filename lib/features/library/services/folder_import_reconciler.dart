@@ -107,6 +107,9 @@ final class FolderImportReconciler {
         LearningMaterial? material;
         if (oldAtPath != null && oldAtPath.contentSha256 == contentHash) {
           material = knownMaterials[oldAtPath.materialId];
+          // Existing source rows reference a material in this account. A
+          // hidden material must not be recreated by a rescan of the same bytes.
+          if (material == null) continue;
         }
         if (material == null && oldAtPath == null) {
           final renameCandidates = missingPrevious
@@ -114,8 +117,19 @@ final class FolderImportReconciler {
               .toList();
           if (renameCandidates.length == 1 &&
               !assignedMaterials.contains(renameCandidates.single.materialId)) {
-            material = knownMaterials[renameCandidates.single.materialId];
-            if (material != null) renamed++;
+            final previous = renameCandidates.single;
+            material = knownMaterials[previous.materialId];
+            if (material == null) {
+              await _repository.saveFolderSource(
+                bindingId: bindingId,
+                relativePath: entry.relativePath,
+                materialId: previous.materialId,
+                contentSha256: contentHash,
+              );
+              assignedMaterials.add(previous.materialId);
+              continue;
+            }
+            renamed++;
           }
         }
         if (material == null) {

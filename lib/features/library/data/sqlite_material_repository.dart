@@ -86,7 +86,7 @@ final class SqliteMaterialRepository
     final rows = await _database
         .customSelect(
           '''
-      SELECT m.id, m.owner_id, m.title, m.audio_asset_id,
+      SELECT m.id, m.owner_id, COALESCE(n.value, m.title) AS title, m.audio_asset_id,
              COALESCE(ms.state, m.status) AS status,
              m.created_at_ms, a.byte_length
       FROM materials AS m
@@ -94,7 +94,11 @@ final class SqliteMaterialRepository
         ON a.owner_id = m.owner_id AND a.id = m.audio_asset_id
       LEFT JOIN material_sync_state AS ms
         ON ms.owner_id = m.owner_id AND ms.material_id = m.id
-      WHERE m.owner_id = ?
+      LEFT JOIN library_changes n
+        ON n.owner_id = m.owner_id AND n.entity_id = m.id AND n.field = 'materialTitle'
+      LEFT JOIN library_changes d
+        ON d.owner_id = m.owner_id AND d.entity_id = m.id AND d.field = 'materialDeleted'
+      WHERE m.owner_id = ? AND d.entity_id IS NULL
       ORDER BY m.created_at_ms DESC, m.id ASC
       ''',
           variables: [Variable.withString(_scope.ownerId)],

@@ -16,7 +16,7 @@
 - 手機預設「按需下載」；顯示 cloud-only/downloading/local-ready/error 狀態；本機快取容量上限可設定。
 - 雲端資料與本地資料分層；FireStore 的離線快取不能取代檔案快取和 outbox 冪等操作。
 - 來源檔案被移除：標記 sourceMissing；除非使用者明確執行刪除，不刪雲端資產或收藏。
-- Firebase Storage 物件只允許 UID 擁有者讀取、上傳與刪除。因音訊及字幕物件路徑含 SHA-256，更新只允許 bytes 的 MD5/CRC32C 保持一致且保留 owner/hash 身分欄位；不同 bytes 必須以新雜湊建立新物件。明確刪除目前不自動清理 Firestore 教材/資產 metadata，故 App 刪除 UI 與參照安全的清理流程完成前，直接刪除物件可能留下失效雲端教材。
+- Firebase Storage 物件只允許 UID 擁有者讀取、上傳與刪除。因音訊及字幕物件路徑含 SHA-256，更新只允許 bytes 的 MD5/CRC32C 保持一致且保留 owner/hash 身分欄位；不同 bytes 必須以新雜湊建立新物件。App 刪除採教材刪除標記，媒體 GC 仍未提供。直接刪除 Storage 物件可能留下失效教材參照。
 
 重試分類、jitter、持久化 lease 與重送規則見 [ADR-009](12-decisions-and-risks.md)。
 
@@ -67,3 +67,12 @@ Web 與原生版共用教材佇列、Firestore 資料格式、Storage 路徑和 
 瀏覽器從 OPFS 或 IndexedDB 讀取音檔，逐段產生 multipart Blob，並在送出前取得目前 UID 的 Firebase ID token。上傳沿用每檔 100 MiB 限制，Blob 組裝與大檔記憶體用量須在目標瀏覽器驗收。下載串流經原有校驗後寫入瀏覽器私有儲存。
 
 本機驗收以 demo Firebase Emulator 的合成音訊驗證。正式環境需要同一 Firebase 專案中的 Firestore `(default)` 資料庫、已部署的 `firestore.rules` 和既有 Storage bucket。正式專案的 Firestore 和 Storage 先前已就緒，Web 開發來源 `http://localhost:7357` 已設定 Storage CORS。正式雙裝置收送仍待驗。進度同步另外需要已部署的 `syncProgress` Callable 與對應區域設定。
+
+## 8. 教材分類、名稱與刪除同步
+
+開啟自動同步的同一帳號，在支援此功能的裝置上共用 App 內的分類樹。雲端使用 `users/{uid}/libraryChanges/{field}_{entityId}`，記錄資料夾名稱、父資料夾、教材顯示名稱、教材分類歸屬及各自的刪除標記。分類使用穩定 ID，空資料夾和分組歸屬可先於音檔到達。SQLite v9 升級會補排此裝置既有的手動分類和成員。Mac 來源資料夾的存取權、書籤與路徑依裝置管理。
+
+- 操作先寫本機並保留待送狀態，沿用前景自動同步與「立即同步」。每批最多 20 筆，暫時失敗排後續重試。同一欄位有新修改時，只確認已成功送出的操作 ID，保留尚未送出的版本。
+- 名稱與位置分開合併。同欄位的離線衝突比較邏輯版本，再以操作 ID 排序。Firestore 寫入以讀取到的 `updateTime` 為前置條件，遇到競爭時重新讀取比較。多裝置同時移動導致循環時，循環內的資料夾顯示在首頁。[Firestore REST 寫入前置條件](https://firebase.google.com/docs/firestore/reference/rest/v1/Precondition)
+- 資料夾刪除後，內容移至最近的上層可用資料夾或首頁。從資料夾內把教材移到另一資料夾會替換目前所在的分類，其他分類仍保留。移到首頁會移出所有分類。
+- 教材刪除標記會持續生效，避免離線裝置重新顯示或下載已刪教材。收藏、學習紀錄和檔案內容保留，實體檔案回收仍由 ADR-019 追蹤。新版須先部署對應 Firestore Rules，且每台裝置都需更新 App。既有媒體文件格式不變。

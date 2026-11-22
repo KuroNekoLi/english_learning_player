@@ -6,6 +6,7 @@ import '../../progress/data/sqlite_progress_repository.dart';
 import '../../progress/domain/progress_models.dart';
 import '../../progress/services/progress_sync_coordinator.dart';
 import '../data/firebase_material_transport.dart';
+import '../data/firebase_library_sync.dart';
 import '../data/firebase_progress_transport.dart';
 import '../data/firebase_subtitle_sync.dart';
 import 'cloud_material_download_service.dart';
@@ -14,6 +15,7 @@ import 'cloud_sync_coordinator.dart';
 final class FirebaseSyncRuntime {
   FirebaseSyncRuntime({
     required this.uid,
+    this.library,
     required this.hasDueMedia,
     required this.transport,
     required this.coordinator,
@@ -27,6 +29,7 @@ final class FirebaseSyncRuntime {
   });
 
   final String uid;
+  final FirebaseLibrarySync? library;
   final Future<bool> Function(DateTime now) hasDueMedia;
   Future<SyncRunResult>? _mediaPass;
   final FirebaseMaterialTransport transport;
@@ -41,7 +44,9 @@ final class FirebaseSyncRuntime {
 
   Future<List<CloudMaterialMetadata>> refresh() async {
     await _checkConsent();
-    final catalog = await transport.listMaterials(uid);
+    await library?.pull();
+    final rawCatalog = await transport.listMaterials(uid);
+    final catalog = await library?.project(rawCatalog) ?? rawCatalog;
     final local = (await repository.listMaterials())
         .map((item) => item.id)
         .toSet();
@@ -63,6 +68,7 @@ final class FirebaseSyncRuntime {
     void Function()? onAudioCached,
     void Function(CloudDownloadPhase phase)? onPhaseChanged,
   }) async {
+    if (await isMaterialDeleted(metadata.materialId)) return;
     onPhaseChanged?.call(CloudDownloadPhase.audio);
     await downloader.download(
       metadata,
@@ -72,9 +78,13 @@ final class FirebaseSyncRuntime {
         onPhaseChanged?.call(CloudDownloadPhase.subtitles);
       },
     );
+    if (await isMaterialDeleted(metadata.materialId)) return;
     await subtitles.download(metadata.materialId);
     await _pullProgress(metadata.materialId);
   }
+
+  Future<bool> isMaterialDeleted(String id) async =>
+      await library?.local.materialDeleted(id) ?? false;
 
   Future<List<ProgressCandidate>> conflicts(String materialId) =>
       progress.unresolvedCandidates(materialId);
@@ -148,11 +158,33 @@ final class FirebaseSyncRuntime {
       uid,
       'materials',
     ]);
+    SyncRunResult mediaResult = SyncRunResult.uploaded;
     for (var i = 0; i < 20; i++) {
       final status = await coordinator.runOne();
-      if (status != SyncRunResult.uploaded) return status;
+      if (status != SyncRunResult.uploaded) {
+        mediaResult = status;
+        break;
+      }
     }
-    return SyncRunResult.uploaded;
+    if (mediaResult == SyncRunResult.waitingForAuthentication ||
+        mediaResult == SyncRunResult.waitingForConsent) {
+      return mediaResult;
+    }
+    try {
+      final sent = await library?.push() ?? false;
+      if (sent && mediaResult == SyncRunResult.idle) {
+        return SyncRunResult.uploaded;
+      }
+    } on SyncFailure catch (error) {
+      if (error.code == 'consent_required') {
+        return SyncRunResult.waitingForConsent;
+      }
+      if (error.kind == SyncFailureKind.permissionDenied) {
+        return SyncRunResult.needsAttention;
+      }
+      rethrow;
+    }
+    return mediaResult;
   }
 
   Future<SyncRunResult> _syncProgress() async {

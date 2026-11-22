@@ -7,8 +7,9 @@ import '../material_repository.dart';
 import '../services/media_selection_import_service.dart';
 import 'audio_transfer_tile.dart';
 import 'importing_audio_tile.dart';
+import 'library_item_menu.dart';
 
-final class LibraryMaterialList extends StatelessWidget {
+final class LibraryMaterialList extends StatefulWidget {
   const LibraryMaterialList({
     super.key,
     required this.library,
@@ -18,6 +19,8 @@ final class LibraryMaterialList extends StatelessWidget {
     this.downloadProgress = const [],
     this.folders = const [],
     this.onOpenFolder,
+    this.onFolderAction,
+    this.onMaterialAction,
     this.onRetryFolders,
     this.emptyMessage = '目前沒有教材',
     required this.onRetry,
@@ -31,19 +34,54 @@ final class LibraryMaterialList extends StatelessWidget {
   final List<CloudDownloadProgress> downloadProgress;
   final List<LibraryFolder> folders;
   final ValueChanged<LibraryFolder>? onOpenFolder;
+  final void Function(LibraryFolder, LibraryItemAction)? onFolderAction;
+  final void Function(LearningMaterial, LibraryItemAction)? onMaterialAction;
   final VoidCallback? onRetryFolders;
   final String emptyMessage;
   final VoidCallback onRetry;
   final ValueChanged<LearningMaterial> onOpen;
 
   @override
+  State<LibraryMaterialList> createState() => _LibraryMaterialListState();
+}
+
+final class _LibraryMaterialListState extends State<LibraryMaterialList> {
+  bool _selecting = false;
+  final Set<String> _selectedMaterialIds = {};
+
+  void _toggleSelection(LearningMaterial material) {
+    setState(() {
+      if (!_selectedMaterialIds.add(material.id)) {
+        _selectedMaterialIds.remove(material.id);
+      }
+    });
+  }
+
+  void _startSelection(LearningMaterial material) {
+    setState(() {
+      _selecting = true;
+      _selectedMaterialIds.add(material.id);
+    });
+  }
+
+  void _stopSelection() {
+    setState(() {
+      _selecting = false;
+      _selectedMaterialIds.clear();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) => Center(
     child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 920),
-      child: library.when(
+      child: widget.library.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, _) => Center(
-          child: TextButton(onPressed: onRetry, child: const Text('無法讀取教材，重試')),
+          child: TextButton(
+            onPressed: widget.onRetry,
+            child: const Text('無法讀取教材，重試'),
+          ),
         ),
         data: (_) => _content(),
       ),
@@ -51,19 +89,19 @@ final class LibraryMaterialList extends StatelessWidget {
   );
 
   Widget _content() {
-    final localIds = materials.map((material) => material.id).toSet();
-    final pendingDownloads = downloadProgress
+    final localIds = widget.materials.map((material) => material.id).toSet();
+    final pendingDownloads = widget.downloadProgress
         .where((progress) => !localIds.contains(progress.materialId))
         .toList();
     final itemCount =
-        folders.length +
-        (onRetryFolders == null ? 0 : 1) +
-        importProgress.length +
+        widget.folders.length +
+        (widget.onRetryFolders == null ? 0 : 1) +
+        widget.importProgress.length +
         pendingDownloads.length +
-        materials.length;
-    if (itemCount == 0) return Center(child: Text(emptyMessage));
+        widget.materials.length;
+    if (itemCount == 0) return Center(child: Text(widget.emptyMessage));
     const padding = EdgeInsets.all(16);
-    return gridMode
+    final list = widget.gridMode
         ? GridView.builder(
             padding: padding,
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -80,41 +118,64 @@ final class LibraryMaterialList extends StatelessWidget {
             itemCount: itemCount,
             itemBuilder: (context, index) => _itemAt(index, pendingDownloads),
           );
+    if (!_selecting) return list;
+    return Column(
+      children: [
+        Material(
+          color: Theme.of(context).colorScheme.secondaryContainer,
+          child: ListTile(
+            dense: true,
+            title: Text('已選取 ${_selectedMaterialIds.length} 個教材'),
+            trailing: TextButton(
+              onPressed: _stopSelection,
+              child: const Text('完成'),
+            ),
+          ),
+        ),
+        Expanded(child: list),
+      ],
+    );
   }
 
   Widget _itemAt(int index, List<CloudDownloadProgress> pendingDownloads) {
-    if (onRetryFolders != null) {
+    if (widget.onRetryFolders != null) {
       if (index == 0) {
         return TextButton(
-          onPressed: onRetryFolders,
+          onPressed: widget.onRetryFolders,
           child: const Text('無法讀取資料夾，重試'),
         );
       }
       index--;
     }
-    if (index < folders.length) {
-      final folder = folders[index];
+    if (index < widget.folders.length) {
+      final folder = widget.folders[index];
       return Card(
         child: ListTile(
           leading: const Icon(Icons.folder_outlined),
           title: Text(folder.title),
           subtitle: Text('${folder.materialCount} 個教材'),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: widget.onFolderAction == null
+              ? null
+              : LibraryItemMenu(
+                  folder: true,
+                  onSelected: (action) =>
+                      widget.onFolderAction?.call(folder, action),
+                ),
           minVerticalPadding: 12,
-          onTap: () => onOpenFolder?.call(folder),
+          onTap: () => widget.onOpenFolder?.call(folder),
         ),
       );
     }
-    index -= folders.length;
-    if (index < importProgress.length) {
-      return ImportingAudioTile(progress: importProgress[index]);
+    index -= widget.folders.length;
+    if (index < widget.importProgress.length) {
+      return ImportingAudioTile(progress: widget.importProgress[index]);
     }
-    final downloadIndex = index - importProgress.length;
+    final downloadIndex = index - widget.importProgress.length;
     if (downloadIndex < pendingDownloads.length) {
       return _downloadTile(pendingDownloads[downloadIndex]);
     }
     final materialIndex = downloadIndex - pendingDownloads.length;
-    return _materialTile(materials[materialIndex]);
+    return _materialTile(widget.materials[materialIndex]);
   }
 
   Widget _downloadTile(CloudDownloadProgress progress) => AudioTransferTile(
@@ -144,10 +205,21 @@ final class LibraryMaterialList extends StatelessWidget {
 
   Widget _materialTile(LearningMaterial material) => _MaterialTile(
     material: material,
-    downloadProgress: downloadProgress
+    downloadProgress: widget.downloadProgress
         .where((progress) => progress.materialId == material.id)
         .firstOrNull,
-    onTap: () => onOpen(material),
+    selecting: _selecting,
+    selected: _selectedMaterialIds.contains(material.id),
+    onSelected: () => _toggleSelection(material),
+    onAction: (action) {
+      if (action == LibraryItemAction.multiSelect) {
+        _startSelection(material);
+      } else {
+        widget.onMaterialAction?.call(material, action);
+      }
+    },
+    onTap: () =>
+        _selecting ? _toggleSelection(material) : widget.onOpen(material),
   );
 }
 
@@ -155,11 +227,19 @@ final class _MaterialTile extends StatelessWidget {
   const _MaterialTile({
     required this.material,
     required this.downloadProgress,
+    required this.selecting,
+    required this.selected,
+    required this.onSelected,
+    required this.onAction,
     required this.onTap,
   });
 
   final LearningMaterial material;
   final CloudDownloadProgress? downloadProgress;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback onSelected;
+  final ValueChanged<LibraryItemAction> onAction;
   final VoidCallback onTap;
 
   @override
@@ -168,10 +248,12 @@ final class _MaterialTile extends StatelessWidget {
     child: ListTile(
       onTap: onTap,
       minVerticalPadding: 12,
-      leading: _leading(context),
+      leading: selecting
+          ? Checkbox(value: selected, onChanged: (_) => onSelected())
+          : _leading(context),
       title: Text(material.title),
       subtitle: Text(_statusLabel),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: selecting ? null : LibraryItemMenu(onSelected: onAction),
     ),
   );
 

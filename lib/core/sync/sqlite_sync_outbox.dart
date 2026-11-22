@@ -79,6 +79,11 @@ final class SqliteSyncOutbox implements SyncOutbox {
 
   static const _eligibleMedia = '''
         WHERE job.owner_id = ?1 AND job.next_retry_at_ms <= ?2
+          AND NOT EXISTS (
+            SELECT 1 FROM library_changes AS change
+            WHERE change.owner_id = job.owner_id AND change.entity_id = job.entity_id
+              AND change.field = 'materialDeleted'
+          )
           AND (job.state IN ('queued', 'waitingForAuth') OR (job.state = 'leased' AND job.lease_until_ms <= ?3))
           AND (
             job.entity_type = 'material'

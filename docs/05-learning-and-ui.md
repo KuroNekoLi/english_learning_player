@@ -60,7 +60,7 @@ bilingualShown
 ## 8. WP-06 Player / Library 實作契約
 - `LibraryPage` 透過 `libraryViewModelProvider` 讀取帳號範圍內教材；使用既有匯入入口加入本機音訊，選取教材後進入 Player。寬度低於 900dp 使用單欄，否則顯示導覽側欄與受限寬度內容。
 - 原生與 Web 教材庫共用「＋」選單。「匯入字幕」先選本機教材，再選 SRT，沿用播放器的自動辨識及手動選軌。雙語字幕兩軌在同一筆交易內儲存，本機來源教材的字幕也在該交易中依既有規則排入同步佇列。
-- 「新增資料夾」以現有 SQLite playlist 表建立目前帳號的本機分類。首頁可開啟分類並加入已匯入或下載的教材，每份教材可加入多個分類。手動分類目前各裝置獨立保存，來源綁定資料夾由既有匯入流程管理。
+- 「新增資料夾」建立目前帳號的 App 分類。首頁顯示頂層資料夾與未分類教材。資料夾與教材均可由三點選單重新命名、移動或刪除。每份教材仍可透過「加入教材」加入多個分類。分類的跨裝置規則見 [同步規格第 8 節](06-cloud-sync.md#8-教材分類名稱與刪除同步)。
 - `PlayerPage` 只呼叫 Riverpod `PlayerViewModel`。ViewModel 經 `MaterialPlaybackLoader` 驗證教材 owner、查詢 app 私有音訊副本及字幕軌，再透過 `AudioEngine` 播放；Widget 不依賴 just_audio、檔案 API 或資料庫。
 - Player 在手機與桌面使用同一欄布局。教材名稱只出現在頂部導覽列，播放區集中進度、播放/暫停、上一句、下一句、倍速、句循環與精聽操作。語言切換和字幕設定集中於逐句字幕工具列，字幕清單使用剩餘視窗高度。Space 播放/暫停、右方向鍵下一句。
 - 一般字幕顯示模式只存在目前 Player session；變更時更新 LearningSession，不 Seek、不改播放位置。字幕軌選取及毫秒 offset 仍呼叫既有 `MaterialRepository.saveSubtitleTrack` 持久化；手動指定透過既有 `manual` 旗標，不覆寫 WP-03 的手動優先規則。套用軌道設定時重建 LearningSession，不重載或 Seek 音訊。

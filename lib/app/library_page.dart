@@ -7,6 +7,7 @@ import '../features/library/library_folder_view_model.dart';
 import '../features/library/material_repository.dart';
 import '../features/library/services/media_selection_import_service.dart';
 import '../features/library/widgets/library_actions_menu.dart';
+import '../features/library/widgets/library_item_actions.dart';
 import '../features/library/widgets/library_material_list.dart';
 import '../features/library/widgets/source_management_page.dart';
 import '../features/player/player_page.dart';
@@ -98,6 +99,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   Widget build(BuildContext context) {
     final library = ref.watch(libraryViewModelProvider);
     final folders = ref.watch(libraryFoldersProvider);
+    final assigned =
+        ref.watch(libraryAssignedMaterialsProvider).value ?? const <String>{};
     final downloadProgress = ref.watch(
       firebaseSyncViewModelProvider.select(
         (state) => state.downloadProgress.values.toList(growable: false),
@@ -106,7 +109,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     final materials = library.asData?.value ?? const <LearningMaterial>[];
     final query = _searchController.text.trim().toLowerCase();
     final visibleMaterials = materials
-        .where((material) => material.title.toLowerCase().contains(query))
+        .where(
+          (material) => query.isEmpty
+              ? !assigned.contains(material.id)
+              : material.title.toLowerCase().contains(query),
+        )
         .toList();
 
     return Scaffold(
@@ -168,10 +175,21 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   downloadProgress: downloadProgress,
                   folders: (folders.value ?? const [])
                       .where(
-                        (folder) => folder.title.toLowerCase().contains(query),
+                        (folder) => query.isEmpty
+                            ? folder.parentId == null
+                            : folder.title.toLowerCase().contains(query),
                       )
                       .toList(),
                   onOpenFolder: (folder) => openLibraryFolder(context, folder),
+                  onFolderAction: (folder, action) =>
+                      handleFolderLibraryAction(context, ref, folder, action),
+                  onMaterialAction: (material, action) =>
+                      handleMaterialLibraryAction(
+                        context,
+                        ref,
+                        material,
+                        action,
+                      ),
                   onRetryFolders: folders.hasError
                       ? () => ref.invalidate(libraryFoldersProvider)
                       : null,

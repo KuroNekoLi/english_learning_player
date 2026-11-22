@@ -53,7 +53,10 @@ final class FirebaseDocuments {
   Future<Map<String, Object>?> readDocument(
     String uid,
     List<String> path,
-  ) async {
+  ) async => (await readVersionedDocument(uid, path))?.fields;
+
+  Future<({Map<String, Object> fields, String? updateTime})?>
+  readVersionedDocument(String uid, List<String> path) async {
     _requireOwner(uid, path);
     final response = await http.send(
       'GET',
@@ -65,7 +68,11 @@ final class FirebaseDocuments {
       return null;
     }
     await http.requireSuccess(response);
-    return _fromFields(await http.json(response));
+    final record = await http.json(response);
+    return (
+      fields: _fromFields(record),
+      updateTime: record['updateTime'] as String?,
+    );
   }
 
   Future<void> writeDocument(
@@ -87,6 +94,54 @@ final class FirebaseDocuments {
         'fields': record.map((key, value) => MapEntry(key, _value(value))),
       }),
     );
+    await http.requireSuccess(response);
+    await http.read(response).drain<void>();
+  }
+
+  /// Replace one document only if it still matches the version read by the
+  /// caller. A null version means the document must not exist.
+  Future<void> writeVersionedDocument(
+    String uid,
+    List<String> path,
+    Map<String, Object> record, {
+    required String? updateTime,
+  }) async {
+    _requireOwner(uid, path);
+    final root = endpoint.firestore(const []);
+    final response = await http.send(
+      'POST',
+      root.replace(
+        pathSegments: [
+          ...root.pathSegments.take(root.pathSegments.length - 1),
+          'documents:commit',
+        ],
+      ),
+      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      contentType: 'application/json',
+      bytes: FirebaseHttp.encode({
+        'writes': [
+          {
+            'update': {
+              'name': [...root.pathSegments.skip(1), ...path].join('/'),
+              'fields': record.map(
+                (key, value) => MapEntry(key, _value(value)),
+              ),
+            },
+            'currentDocument': updateTime == null
+                ? {'exists': false}
+                : {'updateTime': updateTime},
+          },
+        ],
+      }),
+    );
+    if (response.statusCode == 400) {
+      final error = (await http.json(response))['error'];
+      final conflict = error is Map && error['status'] == 'FAILED_PRECONDITION';
+      throw SyncFailure(
+        conflict ? SyncFailureKind.transient : SyncFailureKind.invalidData,
+        conflict ? 'library_write_conflict' : 'firebase_http_400',
+      );
+    }
     await http.requireSuccess(response);
     await http.read(response).drain<void>();
   }

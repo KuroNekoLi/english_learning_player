@@ -33,7 +33,7 @@
 | ADR-025 | ACCEPTED | WP-07 本機書籤保存不可變 cue anchor snapshot；字幕變更依文字與時間重定位，無唯一匹配時保留未定位 | WP-07 SQLite v2→v3 migration、重開 DB、subtitle revision relocation、ambiguous 與 account isolation tests |
 | ADR-026 | PROPOSED | WP-08 以 profile-scoped SQLite outbox + 注入式 Auth/Cloud transport；demo Firebase Emulator 驗證 Rules | 本機 transaction、fake transport 與三組 Emulator Rules 測試通過；FlutterFire 正式接線受 ADR-010/011/017/018 阻擋，SHA-256 read-back 成本未核定 |
 | ADR-027 | ACCEPTED | WP-09 本機 canonical/checkpoint/conflict 與進度 outbox 落 SQLite；雲端交易僅經 ProgressSyncTransport；播放器只在開啟時恢復已確認位置 | SQLite v4→v5 migration、fake receipt/revision/sequence/衝突測試、Player Widget 測試；真實 Firestore transaction 與 Emulator 進度規則仍待 FlutterFire/雲端前置條件 |
-| ADR-028 | ACCEPTED（本機）／OPEN（遠端清單 metadata） | WP-12 完整 scan + account-scoped playlist/source catalog；唯一缺席舊路徑與相同 SHA-256 才視為 rename；缺席不刪教材或收藏 | Drift v5→v6 migration、晚到 SRT、唯一/歧義 rename、掃描錯誤、來源移除與收藏保留測試；既有 sync coordinator 僅派送 material，remote playlist metadata 需後續獨立契約 |
+| ADR-028 | ACCEPTED（本機及 App 分類同步設計） | WP-12 完整 scan + account-scoped playlist/source catalog；唯一缺席舊路徑與相同 SHA-256 才視為 rename；缺席不刪教材或收藏 | Drift v5→v6 migration、晚到 SRT、唯一/歧義 rename、掃描錯誤、來源移除與收藏保留測試；分類樹與教材管理使用 SQLite v9 及 UID 專屬 Firestore metadata，正式驗收待發布 |
 | ADR-029 | ACCEPTED（本機驗收）／OPEN（遠端發佈） | WP-14 透過 Firebase REST 與 Callable 接入既有同步契約，採測試帳號及手動同步 | 兩個 Emulator 客戶端與 macOS Release 證據見 [WP-14 Firebase 交棒](agent/wp-14-firebase-handoff.md)。正式 Auth、用量及發佈仍依 ADR-010／011／014／017／018 追蹤 |
 | ADR-031 | ACCEPTED（平台與方向）／OPEN（相容性、發布） | Web 為第四個正式支援平台，採 Drift WasmDatabase、瀏覽器私有儲存與 Google Web OAuth | 設立 WP-17。瀏覽器矩陣、部署選項與實際登入／同步由 T-WEB-01..06 驗收。 |
 | ADR-032 | ACCEPTED（bucket 與 UID 隔離）／OPEN（刪除參照清理、費用上限） | 專案 `english-learning-player-auth` 使用 `english-learning-player-auth.firebasestorage.app`（`us-east1`）；owner 可管理自身 assets/subtitles | Blaze 已由使用者連結。bucket 區域建立後不能變更。內容地址物件更新需保持 bytes checksum 與應用身分 metadata；owner delete 可能留下 Firestore metadata 指向的失效物件，App 刪除/GC 尚未實作。費用上限仍待設定。 |
@@ -148,15 +148,16 @@
 - 驗證：`test/features/progress/progress_sync_test.dart` 覆蓋 11 項 local/fake transaction 邊界；`test/features/player/player_page_test.dart` 覆蓋 canonical resume 與 cue seek checkpoint。正式跨裝置交錯與 Firestore atomicity 尚無實際服務證據。
 
 ### ADR-028 — WP-12 資料夾重整與本機清單
-狀態：ACCEPTED（本機重整與刪除保留）；OPEN（遠端 playlist/folder metadata schema）
+狀態：ACCEPTED（本機重整及 App 分類同步設計）。正式部署與真機收送待驗。
 
 - `FolderAccessGateway.scan` 必須成功回傳完整 inventory 後，才把已知來源標為本輪缺席；scan 失敗不變更來源存在狀態。pendingDownload 代表存在。只有成功 staging 的音訊會建立新 material；來源檔案唯讀，私有 media copy 與 WP-02 source hash/outbox 路徑重用。
 - 每個 account DB 保存 `playlists`、`playlist_entries` 與 `folder_source_entries`。相對來源路徑只限本機帳號資料庫，不進同步 payload。缺席只更新本機來源目錄，不刪教材、playlist entry、bookmark 或 progress。
 - rename 的可測判定是同 binding 下，唯一缺席的舊來源具有相同 SHA-256；命中時新路徑沿用舊 materialId。若候選不唯一則保留新教材，遵守 ADR-020 的不同來源不得自動合併。這不保證識別內容改變的 rename；檔案資源識別子尚未由 `FolderEntry` 提供。
 - subtitle 每輪使用 WP-03 `SubtitleFilenameMatcher`。歧義不自動匯入；已選 manual track 的 sourceName 優先；late subtitle 在之後完整掃描時匯入。相同來源名及原始 bytes 的 track 不重複建立。
 - Schema v6 新表只加本機清單/來源目錄，v5→v6 不改舊教材/收藏；migration 測試建立含舊 material 的 v5 情境後升級確認資料仍在。
-- 目前 `SqliteSyncOutbox.claimNext` 只派送 `entity_type='material'`，`CloudSyncCoordinator` 也只發布 material/asset；因此 playlist 和 folder binding 的 remote metadata 尚未送出。WP-12 不建立未被 transport 消費的孤兒 outbox 操作，也未連雲端/付費服務。需在後續核准 schema、權限規則與 transport 後補實作/驗證。
+- WP-12 初版的 `SqliteSyncOutbox.claimNext` 只派送 `entity_type='material'`，`CloudSyncCoordinator` 也只發布 material/asset；因此 playlist 和 folder binding 的 remote metadata 尚未送出。WP-12 不建立未被 transport 消費的孤兒 outbox 操作，也未連雲端/付費服務。App 分類的後續補件見下方。
 - 使用者已指定將遠端 playlist/folder metadata 記為後續整合項；該項不屬於 WP-13 的進度衝突/帳號隔離範圍。後續整合須先核准 metadata schema、Rules 與 transport，並保持本機 source path/bookmark 不外送。
+- 目前延伸實作採用 SQLite v9 持久化待送異動，以及 Firestore UID 專屬欄位文件。使用者已要求同帳號同步 App 分類樹。衝突、刪除與發佈順序見 [同步規格第 8 節](06-cloud-sync.md#8-教材分類名稱與刪除同步)。
 - 證據：`test/features/library/folder_import_reconciler_test.dart` 覆蓋 late SRT/重開 DB、playlist 與 material outbox、唯一 rename/刪來源保留收藏、歧義 rename 不合併、scan failure 保留狀態、pending download、v5→v6 migration。日期：2026-11-17。
 
 ### ADR-024 — WP-06 播放器 UI 狀態與資料存取邊界

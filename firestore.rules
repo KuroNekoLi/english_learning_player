@@ -95,6 +95,34 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /users/{uid}/libraryChanges/{changeId} {
+      function validChange() {
+        let data = request.resource.data;
+        let keys = ['ownerId', 'schemaVersion', 'field', 'entityId', 'value', 'revision', 'opId'];
+        return data.keys().hasOnly(keys) && data.keys().hasAll(keys)
+          && data.ownerId == uid && data.schemaVersion == 1
+          && data.entityId is string && data.entityId.matches('^[A-Za-z0-9_-]{1,128}$')
+          && changeId == data.field + '_' + data.entityId
+          && data.revision is int && data.revision > 0 && data.revision <= 9007199254740991
+          && data.opId is string && data.opId.matches('^[a-f0-9-]{36}$')
+          && data.value is string
+          && ((data.field in ['folderName', 'materialTitle']
+                && data.value.size() > 0 && data.value.size() <= 80)
+            || (data.field == 'folderParent'
+                && (data.value == '' || data.value.matches('^[A-Za-z0-9_-]{1,128}$'))
+                && data.value != data.entityId)
+            || (data.field == 'materialFolders' && data.value.size() <= 32768
+                && data.value.matches('^\\[("[A-Za-z0-9_-]{1,128}"(,"[A-Za-z0-9_-]{1,128}")*)?\\]$'))
+            || (data.field in ['folderDeleted', 'materialDeleted'] && data.value == '1'));
+      }
+
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && validChange();
+      allow update: if isOwner(uid) && validChange()
+        && request.resource.data.revision >= resource.data.revision;
+      allow delete: if false;
+    }
+
     match /users/{uid}/progress/{materialId} {
       allow get: if isOwner(uid);
       allow list, write: if false;

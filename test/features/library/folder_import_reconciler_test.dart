@@ -10,6 +10,7 @@ import 'package:english_learning_player/core/files/app_media_store.dart';
 import 'package:english_learning_player/features/bookmarks/data/sqlite_bookmark_repository.dart';
 import 'package:english_learning_player/features/bookmarks/domain/bookmark.dart';
 import 'package:english_learning_player/features/library/data/sqlite_material_repository.dart';
+import 'package:english_learning_player/features/library/data/sqlite_library_folder_repository.dart';
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
 import 'package:english_learning_player/features/library/services/folder_import_reconciler.dart';
 import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
@@ -219,6 +220,31 @@ void main() {
           database: database,
         ).listBookmarks()),
         hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'a deleted source material stays hidden after rescan and rename',
+    () async {
+      gateway.put('lesson.mp3', [1, 2, 3]);
+      await reconciler().reconcile();
+      final original = (await materials.listMaterials()).single;
+      await SqliteLibraryFolderRepository(
+        scope,
+        database,
+      ).deleteMaterial(original.id);
+      expect((await reconciler().reconcile()).importedAudio, 0);
+      gateway.remove('lesson.mp3');
+      gateway.put('renamed.mp3', [1, 2, 3]);
+      expect((await reconciler().reconcile()).importedAudio, 0);
+      expect(await materials.listMaterials(), isEmpty);
+      final sources = await materials.listFolderSources(
+        'primary-icloud-source',
+      );
+      expect(
+        sources.where((source) => source.present).single.materialId,
+        original.id,
       );
     },
   );

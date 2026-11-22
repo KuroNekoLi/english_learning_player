@@ -10,7 +10,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -71,6 +71,7 @@ class LocalDatabase extends GeneratedDatabase {
       await _createProgressSchema();
       await _createFolderLibrarySchema();
       await _createSyncPreferenceSchema();
+      await _createLibraryChangesSchema();
     },
     onUpgrade: (migrator, from, to) async {
       if (from < 2) await _createSubtitleSchema();
@@ -83,10 +84,73 @@ class LocalDatabase extends GeneratedDatabase {
       if (from < 6) await _createFolderLibrarySchema();
       if (from < 7) await transaction(_backfillSubtitleSyncOperations);
       if (from < 8) await _createSyncPreferenceSchema();
+      if (from < 9) {
+        await transaction(() => _createLibraryChangesSchema(backfill: true));
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },
+  );
+
+  Future<void> _createLibraryChangesSchema({bool backfill = false}) async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS library_changes (
+        owner_id TEXT NOT NULL,
+        field TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        value TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        op_id TEXT NOT NULL,
+        pending INTEGER NOT NULL CHECK (pending IN (0, 1)),
+        PRIMARY KEY (owner_id, field, entity_id)
+      )
+    ''');
+    if (!backfill) return;
+    final folders = await customSelect(
+      'SELECT owner_id, id, title FROM playlists WHERE source_binding_id IS NULL',
+    ).get();
+    for (final row in folders) {
+      await _seedLibraryChange(
+        row.read<String>('owner_id'),
+        'folderName',
+        row.read<String>('id'),
+        row.read<String>('title'),
+      );
+    }
+    final entries = await customSelect('''
+      SELECT e.owner_id, e.material_id, e.playlist_id
+      FROM playlist_entries e JOIN playlists p
+        ON p.owner_id = e.owner_id AND p.id = e.playlist_id
+      WHERE p.source_binding_id IS NULL ORDER BY e.playlist_id
+    ''').get();
+    final memberships = <(String, String), List<String>>{};
+    for (final row in entries) {
+      (memberships[(
+                row.read<String>('owner_id'),
+                row.read<String>('material_id'),
+              )] ??=
+              [])
+          .add(row.read<String>('playlist_id'));
+    }
+    for (final entry in memberships.entries) {
+      await _seedLibraryChange(
+        entry.key.$1,
+        'materialFolders',
+        entry.key.$2,
+        jsonEncode(entry.value),
+      );
+    }
+  }
+
+  Future<void> _seedLibraryChange(
+    String owner,
+    String field,
+    String id,
+    String value,
+  ) => customStatement(
+    'INSERT OR IGNORE INTO library_changes VALUES (?, ?, ?, ?, 1, ?, 1)',
+    [owner, field, id, value, const Uuid().v4()],
   );
 
   Future<void> _createSyncPreferenceSchema() => customStatement('''

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/db/account_database_providers.dart';
 import '../../core/sync/sync_contracts.dart';
 import '../library/library_view_model.dart';
+import '../library/library_folder_view_model.dart';
 import '../progress/domain/progress_models.dart';
 import 'firebase_sync_dependencies.dart';
 import 'services/cloud_sync_coordinator.dart';
@@ -86,6 +87,7 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
       }
       final catalog = await runtime.refresh();
       if (!await _canPresent(runtime) || state.busy) return;
+      _refreshLibrary();
       state = state.copyWith(materials: List.unmodifiable(catalog));
       await _downloadMissing(runtime, catalog);
     } catch (error) {
@@ -139,6 +141,7 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
     if (!await _canPresent(runtime)) {
       return;
     }
+    _refreshLibrary();
     state = state.copyWith(
       busy: true,
       materials: List.unmodifiable(catalog),
@@ -147,6 +150,13 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
     );
     await _downloadMissing(runtime, catalog);
   });
+
+  void _refreshLibrary() {
+    ref.invalidate(libraryViewModelProvider);
+    ref.invalidate(libraryFoldersProvider);
+    ref.invalidate(folderMaterialsProvider);
+    ref.invalidate(libraryAssignedMaterialsProvider);
+  }
 
   String _message(SyncRunResult result) => switch (result) {
     SyncRunResult.uploaded => '已送出一批教材，可以繼續同步。',
@@ -169,13 +179,17 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
     final localIds = (await runtime.repository.listMaterials())
         .map((material) => material.id)
         .toSet();
+    if (!await _canPresent(runtime)) return;
+    final catalogIds = catalog.map((item) => item.materialId).toSet();
     final missing = catalog
         .where((material) => !localIds.contains(material.materialId))
         .toList();
     final progress = Map<String, CloudDownloadProgress>.of(
       state.downloadProgress,
     );
-    progress.removeWhere((id, _) => localIds.contains(id));
+    progress.removeWhere(
+      (id, _) => !catalogIds.contains(id) || localIds.contains(id),
+    );
     for (final material in missing) {
       final key = _downloadKey(runtime.uid, material.materialId);
       final retryAt = _downloadRetryAfter[key];
@@ -207,6 +221,10 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
     bool force = false,
   }) async {
     final uid = runtime.uid;
+    if (await runtime.isMaterialDeleted(metadata.materialId) ||
+        !await _canPresent(runtime)) {
+      return;
+    }
     final key = _downloadKey(uid, metadata.materialId);
     if (!_activeDownloads.add(key)) return;
     final retryAt = _downloadRetryAfter[key];
@@ -243,7 +261,11 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
             ),
           );
         },
-        onAudioCached: () => ref.invalidate(libraryViewModelProvider),
+        onAudioCached: () {
+          if (ref.mounted && ref.read(accountScopeProvider).ownerId == uid) {
+            _refreshLibrary();
+          }
+        },
         onPhaseChanged: (nextPhase) {
           phase = nextPhase;
           _publishDownloadProgress(
