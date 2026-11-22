@@ -1,14 +1,20 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 final class LibraryAddMenu extends StatelessWidget {
   const LibraryAddMenu({
     super.key,
     required this.onImportMedia,
-    required this.onImportFolder,
+    this.onImportFolder,
   });
 
   final VoidCallback? onImportMedia;
-  final VoidCallback onImportFolder;
+  final VoidCallback? onImportFolder;
+
+  bool get _showPhotoImport =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   @override
   Widget build(BuildContext context) => MenuAnchor(
@@ -18,15 +24,16 @@ final class LibraryAddMenu extends StatelessWidget {
         onPressed: onImportMedia,
         child: const Text('匯入媒體'),
       ),
-      const MenuItemButton(
-        leadingIcon: Icon(Icons.photo_library_outlined),
-        onPressed: null,
-        child: Text('從相簿匯入（尚未提供）'),
-      ),
+      if (_showPhotoImport)
+        const MenuItemButton(
+          leadingIcon: Icon(Icons.photo_library_outlined),
+          onPressed: null,
+          child: Text('從相簿匯入（尚未提供）'),
+        ),
       MenuItemButton(
         leadingIcon: const Icon(Icons.drive_folder_upload_outlined),
         onPressed: onImportFolder,
-        child: const Text('匯入資料夾'),
+        child: Text(onImportFolder == null ? '匯入資料夾（此平台尚未提供）' : '匯入資料夾'),
       ),
       const MenuItemButton(
         leadingIcon: Icon(Icons.subtitles_outlined),
