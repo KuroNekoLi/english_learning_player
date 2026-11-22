@@ -62,6 +62,8 @@ Web 與原生版共用教材佇列、Firestore 資料格式、Storage 路徑和 
 
 接收裝置用同帳號在本機開啟同步後，自動載入雲端清單。帳號頁可按需下載音檔及已發布的字幕。使用中每兩分鐘重新整理，並補抓已下載教材晚發布的字幕。播放器下次開啟教材時讀取本機更新的字幕。
 
+自動同步已開啟時，每次目錄刷新會比對本機教材；缺少的雲端教材會自動下載音檔、字幕與進度。教材庫以音訊匯入相同的教材卡片和圓形進度呈現下載；音檔完成後，字幕仍在取得時會在該教材卡片標示字幕下載狀態。傳輸錯誤保留失敗狀態，並在後續目錄刷新重試；沒有自動同步同意時不會下載。
+
 瀏覽器從 OPFS 或 IndexedDB 讀取音檔，逐段產生 multipart Blob，並在送出前取得目前 UID 的 Firebase ID token。上傳沿用每檔 100 MiB 限制，Blob 組裝與大檔記憶體用量須在目標瀏覽器驗收。下載串流經原有校驗後寫入瀏覽器私有儲存。
 
 本機驗收以 demo Firebase Emulator 的合成音訊驗證。正式環境需要同一 Firebase 專案中的 Firestore `(default)` 資料庫、已部署的 `firestore.rules` 和既有 Storage bucket。正式專案的 Firestore 和 Storage 先前已就緒，Web 開發來源 `http://localhost:7357` 已設定 Storage CORS。正式雙裝置收送仍待驗。進度同步另外需要已部署的 `syncProgress` Callable 與對應區域設定。

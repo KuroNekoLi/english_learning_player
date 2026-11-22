@@ -9,6 +9,7 @@ import '../features/library/widgets/library_add_menu.dart';
 import '../features/library/widgets/library_material_list.dart';
 import '../features/library/widgets/source_management_page.dart';
 import '../features/player/player_page.dart';
+import '../features/sync/firebase_sync_view_model.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -94,6 +95,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final library = ref.watch(libraryViewModelProvider);
+    final downloadProgress = ref.watch(
+      firebaseSyncViewModelProvider.select(
+        (state) => state.downloadProgress.values.toList(growable: false),
+      ),
+    );
     final materials = library.asData?.value ?? const <LearningMaterial>[];
     final query = _searchController.text.trim().toLowerCase();
     final visibleMaterials = materials
@@ -156,6 +162,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   materials: visibleMaterials,
                   gridMode: _gridMode,
                   importProgress: _importProgress,
+                  downloadProgress: downloadProgress,
                   onRetry: () => ref.invalidate(libraryViewModelProvider),
                   onOpen: (material) => Navigator.of(context).push(
                     MaterialPageRoute<void>(

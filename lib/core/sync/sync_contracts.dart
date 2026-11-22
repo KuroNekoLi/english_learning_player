@@ -71,6 +71,30 @@ final class CloudMaterialMetadata {
   };
 }
 
+enum CloudDownloadPhase { queued, audio, subtitles, failed }
+
+final class CloudDownloadProgress {
+  const CloudDownloadProgress({
+    required this.materialId,
+    required this.title,
+    required this.phase,
+    required this.bytesDownloaded,
+    required this.totalBytes,
+    this.audioCached = false,
+  });
+
+  final String materialId;
+  final String title;
+  final CloudDownloadPhase phase;
+  final int bytesDownloaded;
+  final int totalBytes;
+  final bool audioCached;
+
+  double? get fraction => totalBytes <= 0
+      ? null
+      : (bytesDownloaded / totalBytes).clamp(0, 1).toDouble();
+}
+
 final class CloudAssetMetadata {
   const CloudAssetMetadata({
     required this.assetId,

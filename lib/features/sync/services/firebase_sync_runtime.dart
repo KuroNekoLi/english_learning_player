@@ -57,8 +57,21 @@ final class FirebaseSyncRuntime {
     return catalog;
   }
 
-  Future<void> download(CloudMaterialMetadata metadata) async {
-    await downloader.download(metadata);
+  Future<void> download(
+    CloudMaterialMetadata metadata, {
+    void Function(int bytesDownloaded, int totalBytes)? onProgress,
+    void Function()? onAudioCached,
+    void Function(CloudDownloadPhase phase)? onPhaseChanged,
+  }) async {
+    onPhaseChanged?.call(CloudDownloadPhase.audio);
+    await downloader.download(
+      metadata,
+      onProgress: onProgress,
+      onAudioCached: () {
+        onAudioCached?.call();
+        onPhaseChanged?.call(CloudDownloadPhase.subtitles);
+      },
+    );
     await subtitles.download(metadata.materialId);
     await _pullProgress(metadata.materialId);
   }

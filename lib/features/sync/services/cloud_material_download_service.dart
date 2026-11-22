@@ -34,7 +34,11 @@ final class CloudMaterialDownloadService {
   final CloudMaterialCacheRepository _repository;
   final MediaStore _mediaStore;
 
-  Future<LearningMaterial> download(CloudMaterialMetadata metadata) async {
+  Future<LearningMaterial> download(
+    CloudMaterialMetadata metadata, {
+    void Function(int bytesDownloaded, int totalBytes)? onProgress,
+    void Function()? onAudioCached,
+  }) async {
     final uid = _scope.ownerId;
     final extension = switch (metadata.mediaType) {
       'audio/mpeg' => 'mp3',
@@ -56,7 +60,7 @@ final class CloudMaterialDownloadService {
       AudioImportSource(
         sourceKey: metadata.materialId,
         name: 'download.$extension',
-        openRead: () => _boundedRead(metadata),
+        openRead: () => _boundedRead(metadata, onProgress),
       ),
       verifyBeforePublish: (audio) async {
         if (audio.sha256 != metadata.sha256 ||
@@ -71,7 +75,7 @@ final class CloudMaterialDownloadService {
       },
     );
     await _checkAccess();
-    return _repository.cacheCloudAudio(
+    final material = await _repository.cacheCloudAudio(
       materialId: metadata.materialId,
       title: metadata.title,
       cachedAt: DateTime.now().toUtc(),
@@ -83,10 +87,16 @@ final class CloudMaterialDownloadService {
         relativePath: audio.relativePath,
       ),
     );
+    onAudioCached?.call();
+    return material;
   }
 
-  Stream<List<int>> _boundedRead(CloudMaterialMetadata metadata) async* {
+  Stream<List<int>> _boundedRead(
+    CloudMaterialMetadata metadata,
+    void Function(int bytesDownloaded, int totalBytes)? onProgress,
+  ) async* {
     var length = 0;
+    onProgress?.call(0, metadata.byteLength);
     await for (final chunk in _transport.readAudio(
       uid: _scope.ownerId,
       storagePath: metadata.storagePath,
@@ -98,6 +108,7 @@ final class CloudMaterialDownloadService {
           'download_integrity_mismatch',
         );
       }
+      onProgress?.call(length, metadata.byteLength);
       yield chunk;
     }
   }

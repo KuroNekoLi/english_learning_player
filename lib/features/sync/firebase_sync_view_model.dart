@@ -6,6 +6,7 @@ import '../library/library_view_model.dart';
 import '../progress/domain/progress_models.dart';
 import 'firebase_sync_dependencies.dart';
 import 'services/cloud_sync_coordinator.dart';
+import 'sync_preference.dart';
 
 final firebaseSyncViewModelProvider =
     NotifierProvider.autoDispose<FirebaseSyncViewModel, FirebaseSyncViewState>(
@@ -18,22 +19,34 @@ final class FirebaseSyncViewState {
     this.status,
     this.materials = const [],
     this.conflicts = const {},
+    this.downloadProgress = const {},
   });
 
   final bool busy;
   final String? status;
   final List<CloudMaterialMetadata> materials;
   final Map<String, List<ProgressCandidate>> conflicts;
+  final Map<String, CloudDownloadProgress> downloadProgress;
+
+  bool get isDownloading => downloadProgress.values.any(
+    (progress) =>
+        progress.phase == CloudDownloadPhase.audio ||
+        progress.phase == CloudDownloadPhase.subtitles,
+  );
 
   FirebaseSyncViewState copyWith({
     bool? busy,
     String? status,
     bool clearStatus = false,
+    List<CloudMaterialMetadata>? materials,
+    Map<String, List<ProgressCandidate>>? conflicts,
+    Map<String, CloudDownloadProgress>? downloadProgress,
   }) => FirebaseSyncViewState(
     busy: busy ?? this.busy,
     status: clearStatus ? null : status ?? this.status,
-    materials: materials,
-    conflicts: conflicts,
+    materials: materials ?? this.materials,
+    conflicts: conflicts ?? this.conflicts,
+    downloadProgress: downloadProgress ?? this.downloadProgress,
   );
 }
 
@@ -46,6 +59,8 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
   }
 
   DateTime? _retryAfter;
+  final Set<String> _activeDownloads = {};
+  final Map<String, DateTime> _downloadRetryAfter = {};
 
   Future<void> syncAutomatically({required bool refreshCatalog}) async {
     if (state.busy || (_retryAfter?.isAfter(DateTime.now()) ?? false)) return;
@@ -71,11 +86,8 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
       }
       final catalog = await runtime.refresh();
       if (!await _canPresent(runtime) || state.busy) return;
-      state = FirebaseSyncViewState(
-        status: state.status,
-        materials: List.unmodifiable(catalog),
-        conflicts: state.conflicts,
-      );
+      state = state.copyWith(materials: List.unmodifiable(catalog));
+      await _downloadMissing(runtime, catalog);
     } catch (error) {
       // A failed preflight does not claim a job, so pace the next automatic attempt.
       if (!ref.mounted || ref.read(accountScopeProvider).ownerId != owner) {
@@ -104,6 +116,8 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
 
   void clear() => state = const FirebaseSyncViewState();
 
+  void clearDownloadProgress() => state = state.copyWith(downloadProgress: {});
+
   Future<void> sync() => _run(() async {
     final runtime = await _runtime();
     final result = await runtime.sync();
@@ -125,12 +139,13 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
     if (!await _canPresent(runtime)) {
       return;
     }
-    state = FirebaseSyncViewState(
+    state = state.copyWith(
       busy: true,
       materials: List.unmodifiable(catalog),
       conflicts: Map.unmodifiable(conflicts),
       status: _message(result),
     );
+    await _downloadMissing(runtime, catalog);
   });
 
   String _message(SyncRunResult result) => switch (result) {
@@ -144,13 +159,181 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
 
   Future<void> download(CloudMaterialMetadata metadata) => _run(() async {
     final runtime = await _runtime();
-    await runtime.download(metadata);
-    if (!await _canPresent(runtime)) {
+    await _downloadOne(runtime, metadata, force: true);
+  });
+
+  Future<void> _downloadMissing(
+    FirebaseSyncRuntime runtime,
+    List<CloudMaterialMetadata> catalog,
+  ) async {
+    final localIds = (await runtime.repository.listMaterials())
+        .map((material) => material.id)
+        .toSet();
+    final missing = catalog
+        .where((material) => !localIds.contains(material.materialId))
+        .toList();
+    final progress = Map<String, CloudDownloadProgress>.of(
+      state.downloadProgress,
+    );
+    progress.removeWhere((id, _) => localIds.contains(id));
+    for (final material in missing) {
+      final key = _downloadKey(runtime.uid, material.materialId);
+      final retryAt = _downloadRetryAfter[key];
+      if (retryAt?.isAfter(DateTime.now()) ?? false) continue;
+      if (_activeDownloads.contains(key)) continue;
+      progress[material.materialId] = CloudDownloadProgress(
+        materialId: material.materialId,
+        title: material.title,
+        phase: CloudDownloadPhase.queued,
+        bytesDownloaded: 0,
+        totalBytes: material.byteLength,
+      );
+    }
+    if (ref.mounted) {
+      state = state.copyWith(downloadProgress: Map.unmodifiable(progress));
+    }
+    for (final material in missing) {
+      if (!await _canPresent(runtime)) return;
+      final retryAt =
+          _downloadRetryAfter[_downloadKey(runtime.uid, material.materialId)];
+      if (retryAt?.isAfter(DateTime.now()) ?? false) continue;
+      await _downloadOne(runtime, material);
+    }
+  }
+
+  Future<void> _downloadOne(
+    FirebaseSyncRuntime runtime,
+    CloudMaterialMetadata metadata, {
+    bool force = false,
+  }) async {
+    final uid = runtime.uid;
+    final key = _downloadKey(uid, metadata.materialId);
+    if (!_activeDownloads.add(key)) return;
+    final retryAt = _downloadRetryAfter[key];
+    if (!force && (retryAt?.isAfter(DateTime.now()) ?? false)) {
+      _activeDownloads.remove(key);
       return;
     }
-    ref.invalidate(libraryViewModelProvider);
-    state = state.copyWith(status: '已下載「${metadata.title}」。');
-  });
+    var phase = CloudDownloadPhase.queued;
+    var bytesDownloaded = 0;
+    _publishDownloadProgress(
+      uid,
+      CloudDownloadProgress(
+        materialId: metadata.materialId,
+        title: metadata.title,
+        phase: phase,
+        bytesDownloaded: 0,
+        totalBytes: metadata.byteLength,
+      ),
+    );
+    try {
+      await runtime.download(
+        metadata,
+        onProgress: (received, total) {
+          phase = CloudDownloadPhase.audio;
+          bytesDownloaded = received;
+          _publishDownloadProgress(
+            uid,
+            CloudDownloadProgress(
+              materialId: metadata.materialId,
+              title: metadata.title,
+              phase: phase,
+              bytesDownloaded: received,
+              totalBytes: total,
+            ),
+          );
+        },
+        onAudioCached: () => ref.invalidate(libraryViewModelProvider),
+        onPhaseChanged: (nextPhase) {
+          phase = nextPhase;
+          _publishDownloadProgress(
+            uid,
+            CloudDownloadProgress(
+              materialId: metadata.materialId,
+              title: metadata.title,
+              phase: phase,
+              bytesDownloaded: bytesDownloaded,
+              totalBytes: metadata.byteLength,
+              audioCached: phase == CloudDownloadPhase.subtitles,
+            ),
+          );
+        },
+      );
+      if (!await _canPresent(runtime)) {
+        _removeDownloadProgress(uid, metadata.materialId);
+        return;
+      }
+      _downloadRetryAfter.remove(key);
+      ref.invalidate(libraryViewModelProvider);
+      _removeDownloadProgress(uid, metadata.materialId);
+    } catch (error) {
+      if (!ref.mounted || ref.read(accountScopeProvider).ownerId != uid) {
+        return;
+      }
+      if (error is SyncFailure && error.code == 'consent_required') {
+        _removeDownloadProgress(uid, metadata.materialId);
+        return;
+      }
+      var cached = false;
+      try {
+        cached =
+            await runtime.repository.audioAssetForMaterial(
+              metadata.materialId,
+            ) !=
+            null;
+      } catch (_) {
+        // Keep the visible failure state if the local cache query also fails.
+      }
+      if (cached) ref.invalidate(libraryViewModelProvider);
+      _downloadRetryAfter[key] = DateTime.now().add(
+        const Duration(seconds: 30),
+      );
+      _publishDownloadProgress(
+        uid,
+        CloudDownloadProgress(
+          materialId: metadata.materialId,
+          title: metadata.title,
+          phase: CloudDownloadPhase.failed,
+          bytesDownloaded: bytesDownloaded,
+          totalBytes: metadata.byteLength,
+          audioCached: cached || phase == CloudDownloadPhase.subtitles,
+        ),
+      );
+    } finally {
+      _activeDownloads.remove(key);
+    }
+  }
+
+  void _publishDownloadProgress(String uid, CloudDownloadProgress progress) {
+    if (!_canUpdateDownloadProgress(uid)) return;
+    state = state.copyWith(
+      downloadProgress: Map.unmodifiable({
+        ...state.downloadProgress,
+        progress.materialId: progress,
+      }),
+    );
+  }
+
+  void _removeDownloadProgress(String uid, String materialId) {
+    if (!ref.mounted || ref.read(accountScopeProvider).ownerId != uid) return;
+    final progress = Map<String, CloudDownloadProgress>.of(
+      state.downloadProgress,
+    )..remove(materialId);
+    state = state.copyWith(downloadProgress: Map.unmodifiable(progress));
+  }
+
+  bool _canUpdateDownloadProgress(String uid) {
+    if (!ref.mounted || ref.read(accountScopeProvider).ownerId != uid) {
+      return false;
+    }
+    final endpoint = ref.read(firebaseMediaEndpointProvider);
+    if (endpoint == null) return false;
+    final key = (uid: uid, project: endpoint.project);
+    return ref.read(syncPreferenceProvider(key)).asData?.value ==
+        SyncPreference.enabled;
+  }
+
+  String _downloadKey(String uid, String materialId) => '$uid::$materialId';
 
   Future<void> resolve(ProgressCandidate candidate, bool useCandidate) =>
       _run(() async {

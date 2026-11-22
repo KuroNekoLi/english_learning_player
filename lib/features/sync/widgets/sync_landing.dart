@@ -101,6 +101,11 @@ final class _SyncLandingState extends ConsumerState<SyncLanding>
           before?.asData?.value != SyncPreference.enabled) {
         _nextCatalog = null;
         WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_tick()));
+      } else if (after.asData?.value == SyncPreference.disabled &&
+          before?.asData?.value == SyncPreference.enabled) {
+        ref
+            .read(firebaseSyncViewModelProvider.notifier)
+            .clearDownloadProgress();
       }
     });
     final choice = preference.asData?.value;

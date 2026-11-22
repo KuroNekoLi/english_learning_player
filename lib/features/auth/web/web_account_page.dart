@@ -36,6 +36,7 @@ final class WebAccountPage extends ConsumerWidget {
         ? null
         : ref.watch(libraryViewModelProvider).value;
     final busy = state.busy || sync.busy;
+    final syncBusy = busy || sync.isDownloading;
     return PopScope(
       canPop: !busy,
       child: Scaffold(
@@ -107,7 +108,7 @@ final class WebAccountPage extends ConsumerWidget {
                 if (key != null) ...[
                   SyncConsentControls(
                     preferenceKey: key,
-                    busy: busy,
+                    busy: syncBusy,
                     onSync: viewModel.sync,
                   ),
                   if (sync.status case final message?)
@@ -123,7 +124,10 @@ final class WebAccountPage extends ConsumerWidget {
                               (item) => item.id == material.materialId,
                             ) ??
                             false,
-                        onDownload: busy
+                        autoSyncEnabled: consent,
+                        downloadProgress:
+                            sync.downloadProgress[material.materialId],
+                        onDownload: syncBusy
                             ? null
                             : () => viewModel.download(material),
                         onResolve: busy

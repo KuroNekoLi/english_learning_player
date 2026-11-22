@@ -53,6 +53,7 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
     final endpoint = ref.watch(firebaseEndpointProvider);
     final platform = ref.watch(socialSignInProvider);
     final uid = state.uid;
+    final syncBusy = sync.busy || sync.isDownloading;
     final key =
         uid != null && endpoint != null && endpoint.isMediaSyncConfigured
         ? (uid: uid, project: endpoint.project)
@@ -105,7 +106,7 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
               if (key != null)
                 SyncConsentControls(
                   preferenceKey: key,
-                  busy: sync.busy,
+                  busy: syncBusy,
                   onSync: viewModel.sync,
                 )
               else
@@ -122,7 +123,9 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
                   isLocal:
                       local?.any((item) => item.id == material.materialId) ??
                       false,
-                  onDownload: sync.busy
+                  autoSyncEnabled: consent,
+                  downloadProgress: sync.downloadProgress[material.materialId],
+                  onDownload: syncBusy
                       ? null
                       : () => viewModel.download(material),
                   onResolve: sync.busy ? null : _resolve,
