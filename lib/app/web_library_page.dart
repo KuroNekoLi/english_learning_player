@@ -7,6 +7,7 @@ import '../features/library/services/media_selection_import_service.dart';
 import '../features/library/widgets/library_material_list.dart';
 import '../features/auth/web/web_account_page.dart';
 import '../features/player/player_page.dart';
+import '../features/sync/firebase_sync_view_model.dart';
 
 final class WebLibraryPage extends ConsumerStatefulWidget {
   const WebLibraryPage({super.key});
@@ -59,6 +60,11 @@ final class _WebLibraryPageState extends ConsumerState<WebLibraryPage> {
   @override
   Widget build(BuildContext context) {
     final library = ref.watch(libraryViewModelProvider);
+    final downloadProgress = ref.watch(
+      firebaseSyncViewModelProvider.select(
+        (state) => state.downloadProgress.values.toList(growable: false),
+      ),
+    );
     final materials = library.asData?.value ?? const <LearningMaterial>[];
     return Scaffold(
       appBar: AppBar(
@@ -86,6 +92,7 @@ final class _WebLibraryPageState extends ConsumerState<WebLibraryPage> {
             materials: materials,
             gridMode: false,
             importProgress: _importProgress,
+            downloadProgress: downloadProgress,
             onRetry: () => ref.invalidate(libraryViewModelProvider),
             onOpen: (material) => Navigator.of(context).push(
               MaterialPageRoute<void>(
