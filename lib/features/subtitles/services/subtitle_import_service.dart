@@ -1,6 +1,7 @@
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
+import '../../library/domain/audio_import_source.dart';
 import '../../library/material_repository.dart';
 import '../domain/bilingual_subtitle_splitter.dart';
 import '../domain/subtitle_language_detector.dart';
@@ -23,6 +24,25 @@ final class SubtitleImportService {
   final SrtParser _parser;
   final SubtitleLanguageDetector _languageDetector;
   final Uuid _uuid;
+
+  Future<List<SubtitleTrack>> importManualSource({
+    required LearningMaterial material,
+    required AudioImportSource source,
+    bool Function()? isCurrent,
+  }) async {
+    if (p.extension(source.name).toLowerCase() != '.srt') {
+      throw const FormatException('Expected an SRT file.');
+    }
+    final bytes = await source.openRead().expand((chunk) => chunk).toList();
+    if (isCurrent?.call() == false) return const [];
+    return importAutoDetectedBytes(
+      ownerId: material.ownerId,
+      materialId: material.id,
+      sourceName: source.name,
+      bytes: bytes,
+      manual: true,
+    );
+  }
 
   Future<SubtitleImportResult> importBytes({
     required String ownerId,
@@ -101,6 +121,9 @@ final class SubtitleImportService {
   }) async {
     if (revision < 1) throw ArgumentError.value(revision, 'revision');
     final document = _parser.parse(bytes);
+    if (document.cues.isEmpty) {
+      throw const FormatException('The SRT has no valid subtitle cues.');
+    }
     final pair = const BilingualSubtitleSplitter().split(document.cues);
     if (pair != null) {
       return _saveBilingualTracks(
@@ -182,6 +205,11 @@ final class SubtitleImportService {
         cues: pair.chinese,
       ),
     ];
+    if (_repository case final SubtitleTrackBatchWriter writer) {
+      return List.unmodifiable(
+        await writer.saveSubtitleTracks(tracks, manual: manual),
+      );
+    }
     final saved = <SubtitleTrack>[];
     for (final track in tracks) {
       saved.add(await _repository.saveSubtitleTrack(track, manual: manual));

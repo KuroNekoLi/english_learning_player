@@ -56,6 +56,13 @@ abstract interface class CloudSubtitleCacheRepository {
   Future<SubtitleTrack> saveDownloadedSubtitleTrack(SubtitleTrack track);
 }
 
+abstract interface class SubtitleTrackBatchWriter {
+  Future<List<SubtitleTrack>> saveSubtitleTracks(
+    List<SubtitleTrack> tracks, {
+    required bool manual,
+  });
+}
+
 /// Local source catalog used to make full folder scans idempotent. Paths stay
 /// inside the account's local database and are never part of cloud metadata.
 abstract interface class FolderReconciliationRepository {

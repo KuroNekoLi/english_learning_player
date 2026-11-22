@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:english_learning_player/core/db/account_database_service.dart';
 import 'package:english_learning_player/core/db/account_scope.dart';
 import 'package:english_learning_player/features/library/data/sqlite_material_repository.dart';
+import 'package:english_learning_player/features/library/domain/audio_import_source.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
@@ -32,6 +33,51 @@ void main() {
     await repository.close();
     await root.delete(recursive: true);
   });
+
+  test(
+    'manual source rejects unreadable tracks and saves both bilingual tracks',
+    () async {
+      final material = (await repository.listMaterials()).single;
+      final importer = _importer(repository);
+      const sourceName = 'lesson.en.srt';
+      final invalid = AudioImportSource(
+        sourceKey: 'invalid',
+        name: sourceName,
+        openRead: () => Stream.value(utf8.encode('No timestamps')),
+      );
+      await expectLater(
+        importer.importManualSource(material: material, source: invalid),
+        throwsFormatException,
+      );
+      expect(await repository.listSubtitleTracks(material.id), isEmpty);
+
+      final bytes = _srt('One sentence.\n一句字幕。');
+      final source = AudioImportSource(
+        sourceKey: 'bilingual',
+        name: 'lesson.SRT',
+        openRead: () => Stream.value(bytes),
+      );
+      expect(
+        await importer.importManualSource(
+          material: material,
+          source: source,
+          isCurrent: () => false,
+        ),
+        isEmpty,
+      );
+      final tracks = await importer.importManualSource(
+        material: material,
+        source: source,
+      );
+      expect(tracks.map((track) => track.languageTag), ['en', 'zh-TW']);
+      final stored = await repository.listSubtitleTracks(material.id);
+      expect(stored, hasLength(2));
+      for (final track in stored) {
+        expect(track.originalBytes, bytes);
+        expect(track.isSelected, isTrue);
+      }
+    },
+  );
 
   test(
     'preserves exact original bytes and cues after database reopen',

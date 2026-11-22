@@ -1,10 +1,13 @@
 import 'package:english_learning_player/features/library/library_dependencies.dart';
+import 'package:english_learning_player/features/library/library_folder_view_model.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/main_native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fake_library_folder_repository.dart';
 
 void main() {
   final material = LearningMaterial(
@@ -22,6 +25,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          libraryFolderRepositoryProvider.overrideWith(
+            (ref) async => FakeLibraryFolderRepository(),
+          ),
           materialRepositoryProvider.overrideWith(
             (ref) async => _FakeMaterialRepository([]),
           ),
@@ -37,6 +43,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          libraryFolderRepositoryProvider.overrideWith(
+            (ref) async => FakeLibraryFolderRepository(),
+          ),
           materialRepositoryProvider.overrideWith(
             (ref) async => _FakeMaterialRepository([material]),
           ),
@@ -54,6 +63,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          libraryFolderRepositoryProvider.overrideWith(
+            (ref) async => FakeLibraryFolderRepository(),
+          ),
           materialRepositoryProvider.overrideWith(
             (ref) async => _FakeMaterialRepository([material]),
           ),
@@ -86,6 +98,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          libraryFolderRepositoryProvider.overrideWith(
+            (ref) async => FakeLibraryFolderRepository(),
+          ),
           materialRepositoryProvider.overrideWith((ref) async => repository),
         ],
         child: const EnglishLearningPlayer(),

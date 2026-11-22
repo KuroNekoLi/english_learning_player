@@ -5,10 +5,14 @@ final class LibraryAddMenu extends StatelessWidget {
   const LibraryAddMenu({
     super.key,
     required this.onImportMedia,
+    required this.onImportSubtitle,
+    required this.onCreateFolder,
     this.onImportFolder,
   });
 
   final VoidCallback? onImportMedia;
+  final VoidCallback? onImportSubtitle;
+  final VoidCallback? onCreateFolder;
   final VoidCallback? onImportFolder;
 
   bool get _showPhotoImport =>
@@ -35,20 +39,21 @@ final class LibraryAddMenu extends StatelessWidget {
         onPressed: onImportFolder,
         child: Text(onImportFolder == null ? '匯入資料夾（此平台尚未提供）' : '匯入資料夾'),
       ),
-      const MenuItemButton(
-        leadingIcon: Icon(Icons.subtitles_outlined),
-        onPressed: null,
-        child: Text('匯入字幕（尚未提供）'),
+      MenuItemButton(
+        leadingIcon: const Icon(Icons.subtitles_outlined),
+        onPressed: onImportSubtitle,
+        child: const Text('匯入字幕'),
       ),
-      const MenuItemButton(
-        leadingIcon: Icon(Icons.create_new_folder_outlined),
-        onPressed: null,
-        child: Text('新增資料夾（尚未提供）'),
+      MenuItemButton(
+        leadingIcon: const Icon(Icons.create_new_folder_outlined),
+        onPressed: onCreateFolder,
+        child: const Text('新增資料夾'),
       ),
     ],
     builder: (context, controller, child) => IconButton(
       tooltip: '新增',
-      onPressed: () => controller.open(),
+      onPressed: () =>
+          controller.isOpen ? controller.close() : controller.open(),
       icon: const Icon(Icons.add),
     ),
   );

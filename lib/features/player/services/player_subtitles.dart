@@ -12,15 +12,8 @@ final class PlayerSubtitles {
     LearningMaterial material,
     AudioImportSource source,
   ) async {
-    final bytes = await source.openRead().expand((chunk) => chunk).toList();
     final importer = SubtitleImportService(repository: repository);
-    await importer.importAutoDetectedBytes(
-      ownerId: material.ownerId,
-      materialId: material.id,
-      sourceName: source.name,
-      bytes: bytes,
-      manual: true,
-    );
+    await importer.importManualSource(material: material, source: source);
     return repository.listSubtitleTracks(material.id);
   }
 

@@ -13,7 +13,8 @@ final class SqliteMaterialRepository
         MaterialRepository,
         FolderReconciliationRepository,
         CloudMaterialCacheRepository,
-        CloudSubtitleCacheRepository {
+        CloudSubtitleCacheRepository,
+        SubtitleTrackBatchWriter {
   const SqliteMaterialRepository({
     required AccountScope scope,
     required LocalDatabase database,
@@ -356,6 +357,17 @@ final class SqliteMaterialRepository
     track,
     manual: manual,
     queueForPublication: true,
+  );
+
+  @override
+  Future<List<SubtitleTrack>> saveSubtitleTracks(
+    List<SubtitleTrack> tracks, {
+    required bool manual,
+  }) => _database.transaction(
+    () async => [
+      for (final track in tracks)
+        await saveSubtitleTrack(track, manual: manual),
+    ],
   );
 
   @override

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/sync/sync_contracts.dart';
+import '../library_folder_repository.dart';
 import '../material_repository.dart';
 import '../services/media_selection_import_service.dart';
 import 'audio_transfer_tile.dart';
@@ -15,6 +16,10 @@ final class LibraryMaterialList extends StatelessWidget {
     required this.gridMode,
     this.importProgress = const [],
     this.downloadProgress = const [],
+    this.folders = const [],
+    this.onOpenFolder,
+    this.onRetryFolders,
+    this.emptyMessage = '目前沒有教材',
     required this.onRetry,
     required this.onOpen,
   });
@@ -24,6 +29,10 @@ final class LibraryMaterialList extends StatelessWidget {
   final bool gridMode;
   final List<MediaFileImportProgress> importProgress;
   final List<CloudDownloadProgress> downloadProgress;
+  final List<LibraryFolder> folders;
+  final ValueChanged<LibraryFolder>? onOpenFolder;
+  final VoidCallback? onRetryFolders;
+  final String emptyMessage;
   final VoidCallback onRetry;
   final ValueChanged<LearningMaterial> onOpen;
 
@@ -36,49 +45,67 @@ final class LibraryMaterialList extends StatelessWidget {
         error: (_, _) => Center(
           child: TextButton(onPressed: onRetry, child: const Text('無法讀取教材，重試')),
         ),
-        data: (_) =>
-            materials.isEmpty &&
-                importProgress.isEmpty &&
-                downloadProgress.isEmpty
-            ? const Center(child: Text('目前沒有教材'))
-            : gridMode
-            ? GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 360,
-                  mainAxisExtent: 124,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount:
-                    _pendingDownloadProgress(materials).length +
-                    importProgress.length +
-                    materials.length,
-                itemBuilder: (context, index) => _itemAt(index, materials),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount:
-                    _pendingDownloadProgress(materials).length +
-                    importProgress.length +
-                    materials.length,
-                itemBuilder: (context, index) => _itemAt(index, materials),
-              ),
+        data: (_) => _content(),
       ),
     ),
   );
 
-  List<CloudDownloadProgress> _pendingDownloadProgress(
-    List<LearningMaterial> materials,
-  ) {
+  Widget _content() {
     final localIds = materials.map((material) => material.id).toSet();
-    return downloadProgress
+    final pendingDownloads = downloadProgress
         .where((progress) => !localIds.contains(progress.materialId))
         .toList();
+    final itemCount =
+        folders.length +
+        (onRetryFolders == null ? 0 : 1) +
+        importProgress.length +
+        pendingDownloads.length +
+        materials.length;
+    if (itemCount == 0) return Center(child: Text(emptyMessage));
+    const padding = EdgeInsets.all(16);
+    return gridMode
+        ? GridView.builder(
+            padding: padding,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 360,
+              mainAxisExtent: 124,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: itemCount,
+            itemBuilder: (context, index) => _itemAt(index, pendingDownloads),
+          )
+        : ListView.builder(
+            padding: padding,
+            itemCount: itemCount,
+            itemBuilder: (context, index) => _itemAt(index, pendingDownloads),
+          );
   }
 
-  Widget _itemAt(int index, List<LearningMaterial> materials) {
-    final pendingDownloads = _pendingDownloadProgress(materials);
+  Widget _itemAt(int index, List<CloudDownloadProgress> pendingDownloads) {
+    if (onRetryFolders != null) {
+      if (index == 0) {
+        return TextButton(
+          onPressed: onRetryFolders,
+          child: const Text('無法讀取資料夾，重試'),
+        );
+      }
+      index--;
+    }
+    if (index < folders.length) {
+      final folder = folders[index];
+      return Card(
+        child: ListTile(
+          leading: const Icon(Icons.folder_outlined),
+          title: Text(folder.title),
+          subtitle: Text('${folder.materialCount} 個教材'),
+          trailing: const Icon(Icons.chevron_right),
+          minVerticalPadding: 12,
+          onTap: () => onOpenFolder?.call(folder),
+        ),
+      );
+    }
+    index -= folders.length;
     if (index < importProgress.length) {
       return ImportingAudioTile(progress: importProgress[index]);
     }

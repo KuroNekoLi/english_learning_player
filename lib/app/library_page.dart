@@ -3,13 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/library/library_view_model.dart';
 import '../features/library/folder_source_view_model.dart';
+import '../features/library/library_folder_view_model.dart';
 import '../features/library/material_repository.dart';
 import '../features/library/services/media_selection_import_service.dart';
-import '../features/library/widgets/library_add_menu.dart';
+import '../features/library/widgets/library_actions_menu.dart';
 import '../features/library/widgets/library_material_list.dart';
 import '../features/library/widgets/source_management_page.dart';
 import '../features/player/player_page.dart';
 import '../features/sync/firebase_sync_view_model.dart';
+import 'library_folder_page.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -95,6 +97,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final library = ref.watch(libraryViewModelProvider);
+    final folders = ref.watch(libraryFoldersProvider);
     final downloadProgress = ref.watch(
       firebaseSyncViewModelProvider.select(
         (state) => state.downloadProgress.values.toList(growable: false),
@@ -133,7 +136,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             }),
             icon: Icon(_searching ? Icons.close : Icons.search),
           ),
-          LibraryAddMenu(
+          LibraryActionsMenu(
             onImportMedia: library.isLoading || _importing
                 ? null
                 : () => _importAudio(context),
@@ -163,6 +166,15 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   gridMode: _gridMode,
                   importProgress: _importProgress,
                   downloadProgress: downloadProgress,
+                  folders: (folders.value ?? const [])
+                      .where(
+                        (folder) => folder.title.toLowerCase().contains(query),
+                      )
+                      .toList(),
+                  onOpenFolder: (folder) => openLibraryFolder(context, folder),
+                  onRetryFolders: folders.hasError
+                      ? () => ref.invalidate(libraryFoldersProvider)
+                      : null,
                   onRetry: () => ref.invalidate(libraryViewModelProvider),
                   onOpen: (material) => Navigator.of(context).push(
                     MaterialPageRoute<void>(

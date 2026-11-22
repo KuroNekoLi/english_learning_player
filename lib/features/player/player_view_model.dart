@@ -15,6 +15,7 @@ import '../library/material_repository.dart';
 import '../progress/progress_dependencies.dart';
 import '../subtitles/domain/subtitle_models.dart';
 import '../subtitles/services/subtitle_import_service.dart';
+import '../subtitles/subtitle_dependencies.dart';
 import 'player_dependencies.dart';
 import 'services/material_playback_loader.dart';
 import 'services/player_bookmarks.dart';
