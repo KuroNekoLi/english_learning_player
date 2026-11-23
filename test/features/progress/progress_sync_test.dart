@@ -302,70 +302,65 @@ void main() {
     },
   );
 
-  test(
-    'candidate choice is queued with observed revision and only confirmed remotely',
-    () async {
-      await progress.recordCheckpoint(
-        stream: stream(),
-        positionMs: 300000,
-        state: CheckpointState.paused,
-        nowMs: now.millisecondsSinceEpoch,
-      );
-      final phone = ProgressCheckpoint(
-        stream: stream(device: 'iphone', session: 'phone-session'),
-        positionMs: 720000,
-        state: CheckpointState.paused,
-        sequence: 1,
-        baseRevision: 0,
-      );
-      await ledger.commit(
-        uid: scope.ownerId,
-        opId: 'phone-op-for-resolution',
-        payloadHash: 'phone-hash-for-resolution',
-        checkpoint: phone,
-      );
-      await coordinator().runOne();
-      final candidate = (await progress.unresolvedCandidates(
-        materialId,
-      )).single;
-      expect((await progress.canonical(materialId))?.revision, 1);
+  test('candidate choice is queued with observed revision and only confirmed remotely', () async {
+    await progress.recordCheckpoint(
+      stream: stream(),
+      positionMs: 300000,
+      state: CheckpointState.paused,
+      nowMs: now.millisecondsSinceEpoch,
+    );
+    final phone = ProgressCheckpoint(
+      stream: stream(device: 'iphone', session: 'phone-session'),
+      positionMs: 720000,
+      state: CheckpointState.paused,
+      sequence: 1,
+      baseRevision: 0,
+    );
+    await ledger.commit(
+      uid: scope.ownerId,
+      opId: 'phone-op-for-resolution',
+      payloadHash: 'phone-hash-for-resolution',
+      checkpoint: phone,
+    );
+    await coordinator().runOne();
+    final candidate = (await progress.unresolvedCandidates(materialId)).single;
+    expect((await progress.canonical(materialId))?.revision, 1);
 
-      await progress.resolveCandidate(
-        candidateId: candidate.id,
-        observedCanonicalRevision: 1,
-        useCandidatePosition: true,
-        resolutionStream: stream(device: 'mac', session: 'resolution-session'),
-        nowMs: now.add(const Duration(seconds: 1)).millisecondsSinceEpoch,
-      );
-      final resolutionRow =
-          (await database
-                  .customSelect(
-                    "SELECT payload_json FROM sync_outbox WHERE entity_type = 'progress' AND operation = 'resolveProgress'",
-                  )
-                  .get())
-              .single;
-      final resolutionPayload =
-          jsonDecode(resolutionRow.read<String>('payload_json'))
-              as Map<String, dynamic>;
-      expect(resolutionPayload['resolveCandidateId'], candidate.id);
-      expect(resolutionPayload['observedCanonicalRevision'], 1);
-      expect(resolutionPayload['positionMs'], 300000);
-      expect(
-        (await progress.canonical(materialId))?.checkpoint.positionMs,
-        720000,
-      );
-      expect(await progress.unresolvedCandidates(materialId), hasLength(1));
+    await progress.resolveCandidate(
+      candidateId: candidate.id,
+      observedCanonicalRevision: 1,
+      useCandidatePosition: true,
+      resolutionStream: stream(device: 'mac', session: 'resolution-session'),
+      nowMs: now.add(const Duration(seconds: 1)).millisecondsSinceEpoch,
+    );
+    final resolutionRow =
+        (await database
+                .customSelect(
+                  "SELECT payload_json FROM sync_outbox WHERE entity_type = 'progress' AND operation = 'resolveProgress'",
+                )
+                .get())
+            .single;
+    final resolutionPayload = jsonDecode(
+      resolutionRow.read<String>('payload_json'),
+    ) as Map<String, dynamic>;
+    expect(resolutionPayload['resolveCandidateId'], candidate.id);
+    expect(resolutionPayload['observedCanonicalRevision'], 1);
+    expect(resolutionPayload['positionMs'], 300000);
+    expect(
+      (await progress.canonical(materialId))?.checkpoint.positionMs,
+      720000,
+    );
+    expect(await progress.unresolvedCandidates(materialId), hasLength(1));
 
-      now = now.add(const Duration(seconds: 2));
-      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
-      expect(
-        (await progress.canonical(materialId))?.checkpoint.positionMs,
-        300000,
-      );
-      expect((await progress.canonical(materialId))?.revision, 2);
-      expect(await progress.unresolvedCandidates(materialId), isEmpty);
-    },
-  );
+    now = now.add(const Duration(seconds: 2));
+    expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+    expect(
+      (await progress.canonical(materialId))?.checkpoint.positionMs,
+      300000,
+    );
+    expect((await progress.canonical(materialId))?.revision, 2);
+    expect(await progress.unresolvedCandidates(materialId), isEmpty);
+  });
 
   test('authentication and consent gates leave checkpoint queued', () async {
     await progress.recordCheckpoint(
@@ -460,55 +455,49 @@ void main() {
     },
   );
 
-  test(
-    'account change after a commit defers local ack and replays same receipt',
-    () async {
-      await progress.recordCheckpoint(
-        stream: stream(),
-        positionMs: 4500,
-        state: CheckpointState.paused,
-        nowMs: now.millisecondsSinceEpoch,
-      );
-      final transport = _SwitchAccountAfterCommit(ledger, identity);
-      final guarded = ProgressSyncCoordinator(
-        scope: scope,
-        repository: progress,
-        identityProvider: identity,
-        consentProvider: consent,
-        transport: transport,
-        clock: () => now,
-        random: () => 0.5,
-      );
-      expect(
-        await guarded.runOne(),
-        ProgressSyncRunResult.waitingForAuthentication,
-      );
-      expect(await progress.canonical(materialId), isNull);
-      final waiting = await database
-          .customSelect(
-            "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
-          )
-          .getSingle();
-      final opId = waiting.read<String>('op_id');
-      expect(waiting.read<String>('state'), 'waitingForAuth');
-      expect(ledger.writes, 1);
+  test('account change after a commit defers local ack and replays same receipt', () async {
+    await progress.recordCheckpoint(
+      stream: stream(),
+      positionMs: 4500,
+      state: CheckpointState.paused,
+      nowMs: now.millisecondsSinceEpoch,
+    );
+    final transport = _SwitchAccountAfterCommit(ledger, identity);
+    final guarded = ProgressSyncCoordinator(
+      scope: scope,
+      repository: progress,
+      identityProvider: identity,
+      consentProvider: consent,
+      transport: transport,
+      clock: () => now,
+      random: () => 0.5,
+    );
+    expect(
+      await guarded.runOne(),
+      ProgressSyncRunResult.waitingForAuthentication,
+    );
+    expect(await progress.canonical(materialId), isNull);
+    final waiting = await database
+        .customSelect(
+          "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
+        )
+        .getSingle();
+    final opId = waiting.read<String>('op_id');
+    expect(waiting.read<String>('state'), 'waitingForAuth');
+    expect(ledger.writes, 1);
 
-      identity.identity = SyncIdentity(scope.ownerId);
-      expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
-      expect(ledger.writes, 1);
-      expect(
-        (await progress.canonical(materialId))?.checkpoint.positionMs,
-        4500,
-      );
-      final completed = await database
-          .customSelect(
-            "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
-          )
-          .getSingle();
-      expect(completed.read<String>('op_id'), opId);
-      expect(completed.read<String>('state'), 'completed');
-    },
-  );
+    identity.identity = SyncIdentity(scope.ownerId);
+    expect(await coordinator().runOne(), ProgressSyncRunResult.committed);
+    expect(ledger.writes, 1);
+    expect((await progress.canonical(materialId))?.checkpoint.positionMs, 4500);
+    final completed = await database
+        .customSelect(
+          "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
+        )
+        .getSingle();
+    expect(completed.read<String>('op_id'), opId);
+    expect(completed.read<String>('state'), 'completed');
+  });
 
   test('a receipt naming another owner or material is never merged', () async {
     for (final remoteStream in [
@@ -609,69 +598,66 @@ void main() {
     },
   );
 
-  test(
-    'transient failure retries with same operation and needs attention at limit',
-    () async {
-      await progress.recordCheckpoint(
-        stream: stream(),
-        positionMs: 2,
-        state: CheckpointState.paused,
-        nowMs: now.millisecondsSinceEpoch,
+  test('transient failure retries with same operation and needs attention at limit', () async {
+    await progress.recordCheckpoint(
+      stream: stream(),
+      positionMs: 2,
+      state: CheckpointState.paused,
+      nowMs: now.millisecondsSinceEpoch,
+    );
+    final failingTransport = _FailingProgressTransport(ledger);
+    final retrying = ProgressSyncCoordinator(
+      scope: scope,
+      repository: progress,
+      identityProvider: identity,
+      consentProvider: consent,
+      transport: failingTransport,
+      clock: () => now,
+      random: () => 0.5,
+    );
+    for (var attempt = 1; attempt <= 8; attempt++) {
+      failingTransport.failure = const SyncFailure(
+        SyncFailureKind.transient,
+        'offline',
       );
-      final failingTransport = _FailingProgressTransport(ledger);
-      final retrying = ProgressSyncCoordinator(
-        scope: scope,
-        repository: progress,
-        identityProvider: identity,
-        consentProvider: consent,
-        transport: failingTransport,
-        clock: () => now,
-        random: () => 0.5,
+      expect(
+        await retrying.runOne(),
+        attempt == 8
+            ? ProgressSyncRunResult.needsAttention
+            : ProgressSyncRunResult.retryScheduled,
       );
-      for (var attempt = 1; attempt <= 8; attempt++) {
-        failingTransport.failure = const SyncFailure(
-          SyncFailureKind.transient,
-          'offline',
-        );
-        expect(
-          await retrying.runOne(),
-          attempt == 8
-              ? ProgressSyncRunResult.needsAttention
-              : ProgressSyncRunResult.retryScheduled,
-        );
-        now = now.add(const Duration(minutes: 2));
-      }
-      final row =
-          (await database
-                  .customSelect(
-                    "SELECT attempts, state FROM sync_outbox WHERE entity_type = 'progress'",
-                  )
-                  .get())
-              .single;
-      expect(row.read<int>('attempts'), 8);
-      expect(row.read<String>('state'), 'needsAttention');
-      final opId =
-          (await database
-                  .customSelect(
-                    "SELECT op_id FROM sync_outbox WHERE entity_type = 'progress'",
-                  )
-                  .get())
-              .single
-              .read<String>('op_id');
-      failingTransport.failure = null;
-      await progress.retryNeedsAttention(opId, now);
-      expect(await retrying.runOne(), ProgressSyncRunResult.committed);
-      final completed =
-          (await database
-                  .customSelect(
-                    "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
-                  )
-                  .get())
-              .single;
-      expect(completed.read<String>('op_id'), opId);
-      expect(completed.read<String>('state'), 'completed');
-    },
-  );
+      now = now.add(const Duration(minutes: 2));
+    }
+    final row =
+        (await database
+                .customSelect(
+                  "SELECT attempts, state FROM sync_outbox WHERE entity_type = 'progress'",
+                )
+                .get())
+            .single;
+    expect(row.read<int>('attempts'), 8);
+    expect(row.read<String>('state'), 'needsAttention');
+    final opId =
+        (await database
+                .customSelect(
+                  "SELECT op_id FROM sync_outbox WHERE entity_type = 'progress'",
+                )
+                .get())
+            .single
+            .read<String>('op_id');
+    failingTransport.failure = null;
+    await progress.retryNeedsAttention(opId, now);
+    expect(await retrying.runOne(), ProgressSyncRunResult.committed);
+    final completed =
+        (await database
+                .customSelect(
+                  "SELECT op_id, state FROM sync_outbox WHERE entity_type = 'progress'",
+                )
+                .get())
+            .single;
+    expect(completed.read<String>('op_id'), opId);
+    expect(completed.read<String>('state'), 'completed');
+  });
 
   test(
     'checkpoint data survives database reopen and account scope is isolated',

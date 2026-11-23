@@ -22,10 +22,9 @@ final class WebMediaStore implements MediaStore {
   /// Forces a browser backend and injects failures for platform tests.
   WebMediaStore.forTesting(
     this._scope, {
-    bool forceIndexedDb = false,
-    Future<void> Function(WebMediaBackend backend)? beforeWrite,
-  }) : _forceIndexedDb = forceIndexedDb,
-       _beforeWrite = beforeWrite;
+    this._forceIndexedDb = false,
+    this._beforeWrite,
+  });
 
   final AccountScope _scope;
   final bool _forceIndexedDb;

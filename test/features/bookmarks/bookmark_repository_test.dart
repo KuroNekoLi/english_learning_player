@@ -82,9 +82,8 @@ void main() {
       final restored = (await bookmarks.listBookmarks()).single;
       expect(restored.id, originalBookmark.id);
       expect(restored.anchor.cueId, oldCue.id);
-      final latestEnglish = (await materials.listSubtitleTracks(
-        'material-1',
-      )).singleWhere((track) => track.isSelected);
+      final latestEnglish = (await materials.listSubtitleTracks('material-1'))
+          .singleWhere((track) => track.isSelected);
       final resolution = const BookmarkResolver().resolve(restored, [
         latestEnglish,
       ]);
@@ -177,9 +176,11 @@ void main() {
       bookmarks = SqliteBookmarkRepository(scope: scope, database: upgraded);
       expect((await materials.listMaterials()).single.id, 'material-1');
       expect(
-        (await materials.listSubtitleTracks(
-          'material-1',
-        )).single.cues.single.text,
+        (await materials.listSubtitleTracks('material-1'))
+            .single
+            .cues
+            .single
+            .text,
         'Existing cue.',
       );
       expect(await bookmarks.listBookmarks(), isEmpty);

@@ -9,7 +9,7 @@ import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
 import 'package:english_learning_player/features/auth/firebase_session_controller.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_dependencies.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_panel.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

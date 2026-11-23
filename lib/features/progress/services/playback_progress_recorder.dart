@@ -5,13 +5,11 @@ import '../data/progress_repository.dart';
 /// deliberately outside this recorder so remote data can never seek a player.
 final class PlaybackProgressRecorder {
   PlaybackProgressRecorder({
-    required ProgressRepository repository,
-    required ProgressStream stream,
-    required DateTime Function() clock,
+    required this._repository,
+    required this._stream,
+    required this._clock,
     this.interval = const Duration(seconds: 15),
-  }) : _repository = repository,
-       _stream = stream,
-       _clock = clock;
+  });
 
   final ProgressRepository _repository;
   final ProgressStream _stream;
@@ -90,7 +88,7 @@ final class PlaybackProgressRecorder {
         nowMs: now.millisecondsSinceEpoch,
       );
     });
-    _writes = write.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _writes = write.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     try {
       await write;
     } catch (_) {

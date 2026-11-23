@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/library/library_view_model.dart';
@@ -42,9 +42,8 @@ final class _WebLibraryPageState extends ConsumerState<WebLibraryPage> {
           '失敗 ${result.audioFailures + result.subtitleFailures}、'
           '未配對 SRT ${result.unmatchedSubtitles}、'
           '歧義 ${result.ambiguousSubtitles}。';
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(

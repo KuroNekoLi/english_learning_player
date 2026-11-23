@@ -123,63 +123,56 @@ void main() {
     },
   );
 
-  test(
-    'rename, move and delete keep tombstones, membership and audio references consistent',
-    () async {
-      final db = LocalDatabase(NativeDatabase.memory());
-      addTearDown(db.close);
-      final scope = AccountScope('owner');
-      final folders = SqliteLibraryFolderRepository(scope, db);
-      final materials = SqliteMaterialRepository(scope: scope, database: db);
-      final changes = SqliteLibraryChanges(db, scope.ownerId);
-      await _insert(materials);
-      await folders.createFolder('Parent');
-      await folders.createFolder('Child');
-      final [child, parent] = await folders.listFolders();
-      await folders.moveFolder(child.id, parent.id);
-      await expectLater(
-        folders.moveFolder(parent.id, child.id),
-        throwsArgumentError,
-      );
-      await folders.moveMaterial('lesson', child.id);
-      expect(await folders.materialIds(child.id), {'lesson'});
-      expect(await folders.assignedMaterialIds(), {'lesson'});
+  test('rename, move and delete keep tombstones, membership and audio references consistent', () async {
+    final db = LocalDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final scope = AccountScope('owner');
+    final folders = SqliteLibraryFolderRepository(scope, db);
+    final materials = SqliteMaterialRepository(scope: scope, database: db);
+    final changes = SqliteLibraryChanges(db, scope.ownerId);
+    await _insert(materials);
+    await folders.createFolder('Parent');
+    await folders.createFolder('Child');
+    final [child, parent] = await folders.listFolders();
+    await folders.moveFolder(child.id, parent.id);
+    await expectLater(
+      folders.moveFolder(parent.id, child.id),
+      throwsArgumentError,
+    );
+    await folders.moveMaterial('lesson', child.id);
+    expect(await folders.materialIds(child.id), {'lesson'});
+    expect(await folders.assignedMaterialIds(), {'lesson'});
 
-      await folders.renameMaterial('lesson', '第一版');
-      final sent = (await changes.read()).singleWhere(
-        (change) => change.field == LibraryField.materialTitle,
-      );
-      await folders.renameMaterial('lesson', '第二版');
-      await changes.acknowledge(sent);
-      final queued = (await changes.read(
-        pendingOnly: true,
-      )).singleWhere((change) => change.field == LibraryField.materialTitle);
-      expect(queued.value, '第二版');
-      expect((await materials.listMaterials()).single.title, '第二版');
+    await folders.renameMaterial('lesson', '第一版');
+    final sent = (await changes.read()).singleWhere(
+      (change) => change.field == LibraryField.materialTitle,
+    );
+    await folders.renameMaterial('lesson', '第二版');
+    await changes.acknowledge(sent);
+    final queued = (await changes.read(pendingOnly: true))
+        .singleWhere((change) => change.field == LibraryField.materialTitle);
+    expect(queued.value, '第二版');
+    expect((await materials.listMaterials()).single.title, '第二版');
 
-      await folders.deleteFolder(child.id);
-      expect(await folders.materialIds(parent.id), {'lesson'});
-      await folders.deleteFolder(parent.id);
-      expect(await folders.assignedMaterialIds(), isEmpty);
-      expect(await materials.listMaterials(), hasLength(1));
+    await folders.deleteFolder(child.id);
+    expect(await folders.materialIds(parent.id), {'lesson'});
+    await folders.deleteFolder(parent.id);
+    expect(await folders.assignedMaterialIds(), isEmpty);
+    expect(await materials.listMaterials(), hasLength(1));
 
-      await folders.deleteMaterial('lesson');
-      await changes.merge([sent]);
-      expect(await materials.listMaterials(), isEmpty);
-      expect(await changes.materialDeleted('lesson'), isTrue);
-      expect(
-        await SqliteSyncOutbox(
-          scope: scope,
-          db: db,
-        ).hasDueMedia(DateTime.now()),
-        isFalse,
-      );
-      expect(
-        await db.customSelect('SELECT id FROM media_assets').get(),
-        hasLength(1),
-      );
-    },
-  );
+    await folders.deleteMaterial('lesson');
+    await changes.merge([sent]);
+    expect(await materials.listMaterials(), isEmpty);
+    expect(await changes.materialDeleted('lesson'), isTrue);
+    expect(
+      await SqliteSyncOutbox(scope: scope, db: db).hasDueMedia(DateTime.now()),
+      isFalse,
+    );
+    expect(
+      await db.customSelect('SELECT id FROM media_assets').get(),
+      hasLength(1),
+    );
+  });
 }
 
 Future<void> _insert(SqliteMaterialRepository repository) =>

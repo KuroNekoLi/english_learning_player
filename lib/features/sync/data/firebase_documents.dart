@@ -31,10 +31,7 @@ final class FirebaseDocuments {
     do {
       final response = await http.send(
         'GET',
-        endpoint.firestore(path, {
-          'pageSize': '100',
-          if (page != null) 'pageToken': page,
-        }),
+        endpoint.firestore(path, {'pageSize': '100', 'pageToken': ?page}),
         authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
       );
       await http.requireSuccess(response);

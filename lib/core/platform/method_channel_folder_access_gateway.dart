@@ -12,10 +12,9 @@ const folderAccessEventChannel = EventChannel(
 /// macOS implementation. Native code owns bookmarks and scopes every access.
 final class MethodChannelFolderAccessGateway implements FolderAccessGateway {
   const MethodChannelFolderAccessGateway({
-    MethodChannel methods = folderAccessMethodChannel,
-    EventChannel events = folderAccessEventChannel,
-  }) : _methods = methods,
-       _events = events;
+    this._methods = folderAccessMethodChannel,
+    this._events = folderAccessEventChannel,
+  });
 
   final MethodChannel _methods;
   final EventChannel _events;

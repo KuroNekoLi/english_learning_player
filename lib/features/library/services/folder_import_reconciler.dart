@@ -14,19 +14,15 @@ import 'audio_import_service.dart';
 
 final class FolderImportReconciler {
   FolderImportReconciler({
-    required FolderAccessGateway gateway,
-    required FolderReconciliationRepository repository,
-    required MaterialRepository materials,
-    required AudioImportService audioImporter,
-    required SubtitleImportService subtitleImporter,
+    required this._gateway,
+    required this._repository,
+    required this._materials,
+    required this._audioImporter,
+    required this._subtitleImporter,
     required this.ownerId,
     this.bindingId = 'primary-icloud-source',
     this.playlistTitle = 'iCloud 資料夾',
-  }) : _gateway = gateway,
-       _repository = repository,
-       _materials = materials,
-       _audioImporter = audioImporter,
-       _subtitleImporter = subtitleImporter;
+  });
 
   final FolderAccessGateway _gateway;
   final FolderReconciliationRepository _repository;

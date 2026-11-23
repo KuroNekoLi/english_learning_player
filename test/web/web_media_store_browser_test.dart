@@ -106,9 +106,8 @@ void main() {
         WebMediaStore(scope).copyAndHash(source),
         throwsStateError,
       );
-      final retry = await WebMediaStore(
-        scope,
-      ).copyAndHash(_source('interrupted.mp3', [1, 2, 3]));
+      final retry = await WebMediaStore(scope)
+          .copyAndHash(_source('interrupted.mp3', [1, 2, 3]));
       expect(await WebMediaStore(scope).open(retry.relativePath), isNotNull);
     },
   );

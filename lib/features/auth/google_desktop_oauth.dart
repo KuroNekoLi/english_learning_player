@@ -32,9 +32,9 @@ final class GoogleDesktopOAuth {
     List<int>.generate(32, (_) => Random.secure().nextInt(256)),
   ).replaceAll('=', '');
 
-  static String codeChallenge(String verifier) => base64UrlEncode(
-    sha256.convert(ascii.encode(verifier)).bytes,
-  ).replaceAll('=', '');
+  static String codeChallenge(String verifier) =>
+      base64UrlEncode(sha256.convert(ascii.encode(verifier)).bytes)
+          .replaceAll('=', '');
 
   Uri authorizationUri({
     required Uri redirectUri,
@@ -98,7 +98,11 @@ final class GoogleDesktopOAuth {
       if (!opened) throw StateError('Could not open the system browser.');
       final code = await codeResult.future.timeout(timeout);
       if (code == null) return null;
-      return _exchange(code: code, redirectUri: callback, verifier: verifier);
+      return await _exchange(
+        code: code,
+        redirectUri: callback,
+        verifier: verifier,
+      );
     } finally {
       await subscription.cancel();
       await server.close(force: true);

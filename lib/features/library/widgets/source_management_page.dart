@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../bookmarks/bookmarks_page.dart';
 import '../../sync/firebase_sync_panel.dart';

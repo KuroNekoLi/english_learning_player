@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/library/library_folder_repository.dart';
@@ -47,9 +47,8 @@ final class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage> {
           .add(widget.folder.id, material);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('無法加入教材，請稍後重試。')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('無法加入教材，請稍後重試。')));
       }
     } finally {
       if (mounted) setState(() => _adding = false);

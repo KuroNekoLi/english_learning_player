@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/library/library_view_model.dart';
@@ -75,9 +75,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('音訊匯入失敗')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('音訊匯入失敗')));
       }
     } finally {
       if (mounted) {

@@ -16,10 +16,9 @@ final class SqliteMaterialRepository
         CloudSubtitleCacheRepository,
         SubtitleTrackBatchWriter {
   const SqliteMaterialRepository({
-    required AccountScope scope,
-    required LocalDatabase database,
-  }) : _scope = scope,
-       _database = database;
+    required this._scope,
+    required this._database,
+  });
 
   final AccountScope _scope;
   final LocalDatabase _database;

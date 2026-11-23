@@ -15,7 +15,7 @@ Future<int> returnToLocalhost(
     queryParameters: {
       'state': badState ? 'wrong-state' : url.queryParameters['state']!,
       if (error == null) 'code': 'authorization-code',
-      if (error != null) 'error': error,
+      'error': ?error,
     },
   );
   final http = HttpClient();

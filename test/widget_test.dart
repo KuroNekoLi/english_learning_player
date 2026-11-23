@@ -3,7 +3,7 @@ import 'package:english_learning_player/features/library/library_folder_view_mod
 import 'package:english_learning_player/features/library/material_repository.dart';
 import 'package:english_learning_player/features/subtitles/domain/subtitle_models.dart';
 import 'package:english_learning_player/main_native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

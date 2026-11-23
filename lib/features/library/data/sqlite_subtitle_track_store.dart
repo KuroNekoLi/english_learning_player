@@ -34,9 +34,8 @@ final class SqliteSubtitleTrackStore {
       if (existing.isNotEmpty &&
           existing.single.read<String>('selection_mode') == 'manual' &&
           !manual) {
-        return (await listSubtitleTracks(
-          track.materialId,
-        )).firstWhere((item) => item.id == track.id);
+        return (await listSubtitleTracks(track.materialId))
+            .firstWhere((item) => item.id == track.id);
       }
 
       var selected = manual;

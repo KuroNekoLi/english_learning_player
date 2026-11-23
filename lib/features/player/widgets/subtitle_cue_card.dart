@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../learning/domain/learning_session.dart';
 import '../../subtitles/domain/subtitle_time.dart';
@@ -120,9 +120,9 @@ final class SubtitleCueCard extends StatelessWidget {
                               ?.copyWith(
                                 color: active
                                     ? Theme.of(context).colorScheme.onSurface
-                                    : Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                               ),
                         ),
                       ),

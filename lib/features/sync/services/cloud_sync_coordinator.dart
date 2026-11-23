@@ -24,25 +24,17 @@ typedef SyncRandom = double Function();
 
 final class CloudSyncCoordinator {
   CloudSyncCoordinator({
-    required AccountScope scope,
-    required SyncIdentityProvider identityProvider,
-    required SyncConsentProvider consentProvider,
-    required SyncOutbox outbox,
-    required MaterialRepository materials,
-    required MediaStore mediaStore,
-    required CloudSyncTransport transport,
-    Future<void> Function(String materialId)? publishSubtitles,
+    required this._scope,
+    required this._identityProvider,
+    required this._consentProvider,
+    required this._outbox,
+    required this._materials,
+    required this._mediaStore,
+    required this._transport,
+    this._publishSubtitles,
     SyncClock? clock,
     SyncRandom? random,
-  }) : _scope = scope,
-       _identityProvider = identityProvider,
-       _consentProvider = consentProvider,
-       _outbox = outbox,
-       _materials = materials,
-       _mediaStore = mediaStore,
-       _transport = transport,
-       _publishSubtitles = publishSubtitles,
-       _clock = clock ?? DateTime.now,
+  }) : _clock = clock ?? DateTime.now,
        _random = random ?? Random().nextDouble;
 
   final AccountScope _scope;

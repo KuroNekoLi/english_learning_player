@@ -7,7 +7,7 @@ import 'package:english_learning_player/features/auth/web/web_account_page.dart'
 import 'package:english_learning_player/features/auth/web/web_firebase_auth_port.dart';
 import 'package:english_learning_player/features/auth/web/web_firebase_session_controller.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_dependencies.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

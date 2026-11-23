@@ -13,7 +13,7 @@ import 'package:english_learning_player/features/bookmarks/bookmarks_page.dart';
 import 'package:english_learning_player/features/bookmarks/domain/bookmark.dart';
 import 'package:english_learning_player/features/library/library_dependencies.dart';
 import 'package:english_learning_player/features/progress/progress_dependencies.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

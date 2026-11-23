@@ -92,7 +92,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
               queryParameters: {
                 'providerId': provider.firebaseId,
                 'id_token': idToken,
-                if (rawNonce != null) 'nonce': rawNonce,
+                'nonce': ?rawNonce,
               },
             ).query,
             'returnIdpCredential': true,

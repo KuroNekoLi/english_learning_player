@@ -14,7 +14,9 @@ import 'package:english_learning_player/features/library/material_repository.dar
 import 'package:english_learning_player/features/library/services/audio_import_service.dart';
 import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
 import 'package:english_learning_player/features/sync/services/cloud_sync_coordinator.dart';
+
 import '../../fakes/fake_cloud_sync.dart';
+
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -137,25 +139,19 @@ void main() {
     },
   );
 
-  test(
-    'pauses without auth and resumes the same durable operation for the same UID',
-    () async {
-      identity.identity = null;
-      expect(
-        await coordinator.runOne(),
-        SyncRunResult.waitingForAuthentication,
-      );
-      expect(
-        (await materials.listMaterials()).single.status,
-        MaterialStatus.localReady,
-      );
-      expect((await _onlyOutboxRow(database)).read<String>('state'), 'queued');
+  test('pauses without auth and resumes the same durable operation for the same UID', () async {
+    identity.identity = null;
+    expect(await coordinator.runOne(), SyncRunResult.waitingForAuthentication);
+    expect(
+      (await materials.listMaterials()).single.status,
+      MaterialStatus.localReady,
+    );
+    expect((await _onlyOutboxRow(database)).read<String>('state'), 'queued');
 
-      identity.identity = const SyncIdentity('alice');
-      expect(await coordinator.runOne(), SyncRunResult.uploaded);
-      expect(transport.uploadCount, 1);
-    },
-  );
+    identity.identity = const SyncIdentity('alice');
+    expect(await coordinator.runOne(), SyncRunResult.uploaded);
+    expect(transport.uploadCount, 1);
+  });
 
   test(
     'requires explicit cloud-sync consent before dispatching imported media',
@@ -366,59 +362,56 @@ void main() {
     expect(transport.uploadCount, 0);
   });
 
-  test(
-    'subtitle release waits for audio, retries after restart and keeps CloudReady',
-    () async {
-      final material = (await materials.listMaterials()).single;
-      await _importSubtitle(material, materials, 'First');
-      await _importSubtitle(material, materials, 'Latest');
-      now = DateTime.now().toUtc().add(const Duration(seconds: 1));
-      var publications = 0;
-      coordinator = makeCoordinator(
-        publishSubtitles: (id) async {
-          publications++;
-          throw const SyncFailure(
-            SyncFailureKind.transient,
-            'network_unavailable',
-          );
-        },
-      );
-      final before = await _subtitleOperations(database);
-      expect(before, hasLength(1));
-      final opId = before.single.read<String>('op_id');
-      expect(await coordinator.runOne(), SyncRunResult.uploaded);
-      expect(publications, 0);
-      expect(await coordinator.runOne(), SyncRunResult.retryScheduled);
-      expect(await coordinator.runOne(), SyncRunResult.idle);
-      expect(
-        (await materials.listMaterials()).single.status,
-        MaterialStatus.cloudReady,
-      );
+  test('subtitle release waits for audio, retries after restart and keeps CloudReady', () async {
+    final material = (await materials.listMaterials()).single;
+    await _importSubtitle(material, materials, 'First');
+    await _importSubtitle(material, materials, 'Latest');
+    now = DateTime.now().toUtc().add(const Duration(seconds: 1));
+    var publications = 0;
+    coordinator = makeCoordinator(
+      publishSubtitles: (id) async {
+        publications++;
+        throw const SyncFailure(
+          SyncFailureKind.transient,
+          'network_unavailable',
+        );
+      },
+    );
+    final before = await _subtitleOperations(database);
+    expect(before, hasLength(1));
+    final opId = before.single.read<String>('op_id');
+    expect(await coordinator.runOne(), SyncRunResult.uploaded);
+    expect(publications, 0);
+    expect(await coordinator.runOne(), SyncRunResult.retryScheduled);
+    expect(await coordinator.runOne(), SyncRunResult.idle);
+    expect(
+      (await materials.listMaterials()).single.status,
+      MaterialStatus.cloudReady,
+    );
 
-      await materials.close();
-      database = await files.open(scope);
-      materials = SqliteMaterialRepository(scope: scope, database: database);
-      outbox = SqliteSyncOutbox(scope: scope, db: database);
-      coordinator = makeCoordinator(
-        publishSubtitles: (id) async {
-          publications++;
-          expect(id, material.id);
-          final tracks = await materials.listSubtitleTracks(id);
-          expect(
-            tracks.singleWhere((track) => track.isSelected).cues.single.text,
-            'Latest',
-          );
-        },
-      );
-      now = now.add(const Duration(seconds: 2));
-      expect(await coordinator.runOne(), SyncRunResult.uploaded);
-      expect(publications, 2);
-      final completed = (await _subtitleOperations(database)).single;
-      expect(completed.read<String>('op_id'), opId);
-      expect(completed.read<String>('state'), 'completed');
-      expect(await coordinator.runOne(), SyncRunResult.idle);
-    },
-  );
+    await materials.close();
+    database = await files.open(scope);
+    materials = SqliteMaterialRepository(scope: scope, database: database);
+    outbox = SqliteSyncOutbox(scope: scope, db: database);
+    coordinator = makeCoordinator(
+      publishSubtitles: (id) async {
+        publications++;
+        expect(id, material.id);
+        final tracks = await materials.listSubtitleTracks(id);
+        expect(
+          tracks.singleWhere((track) => track.isSelected).cues.single.text,
+          'Latest',
+        );
+      },
+    );
+    now = now.add(const Duration(seconds: 2));
+    expect(await coordinator.runOne(), SyncRunResult.uploaded);
+    expect(publications, 2);
+    final completed = (await _subtitleOperations(database)).single;
+    expect(completed.read<String>('op_id'), opId);
+    expect(completed.read<String>('state'), 'completed');
+    expect(await coordinator.runOne(), SyncRunResult.idle);
+  });
 
   test(
     'a subtitle edit during publication waits for its own lease and consent',
@@ -456,9 +449,8 @@ void main() {
       resume.complete();
       expect(await publishing, SyncRunResult.waitingForConsent);
       expect(
-        (await _subtitleOperations(
-          database,
-        )).every((row) => row.read<int>('attempts') == 0),
+        (await _subtitleOperations(database))
+            .every((row) => row.read<int>('attempts') == 0),
         isTrue,
       );
       expect(await coordinator.runOne(), SyncRunResult.uploaded);

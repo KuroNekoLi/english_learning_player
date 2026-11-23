@@ -289,7 +289,7 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
       _bookmarks = Map.unmodifiable({
         for (final entry in _bookmarks.entries)
           if (entry.key != key) entry.key: entry.value,
-        if (saved != null) key: saved,
+        key: ?saved,
       });
       ref.invalidate(bookmarkListViewModelProvider);
       state = state.copyWith(

@@ -98,7 +98,7 @@ final class FirebaseEndpoint {
       'b',
       storageBucket,
       'o',
-      if (object != null) object,
+      ?object,
     ], query);
   }
 

@@ -67,16 +67,13 @@ final class LibraryStructure {
 
   Set<String> foldersFor(String id) => {
     for (final folder in _memberships[id] ?? const <String>{})
-      if (_liveFolder(folder) case final live?) live,
+      ?_liveFolder(folder),
   };
 
   // Preserve placements whose folders haven't arrived yet. Deletions resolve
   // to the nearest surviving ancestor.
   Set<String> placementsForEdit(String id) => {
     for (final folder in _memberships[id] ?? const <String>{})
-      if (!names.containsKey(folder))
-        folder
-      else if (_liveFolder(folder) case final live?)
-        live,
+      if (!names.containsKey(folder)) folder else ?_liveFolder(folder),
   };
 }

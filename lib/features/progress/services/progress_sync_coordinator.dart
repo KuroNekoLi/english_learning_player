@@ -27,20 +27,14 @@ enum ProgressSyncRunResult {
 
 final class ProgressSyncCoordinator {
   ProgressSyncCoordinator({
-    required AccountScope scope,
-    required ProgressRepository repository,
-    required SyncIdentityProvider identityProvider,
-    required SyncConsentProvider consentProvider,
-    required ProgressSyncTransport transport,
-    required DateTime Function() clock,
-    required double Function() random,
-  }) : _scope = scope,
-       _repository = repository,
-       _identityProvider = identityProvider,
-       _consentProvider = consentProvider,
-       _transport = transport,
-       _clock = clock,
-       _random = random;
+    required this._scope,
+    required this._repository,
+    required this._identityProvider,
+    required this._consentProvider,
+    required this._transport,
+    required this._clock,
+    required this._random,
+  });
 
   final AccountScope _scope;
   final ProgressRepository _repository;

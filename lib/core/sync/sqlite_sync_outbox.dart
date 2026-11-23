@@ -9,9 +9,7 @@ import '../db/local_database.dart';
 import 'sync_contracts.dart';
 
 final class SqliteSyncOutbox implements SyncOutbox {
-  SqliteSyncOutbox({required AccountScope scope, required LocalDatabase db})
-    : _scope = scope,
-      _db = db;
+  SqliteSyncOutbox({required this._scope, required this._db});
 
   final AccountScope _scope;
   final LocalDatabase _db;

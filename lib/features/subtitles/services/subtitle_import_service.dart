@@ -10,15 +10,11 @@ import '../domain/subtitle_models.dart';
 
 final class SubtitleImportService {
   SubtitleImportService({
-    required MaterialRepository repository,
-    SrtParser parser = const SrtParser(),
-    SubtitleLanguageDetector languageDetector =
-        const SubtitleLanguageDetector(),
-    Uuid uuid = const Uuid(),
-  }) : _repository = repository,
-       _parser = parser,
-       _languageDetector = languageDetector,
-       _uuid = uuid;
+    required this._repository,
+    this._parser = const SrtParser(),
+    this._languageDetector = const SubtitleLanguageDetector(),
+    this._uuid = const Uuid(),
+  });
 
   final MaterialRepository _repository;
   final SrtParser _parser;

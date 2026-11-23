@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../learning/domain/learning_session.dart';
 import '../../subtitles/domain/subtitle_models.dart';
@@ -122,6 +122,10 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
     SubtitleTrack? selectedEnglish,
     SubtitleTrack? selectedChinese,
   ) {
+    final englishTracks = group.tracks.where(_isEnglish).toList();
+    final chineseTracks = group.tracks
+        .where((track) => !_isEnglish(track))
+        .toList();
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -150,24 +154,46 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                 ],
               ),
             ),
-            for (final track in group.tracks)
-              RadioListTile<String>(
-                value: track.id,
-                groupValue: _isEnglish(track)
-                    ? selectedEnglish?.id
-                    : selectedChinese?.id,
-                onChanged: (_) => widget.onSelect(track),
-                title: Text(_isEnglish(track) ? '英文字幕軌' : '中文字幕軌'),
-                subtitle: Text(
-                  track.selectionMode == SubtitleSelectionMode.manual
-                      ? '手動指定'
-                      : '自動配對',
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                dense: true,
-              ),
+            if (englishTracks.isNotEmpty)
+              _trackOptions(englishTracks, selectedEnglish),
+            if (chineseTracks.isNotEmpty)
+              _trackOptions(chineseTracks, selectedChinese),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _trackOptions(
+    List<SubtitleTrack> tracks,
+    SubtitleTrack? selectedTrack,
+  ) {
+    return RadioGroup<String>(
+      groupValue: selectedTrack?.id,
+      onChanged: (selectedId) {
+        if (selectedId == null) return;
+        for (final track in tracks) {
+          if (track.id == selectedId) {
+            widget.onSelect(track);
+            return;
+          }
+        }
+      },
+      child: Column(
+        children: [
+          for (final track in tracks)
+            RadioListTile<String>(
+              value: track.id,
+              title: Text(_isEnglish(track) ? '英文字幕軌' : '中文字幕軌'),
+              subtitle: Text(
+                track.selectionMode == SubtitleSelectionMode.manual
+                    ? '手動指定'
+                    : '自動配對',
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              dense: true,
+            ),
+        ],
       ),
     );
   }

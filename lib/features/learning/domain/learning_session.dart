@@ -37,13 +37,12 @@ final class LearningSessionState {
 /// Coordinates cue-aware study actions while keeping playback behind AudioEngine.
 final class LearningSession {
   LearningSession({
-    required AudioEngine audioEngine,
+    required this._audioEngine,
     required SubtitleTrack englishTrack,
     SubtitleTrack? chineseTrack,
     SubtitleTimeline? timeline,
     this.normalVisibility = SubtitleVisibility.bilingual,
-  }) : _audioEngine = audioEngine,
-       _englishTrack = englishTrack,
+  }) : _englishTrack = englishTrack,
        _englishSynchronizer = SubtitleSynchronizer(
          cues: englishTrack.cues,
          offsetMs: englishTrack.offsetMs,

@@ -105,9 +105,8 @@ void main() {
         scope: scope,
         database: await storage.open(scope),
       );
-      final restored = (await repository.listSubtitleTracks(
-        'material-1',
-      )).single;
+      final restored = (await repository.listSubtitleTracks('material-1'))
+          .single;
 
       expect(restored.originalBytes, bytes);
       expect(restored.sourceName, 'lesson.en.srt');
@@ -394,42 +393,44 @@ void main() {
     },
   );
 
-  test('v6 upgrade queues existing local subtitle tracks exactly once', () async {
-    final selected = await _importer(repository).importBytes(
-      ownerId: scope.ownerId,
-      materialId: 'material-1',
-      languageTag: 'en',
-      sourceName: 'lesson.en.srt',
-      bytes: _srt('Old selection'),
-      manual: true,
-    );
-    await repository.close();
-    final versionSix = await storage.open(scope);
-    await versionSix.customStatement(
-      "DELETE FROM sync_outbox WHERE entity_type = 'subtitle'",
-    );
-    await versionSix.customStatement('PRAGMA user_version = 6');
-    await versionSix.close();
+  test(
+    'v6 upgrade queues existing local subtitle tracks exactly once',
+    () async {
+      final selected = await _importer(repository).importBytes(
+        ownerId: scope.ownerId,
+        materialId: 'material-1',
+        languageTag: 'en',
+        sourceName: 'lesson.en.srt',
+        bytes: _srt('Old selection'),
+        manual: true,
+      );
+      await repository.close();
+      final versionSix = await storage.open(scope);
+      await versionSix.customStatement(
+        "DELETE FROM sync_outbox WHERE entity_type = 'subtitle'",
+      );
+      await versionSix.customStatement('PRAGMA user_version = 6');
+      await versionSix.close();
 
-    for (var opens = 0; opens < 2; opens++) {
-      final upgraded = await storage.open(scope);
-      repository = SqliteMaterialRepository(scope: scope, database: upgraded);
-      final operation = await upgraded
-          .customSelect(
-            "SELECT owner_id, entity_id, state FROM sync_outbox WHERE entity_type = 'subtitle'",
-          )
-          .getSingle();
-      expect(operation.read<String>('state'), 'queued');
-      expect(operation.read<String>('owner_id'), scope.ownerId);
-      expect(operation.read<String>('entity_id'), 'material-1');
-      final restored = (await repository.listSubtitleTracks(
-        'material-1',
-      )).single;
-      expect(restored.id, selected.track.id);
-      expect(restored.originalBytes, selected.track.originalBytes);
-      if (opens == 0) await repository.close();
-    }
-  });
+      for (var opens = 0; opens < 2; opens++) {
+        final upgraded = await storage.open(scope);
+        repository = SqliteMaterialRepository(scope: scope, database: upgraded);
+        final operation = await upgraded
+            .customSelect(
+              "SELECT owner_id, entity_id, state FROM sync_outbox WHERE entity_type = 'subtitle'",
+            )
+            .getSingle();
+        expect(operation.read<String>('state'), 'queued');
+        expect(operation.read<String>('owner_id'), scope.ownerId);
+        expect(operation.read<String>('entity_id'), 'material-1');
+        final restored = (await repository.listSubtitleTracks('material-1'))
+            .single;
+        expect(restored.id, selected.track.id);
+        expect(restored.originalBytes, selected.track.originalBytes);
+        if (opens == 0) await repository.close();
+      }
+    },
+  );
 
   test('subtitle track changes roll back if they cannot be enqueued', () async {
     await repository.close();

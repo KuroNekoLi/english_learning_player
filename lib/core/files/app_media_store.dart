@@ -12,11 +12,7 @@ import 'media_store.dart';
 export 'media_store.dart' show AudioImportException, ImportedAudio;
 
 final class AppMediaStore implements MediaStore {
-  const AppMediaStore({
-    required AccountDatabaseService storage,
-    required AccountScope scope,
-  }) : _storage = storage,
-       _scope = scope;
+  const AppMediaStore({required this._storage, required this._scope});
 
   final AccountDatabaseService _storage;
   final AccountScope _scope;

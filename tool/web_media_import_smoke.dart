@@ -20,7 +20,7 @@ import 'package:english_learning_player/features/player/services/material_playba
 import 'package:english_learning_player/features/player/services/player_playback_startup.dart';
 import 'package:english_learning_player/features/progress/data/sqlite_progress_repository.dart';
 import 'package:english_learning_player/features/subtitles/services/subtitle_import_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:web/web.dart' as web;
 
 const _syntheticMp3Base64 =
@@ -175,9 +175,8 @@ final class _WebMediaImportSmokeAppState extends State<WebMediaImportSmokeApp> {
         throw StateError('Browser media SHA-256 deduplication failed.');
       }
       final material = result.importedMaterials.single;
-      final englishTrack = (await repository.listSubtitleTracks(
-        material.id,
-      )).firstWhere((track) => track.languageTag == 'en');
+      final englishTrack = (await repository.listSubtitleTracks(material.id))
+          .firstWhere((track) => track.languageTag == 'en');
       final cue = englishTrack.cues.single;
       final bookmarks = SqliteBookmarkRepository(
         scope: scope,

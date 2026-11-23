@@ -14,11 +14,7 @@ import 'sqlite_progress_positions.dart';
 import 'sqlite_progress_queue.dart';
 
 final class SqliteProgressRepository implements ProgressRepository {
-  SqliteProgressRepository({
-    required AccountScope scope,
-    required LocalDatabase db,
-  }) : _scope = scope,
-       _db = db;
+  SqliteProgressRepository({required this._scope, required this._db});
 
   final AccountScope _scope;
   final LocalDatabase _db;

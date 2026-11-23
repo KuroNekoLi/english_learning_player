@@ -7,12 +7,10 @@ import '../material_repository.dart';
 
 final class AudioImportService {
   AudioImportService({
-    required MaterialRepository repository,
-    required MediaStore mediaStore,
-    Uuid uuid = const Uuid(),
-  }) : _repository = repository,
-       _mediaStore = mediaStore,
-       _uuid = uuid;
+    required this._repository,
+    required this._mediaStore,
+    this._uuid = const Uuid(),
+  });
 
   final MaterialRepository _repository;
   final MediaStore _mediaStore;

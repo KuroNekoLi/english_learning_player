@@ -9,8 +9,7 @@ import 'account_database_opener.dart';
 import 'local_database.dart';
 
 final class AccountDatabaseService implements AccountDatabaseOpener {
-  const AccountDatabaseService({required Directory supportDirectory})
-    : _supportDirectory = supportDirectory;
+  const AccountDatabaseService({required this._supportDirectory});
 
   final Directory _supportDirectory;
 

@@ -126,58 +126,55 @@ void main() {
     },
   );
 
-  test(
-    'imports explicitly selected bilingual SRT regardless of stem and reports progress',
-    () async {
-      final selection = MediaSelectionImportService(
-        ownerId: accountA.ownerId,
-        repository: repositoryA,
-        audioImporter: service(accountA, repositoryA),
-        subtitleImporter: SubtitleImportService(repository: repositoryA),
-      );
-      final progressSnapshots = <List<MediaFileImportProgress>>[];
-      final result = await selection.importFiles([
-        bytes('lesson.m4a', [1, 2, 3, 4], sourceKey: 'lesson-audio'),
-        bytes(
-          'captions-from-another-source.srt',
-          _bilingualSrt('A sentence to learn.', '這是一句雙語字幕。'),
-          sourceKey: 'lesson-subtitle',
-        ),
-      ], onProgress: progressSnapshots.add);
+  test('imports explicitly selected bilingual SRT regardless of stem and reports progress', () async {
+    final selection = MediaSelectionImportService(
+      ownerId: accountA.ownerId,
+      repository: repositoryA,
+      audioImporter: service(accountA, repositoryA),
+      subtitleImporter: SubtitleImportService(repository: repositoryA),
+    );
+    final progressSnapshots = <List<MediaFileImportProgress>>[];
+    final result = await selection.importFiles([
+      bytes('lesson.m4a', [1, 2, 3, 4], sourceKey: 'lesson-audio'),
+      bytes(
+        'captions-from-another-source.srt',
+        _bilingualSrt('A sentence to learn.', '這是一句雙語字幕。'),
+        sourceKey: 'lesson-subtitle',
+      ),
+    ], onProgress: progressSnapshots.add);
 
-      expect(result.importedMaterials, hasLength(1));
-      expect(result.subtitlesImported, 2);
-      expect(result.unmatchedSubtitles, 0);
-      final tracks = await repositoryA.listSubtitleTracks(
-        result.importedMaterials.single.id,
-      );
-      expect(tracks.map((track) => track.languageTag), ['en', 'zh-TW']);
-      expect(tracks.map((track) => track.cues.single.text), [
-        'A sentence to learn.',
-        '這是一句雙語字幕。',
-      ]);
-      expect(
-        tracks.every(
-          (track) => track.selectionMode == SubtitleSelectionMode.manual,
-        ),
-        isTrue,
-      );
-      expect(progressSnapshots.first.single.sourceName, 'lesson.m4a');
-      expect(
-        progressSnapshots.any(
-          (snapshot) =>
-              snapshot.single.bytesCopied > 0 &&
-              snapshot.single.status == MediaFileImportStatus.importing,
-        ),
-        isTrue,
-      );
-      expect(
-        progressSnapshots.last.single.status,
-        MediaFileImportStatus.completed,
-      );
-      expect(progressSnapshots.last.single.fraction, 1);
-    },
-  );
+    expect(result.importedMaterials, hasLength(1));
+    expect(result.subtitlesImported, 2);
+    expect(result.unmatchedSubtitles, 0);
+    final tracks = await repositoryA.listSubtitleTracks(
+      result.importedMaterials.single.id,
+    );
+    expect(tracks.map((track) => track.languageTag), ['en', 'zh-TW']);
+    expect(tracks.map((track) => track.cues.single.text), [
+      'A sentence to learn.',
+      '這是一句雙語字幕。',
+    ]);
+    expect(
+      tracks.every(
+        (track) => track.selectionMode == SubtitleSelectionMode.manual,
+      ),
+      isTrue,
+    );
+    expect(progressSnapshots.first.single.sourceName, 'lesson.m4a');
+    expect(
+      progressSnapshots.any(
+        (snapshot) =>
+            snapshot.single.bytesCopied > 0 &&
+            snapshot.single.status == MediaFileImportStatus.importing,
+      ),
+      isTrue,
+    );
+    expect(
+      progressSnapshots.last.single.status,
+      MediaFileImportStatus.completed,
+    );
+    expect(progressSnapshots.last.single.fraction, 1);
+  });
 
   test(
     'subtitle-only selection attaches to an existing matching lesson',
@@ -195,9 +192,11 @@ void main() {
 
       expect(result.subtitlesImported, 1);
       expect(
-        (await repositoryA.listSubtitleTracks(
-          lesson.material.id,
-        )).single.cues.single.text,
+        (await repositoryA.listSubtitleTracks(lesson.material.id))
+            .single
+            .cues
+            .single
+            .text,
         'Late subtitle\n',
       );
     },

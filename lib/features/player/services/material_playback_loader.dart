@@ -39,12 +39,10 @@ final class MaterialPlaybackBundle {
 
 final class MaterialPlaybackService implements MaterialPlaybackLoader {
   const MaterialPlaybackService({
-    required MaterialRepository repository,
-    required MediaStore storage,
-    required AccountScope scope,
-  }) : _repository = repository,
-       _storage = storage,
-       _scope = scope;
+    required this._repository,
+    required this._storage,
+    required this._scope,
+  });
 
   final MaterialRepository _repository;
   final MediaStore _storage;

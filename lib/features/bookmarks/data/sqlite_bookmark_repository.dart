@@ -7,12 +7,10 @@ import '../domain/bookmark.dart';
 
 final class SqliteBookmarkRepository implements BookmarkRepository {
   const SqliteBookmarkRepository({
-    required AccountScope scope,
-    required LocalDatabase database,
+    required this._scope,
+    required this._database,
     DateTime Function()? clock,
-  }) : _scope = scope,
-       _database = database,
-       _clock = clock ?? DateTime.now;
+  }) : _clock = clock ?? DateTime.now;
 
   final AccountScope _scope;
   final LocalDatabase _database;

@@ -112,9 +112,11 @@ void main() {
       final b = sources.singleWhere((it) => it.relativePath.startsWith('B/'));
       expect(await materials.listSubtitleTracks(a.materialId), isEmpty);
       expect(
-        (await materials.listSubtitleTracks(
-          b.materialId,
-        )).single.cues.single.text,
+        (await materials.listSubtitleTracks(b.materialId))
+            .single
+            .cues
+            .single
+            .text,
         'Second folder only\n',
       );
       expect(await staging.list().toList(), isEmpty);
@@ -281,9 +283,9 @@ void main() {
     expect(result.pendingDownload, 1);
     expect(result.missingSourceEntries, 0);
     expect(
-      (await materials.listFolderSources(
-        'primary-icloud-source',
-      )).single.present,
+      (await materials.listFolderSources('primary-icloud-source'))
+          .single
+          .present,
       isTrue,
     );
   });

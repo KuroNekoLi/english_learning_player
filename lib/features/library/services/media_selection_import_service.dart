@@ -11,14 +11,11 @@ import 'audio_import_service.dart';
 final class MediaSelectionImportService {
   MediaSelectionImportService({
     required this.ownerId,
-    required MaterialRepository repository,
-    required AudioImportService audioImporter,
-    required SubtitleImportService subtitleImporter,
-    SubtitleFilenameMatcher matcher = const SubtitleFilenameMatcher(),
-  }) : _repository = repository,
-       _audioImporter = audioImporter,
-       _subtitleImporter = subtitleImporter,
-       _matcher = matcher;
+    required this._repository,
+    required this._audioImporter,
+    required this._subtitleImporter,
+    this._matcher = const SubtitleFilenameMatcher(),
+  });
 
   final String ownerId;
   final MaterialRepository _repository;
@@ -86,8 +83,7 @@ final class MediaSelectionImportService {
         for (final track in tracks)
           if (track.isSelected &&
               track.selectionMode == SubtitleSelectionMode.manual)
-            if (_language(track.languageTag) case final language?)
-              language: track.sourceName,
+            ?_language(track.languageTag): track.sourceName,
       };
       if (audioFiles.length == 1 && subtitleFiles.length == 1) {
         final file = subtitleFiles.single;

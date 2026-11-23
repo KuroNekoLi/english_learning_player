@@ -14,18 +14,14 @@ abstract interface class CloudMaterialDownloadTransport {
 
 final class CloudMaterialDownloadService {
   const CloudMaterialDownloadService({
-    required AccountScope scope,
+    required this._scope,
     required SyncIdentityProvider identityProvider,
     required SyncConsentProvider consentProvider,
-    required CloudMaterialDownloadTransport transport,
-    required CloudMaterialCacheRepository repository,
-    required MediaStore mediaStore,
-  }) : _scope = scope,
-       _identity = identityProvider,
-       _consent = consentProvider,
-       _transport = transport,
-       _repository = repository,
-       _mediaStore = mediaStore;
+    required this._transport,
+    required this._repository,
+    required this._mediaStore,
+  }) : _identity = identityProvider,
+       _consent = consentProvider;
 
   final AccountScope _scope;
   final SyncIdentityProvider _identity;

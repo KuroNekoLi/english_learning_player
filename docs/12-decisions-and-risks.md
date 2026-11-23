@@ -10,7 +10,7 @@
 | ADR-003 | ACCEPTED | 同 App 帳號跨平台同步教材、字幕與進度 | 使用者要求 |
 | ADR-004 | ACCEPTED | Mac iCloud 使用者自選資料夾，播放清單綁定 | 使用者要求 |
 | ADR-005 | PROPOSED | Firebase Auth / Firestore / Storage 保留為候選 | macOS Core 與本機 Firestore／Storage 傳輸通過，Auth 卡在 Keychain entitlement。正式環境受 ADR-010／011／018 阻擋 |
-| ADR-006 | ACCEPTED | Riverpod 3.3.2 接入 bootstrap；Drift 2.31.0、just_audio 0.10.6 作後續 Spike 基準 | 同一個 Dart 3.8.1 solver 已解析成功；套件與原生驗證分開記錄；單頁暫緩 go_router |
+| ADR-006 | ACCEPTED | 使用 Riverpod、Drift 與 just_audio 作既有架構基線；套件版本由 ADR-034 更新 | 目前解析為 Riverpod 3.5.0、Drift 2.35.4、just_audio 0.10.6；依賴版本與平台 build 證據見 ADR-034；單頁暫緩 go_router |
 | ADR-007 | ACCEPTED | macOS 自選來源採唯讀授權 | grant 留在裝置，原始檔不經 app 寫入；sandbox 實測留 WP-11 |
 | ADR-008 | ACCEPTED | Mac 是 MVP 自動 iCloud 入口，iOS 直接 folder scan 延後 | 產品範圍 §4 與 folder 規格 §3 |
 | ADR-009 | ACCEPTED | SQLite 原子寫入與 durable outbox；先驗證 blob 再發佈 metadata | 依同步規格與 Firestore 交易限制；重試與部分失敗規則見下方 |
@@ -21,13 +21,13 @@
 | ADR-014 | OPEN | 登出時保留／移除快取的產品選項 | 強制 UID 隔離與暫停舊 UID outbox；實際保留期限與磁碟政策待定 |
 | ADR-015 | OPEN | 音訊外再支援 MP4 的里程碑 | 使用者主要使用音訊，影片之後擴充 |
 | ADR-016 | OPEN | SRT encoding fallback 與語言偵測套件 | UTF-8 優先；需平台與授權評估 |
-| ADR-017 | OPEN | 正式最低 OS、Flutter SDK 與 Android JDK 選型 | Flutter 3.32.2 固定；Gradle 8.12 用 JDK 17。候選 Firebase 原生最低版本須審核 |
+| ADR-017 | ACCEPTED（本機工具鏈及最低平台版本）／OPEN（發佈簽章與商店驗收） | Flutter/Dart 與四平台最低版本 | 使用者接受 iOS 15、macOS 12、Android API 24；Flutter 3.50.1 / Dart 3.14.0、Gradle 9.5.0 / AGP 9.3.1 / Kotlin 2.4.20 已完成本機四平台 build。發佈簽章、商店與真機登入仍需各自驗收，詳見 ADR-034 |
 
-| ADR-018 | OPEN | FlutterFire Apple 發佈的套件管理方式 | CocoaPods pin 可重跑 Spike；評估 SwiftPM 與 Flutter SDK 升級的相依性後再定正式方案 |
+| ADR-018 | OPEN | FlutterFire Apple 發佈的套件管理方式 | Flutter 3.50.1 對目前 Apple plugins 產生 SwiftPM 整合且 iOS/macOS build 通過；CocoaPods 專案整合仍存在並觸發遷移提示。是否移除 CocoaPods 與正式發佈流程另行決定，不影響目前 build 證據 |
 | ADR-019 | OPEN | 媒體孤兒回收、跨裝置刪除保留期限 | 媒體回收與同步 tombstone retention 仍待 WP-08；書籤 cue 重定位已由 ADR-025 定義 |
 | ADR-020 | ACCEPTED | WP-02 以 owner namespace 隔離本機 DB/媒體；媒體按 SHA-256 去重，教材只對相同來源鍵與內容雜湊冪等 | 保留不同來源的獨立 materialId；來源鍵不得含原始路徑。孤兒媒體回收沿用 ADR-019，待後續工作包處理 |
 | ADR-021 | ACCEPTED | WP-03 SRT 配對以半開區間重疊判斷；有效重疊至少覆蓋較短 cue 的 25% | 依 T-SRT fixture 驗證多對一、一對多及邊界擦碰；保留門檻參數以便後續 fixture/產品決策調整 |
-| ADR-022 | ACCEPTED | WP-04 透過 `AudioPlayerPort` 隔離 just_audio；audio_session 固定 0.1.25 以保留 Android minSdk 21；iOS/Android 中斷暫停且不自動續播 | 0.2.4 實測宣告 minSdk 24；0.1.25 Android Gradle 設定 minSdk 19，且符合 just_audio 0.10.6 相依範圍。speech session 與事件依套件文件；loop 用原生 clip + LoopMode.one。真機精度仍待驗 |
+| ADR-022 | ACCEPTED | WP-04 透過 `AudioPlayerPort` 隔離 just_audio；audio_session 0.2.4 與 Android API 24 基線；iOS/Android 中斷暫停且不自動續播 | 使用者接受 Android API 24；Flutter 3.50.1 Android Debug APK 實際 build 通過。speech session 與事件依套件文件；loop 用原生 clip + LoopMode.one。真機精度仍待驗 |
 | ADR-023 | ACCEPTED | WP-05 LearningSession 綁定一個教材；replay 保留揭露，換 cue 重設遮蔽；句循環由獨立命令控制 | 對應精聽狀態機；無翻譯仍允許揭露並提示；跨教材 snapshot 不得誤操作播放器。T-LEARN-01..05 自動測試 |
 | ADR-024 | ACCEPTED | WP-06 一般字幕模式為 session 呈現狀態；字幕軌/offset 透過 repository 持久化 | 視窗測試證明切換不 Seek，播放進度保持；詳見 WP-06 handoff |
 | ADR-025 | ACCEPTED | WP-07 本機書籤保存不可變 cue anchor snapshot；字幕變更依文字與時間重定位，無唯一匹配時保留未定位 | WP-07 SQLite v2→v3 migration、重開 DB、subtitle revision relocation、ambiguous 與 account isolation tests |
@@ -38,6 +38,7 @@
 | ADR-031 | ACCEPTED（平台與方向）／OPEN（相容性、發布） | Web 為第四個正式支援平台，採 Drift WasmDatabase、瀏覽器私有儲存與 Google Web OAuth | 設立 WP-17。瀏覽器矩陣、部署選項與實際登入／同步由 T-WEB-01..06 驗收。 |
 | ADR-032 | ACCEPTED（bucket 與 UID 隔離）／OPEN（刪除參照清理、費用上限） | 專案 `english-learning-player-auth` 使用 `english-learning-player-auth.firebasestorage.app`（`us-east1`）；owner 可管理自身 assets/subtitles | Blaze 已由使用者連結。bucket 區域建立後不能變更。內容地址物件更新需保持 bytes checksum 與應用身分 metadata；owner delete 可能留下 Firestore metadata 指向的失效物件，App 刪除/GC 尚未實作。費用上限仍待設定。 |
 | ADR-033 | ACCEPTED（裝置同意與執行時同步） | Firebase 教材同步由每裝置、專案與 UID 分別同意，選擇寫入 SQLite v8 | 首次登入詢問，成功同意後消費本機音檔與字幕佇列。程式暫停或關閉後於下次開啟繼續。接收端自動更新雲端清單與晚到字幕。 |
+| ADR-034 | ACCEPTED（本機升級與建置基線） | Flutter、Dart、相依套件及原生工具鏈升級 | 依使用者同意的 iOS 15 / macOS 12 / Android API 24，升級至 Flutter 3.50.1 / Dart 3.14.0；主要依賴解析為 Riverpod 3.5.0、Drift 2.35.4、just_audio 0.10.6、audio_session 0.2.4、sqlite3 3.9.2。移除已 EOL 的 `sqlite3_flutter_libs`，改用 sqlite3 3.x 原生 assets。Android 對齊 Flutter 3.50 官方 Gradle 9.5.0 / AGP 9.3.1 / Kotlin 2.4.20 模板。`pub outdated` 顯示所有直接 runtime 依賴為最新可解析版本；測試套件及四個受相依約束的 transitives 尚有更新版本但目前不可解析。Analyze、194 tests（3 項 Emulator tests skipped）及 Android/iOS/macOS/Web build 通過。實機 `flutter run` 已自動簽章、安裝且 Runner process 存活，但 Flutter debugger attach 因 `Error executing osascript: -2` 未完成；Google 登入未測。未變更 Firebase 雲端資源。依據：[Flutter 3.50 release notes](https://docs.flutter.dev/release/release-notes/release-notes-3.50.0)、[Flutter supported platforms](https://docs.flutter.dev/reference/supported-platforms)、[Flutter built-in Kotlin migration](https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers)、[sqlite3 3.0 upgrade notes](https://pub.dev/packages/sqlite3/changelog)、[sqlite3_flutter_libs package status](https://pub.dev/documentation/sqlite3_flutter_libs/latest/sqlite3_flutter_libs/)。 |
 
 ## Stage 1 決策細節（2026-11-10）
 

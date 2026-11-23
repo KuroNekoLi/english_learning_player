@@ -38,44 +38,40 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../fakes/fake_cloud_sync.dart';
 
 void main() {
-  test(
-    'Firebase emulator: Google and Apple exchange mock credentials for isolated UIDs',
-    () async {
-      final http = FirebaseHttp();
-      addTearDown(http.close);
-      final endpoint = FirebaseEndpoint(
-        project: 'demo-english-learning-player',
-        bucket: 'demo-english-learning-player.appspot.com',
-        apiKey: 'fake-api-key',
-        emulatorHost: '127.0.0.1',
+  test('Firebase emulator: Google and Apple exchange mock credentials for isolated UIDs', () async {
+    final http = FirebaseHttp();
+    addTearDown(http.close);
+    final endpoint = FirebaseEndpoint(
+      project: 'demo-english-learning-player',
+      bucket: 'demo-english-learning-player.appspot.com',
+      apiKey: 'fake-api-key',
+      emulatorHost: '127.0.0.1',
+    );
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final uids = <String, String>{};
+    for (final provider in SocialProvider.values) {
+      final session = FirebaseAccountSession(endpoint, http);
+      final mockCredential = ProviderIdToken(
+        jsonEncode({
+          'sub': '${provider.name}-$stamp',
+          'email': '${provider.name}-$stamp@example.test',
+          'email_verified': true,
+        }),
+        rawNonce: provider == SocialProvider.apple
+            ? 'emulator-only-nonce'
+            : null,
       );
-      final stamp = DateTime.now().microsecondsSinceEpoch;
-      final uids = <String, String>{};
-      for (final provider in SocialProvider.values) {
-        final session = FirebaseAccountSession(endpoint, http);
-        final mockCredential = ProviderIdToken(
-          jsonEncode({
-            'sub': '${provider.name}-$stamp',
-            'email': '${provider.name}-$stamp@example.test',
-            'email_verified': true,
-          }),
-          rawNonce: provider == SocialProvider.apple
-              ? 'emulator-only-nonce'
-              : null,
-        );
-        Future<SocialSignInResult?> authorize() async => mockCredential;
-        final uid = await session.signInWithProvider(provider, authorize);
-        expect(uid, isNotNull);
-        expect(await session.tokenFor(uid!), isNotEmpty);
-        uids[provider.name] = uid;
-        session.signOut();
-        await expectLater(session.tokenFor(uid), throwsA(isA<SyncFailure>()));
-        expect(await session.signInWithProvider(provider, authorize), uid);
-      }
-      expect(uids.values.toSet(), hasLength(2));
-    },
-    skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1',
-  );
+      Future<SocialSignInResult?> authorize() async => mockCredential;
+      final uid = await session.signInWithProvider(provider, authorize);
+      expect(uid, isNotNull);
+      expect(await session.tokenFor(uid!), isNotEmpty);
+      uids[provider.name] = uid;
+      session.signOut();
+      await expectLater(session.tokenFor(uid), throwsA(isA<SyncFailure>()));
+      expect(await session.signInWithProvider(provider, authorize), uid);
+    }
+    expect(uids.values.toSet(), hasLength(2));
+  }, skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1');
 
   test(
     'Firebase emulator: two authenticated clients upload, download, and isolate accounts',
@@ -479,112 +475,108 @@ void main() {
         ? 'Run with Auth, Firestore and Storage Firebase Emulators.'
         : false,
   );
-  test(
-    'Firebase emulator: two clients converge on folders, placements and deletion',
-    () async {
-      final endpoint = FirebaseEndpoint(
-        project: 'demo-english-learning-player',
-        bucket: 'demo-english-learning-player.appspot.com',
-        apiKey: 'fake-api-key',
-        emulatorHost: '127.0.0.1',
-      );
-      final http = FirebaseHttp();
-      addTearDown(http.close);
-      final first = FirebaseAccountSession(endpoint, http);
-      final second = FirebaseAccountSession(endpoint, http);
-      Future<SocialSignInResult?> authorize() async => ProviderIdToken(
-        jsonEncode({
-          'sub': 'folder-test-${DateTime.now().microsecondsSinceEpoch}',
-          'email': 'folders@example.test',
-          'email_verified': true,
-        }),
-      );
-      final credential = await authorize();
-      final uid = (await first.signInWithProvider(
+  test('Firebase emulator: two clients converge on folders, placements and deletion', () async {
+    final endpoint = FirebaseEndpoint(
+      project: 'demo-english-learning-player',
+      bucket: 'demo-english-learning-player.appspot.com',
+      apiKey: 'fake-api-key',
+      emulatorHost: '127.0.0.1',
+    );
+    final http = FirebaseHttp();
+    addTearDown(http.close);
+    final first = FirebaseAccountSession(endpoint, http);
+    final second = FirebaseAccountSession(endpoint, http);
+    Future<SocialSignInResult?> authorize() async => ProviderIdToken(
+      jsonEncode({
+        'sub': 'folder-test-${DateTime.now().microsecondsSinceEpoch}',
+        'email': 'folders@example.test',
+        'email_verified': true,
+      }),
+    );
+    final credential = await authorize();
+    final uid = (await first.signInWithProvider(
+      SocialProvider.google,
+      () async => credential,
+    ))!;
+    expect(
+      await second.signInWithProvider(
         SocialProvider.google,
         () async => credential,
-      ))!;
-      expect(
-        await second.signInWithProvider(
-          SocialProvider.google,
-          () async => credential,
-        ),
-        uid,
-      );
-      final scope = AccountScope(uid);
-      final a = LocalDatabase(NativeDatabase.memory());
-      final b = LocalDatabase(NativeDatabase.memory());
-      addTearDown(a.close);
-      addTearDown(b.close);
-      final folderA = SqliteLibraryFolderRepository(scope, a);
-      final folderB = SqliteLibraryFolderRepository(scope, b);
-      final syncA = FirebaseLibrarySync(
-        uid: uid,
-        documents: FirebaseDocuments(endpoint, first, http),
-        local: SqliteLibraryChanges(a, uid),
-        consent: FakeSyncConsentProvider(),
-      );
-      final syncB = FirebaseLibrarySync(
-        uid: uid,
-        documents: FirebaseDocuments(endpoint, second, http),
-        local: SqliteLibraryChanges(b, uid),
-        consent: FakeSyncConsentProvider(),
-      );
-      await folderA.createFolder('Parent');
-      await folderA.createFolder('Child');
-      final [child, parent] = await folderA.listFolders();
-      await folderA.moveFolder(child.id, parent.id);
-      final materialA = SqliteMaterialRepository(scope: scope, database: a);
-      final materialB = SqliteMaterialRepository(scope: scope, database: b);
-      const asset = StoredAudioAsset(
-        id: 'asset',
-        sha256: 'hash',
-        byteLength: 1,
-        mediaType: 'audio/mpeg',
-        relativePath: 'asset.mp3',
-      );
-      await materialA.insertAudio(
-        asset: asset,
-        sourceKey: 'asset',
-        title: 'Original',
-        materialId: 'lesson',
-        createdAt: DateTime.utc(2026),
-      );
-      await folderA.moveMaterial('lesson', child.id);
-      await folderA.renameMaterial('lesson', 'Updated');
-      expect(await syncA.push(), isTrue);
-      await syncB.pull();
-      expect((await folderB.listFolders()).first.parentId, parent.id);
-      expect(await folderB.materialIds(child.id), isEmpty);
+      ),
+      uid,
+    );
+    final scope = AccountScope(uid);
+    final a = LocalDatabase(NativeDatabase.memory());
+    final b = LocalDatabase(NativeDatabase.memory());
+    addTearDown(a.close);
+    addTearDown(b.close);
+    final folderA = SqliteLibraryFolderRepository(scope, a);
+    final folderB = SqliteLibraryFolderRepository(scope, b);
+    final syncA = FirebaseLibrarySync(
+      uid: uid,
+      documents: FirebaseDocuments(endpoint, first, http),
+      local: SqliteLibraryChanges(a, uid),
+      consent: FakeSyncConsentProvider(),
+    );
+    final syncB = FirebaseLibrarySync(
+      uid: uid,
+      documents: FirebaseDocuments(endpoint, second, http),
+      local: SqliteLibraryChanges(b, uid),
+      consent: FakeSyncConsentProvider(),
+    );
+    await folderA.createFolder('Parent');
+    await folderA.createFolder('Child');
+    final [child, parent] = await folderA.listFolders();
+    await folderA.moveFolder(child.id, parent.id);
+    final materialA = SqliteMaterialRepository(scope: scope, database: a);
+    final materialB = SqliteMaterialRepository(scope: scope, database: b);
+    const asset = StoredAudioAsset(
+      id: 'asset',
+      sha256: 'hash',
+      byteLength: 1,
+      mediaType: 'audio/mpeg',
+      relativePath: 'asset.mp3',
+    );
+    await materialA.insertAudio(
+      asset: asset,
+      sourceKey: 'asset',
+      title: 'Original',
+      materialId: 'lesson',
+      createdAt: DateTime.utc(2026),
+    );
+    await folderA.moveMaterial('lesson', child.id);
+    await folderA.renameMaterial('lesson', 'Updated');
+    expect(await syncA.push(), isTrue);
+    await syncB.pull();
+    expect((await folderB.listFolders()).first.parentId, parent.id);
+    expect(await folderB.materialIds(child.id), isEmpty);
 
-      await materialB.cacheCloudAudio(
-        materialId: 'lesson',
-        asset: asset,
-        cachedAt: DateTime.utc(2026),
-        title: 'Original',
-      );
-      expect(await folderB.materialIds(child.id), {'lesson'});
-      expect((await materialB.listMaterials()).single.title, 'Updated');
+    await materialB.cacheCloudAudio(
+      materialId: 'lesson',
+      asset: asset,
+      cachedAt: DateTime.utc(2026),
+      title: 'Original',
+    );
+    expect(await folderB.materialIds(child.id), {'lesson'});
+    expect((await materialB.listMaterials()).single.title, 'Updated');
 
-      // Two offline changes to the same field use the stable version ordering.
-      await folderA.renameFolder(child.id, 'Child A');
-      await folderB.renameFolder(child.id, 'Child B');
-      await Future.wait([syncA.push(), syncB.push()]);
-      await syncA.pull();
-      await syncB.pull();
-      expect(
-        (await folderA.listFolders()).first.title,
-        (await folderB.listFolders()).first.title,
-      );
+    // Two offline changes to the same field use the stable version ordering.
+    await folderA.renameFolder(child.id, 'Child A');
+    await folderB.renameFolder(child.id, 'Child B');
+    await Future.wait([syncA.push(), syncB.push()]);
+    await syncA.pull();
+    await syncB.pull();
+    expect(
+      (await folderA.listFolders()).first.title,
+      (await folderB.listFolders()).first.title,
+    );
 
-      await folderB.deleteFolder(child.id);
-      await folderB.deleteMaterial('lesson');
-      await syncB.push();
-      await syncA.pull();
-      expect((await folderA.listFolders()).single.id, parent.id);
-      expect(await materialA.listMaterials(), isEmpty);
-      expect(await syncA.local.materialDeleted('lesson'), isTrue);
-    },
-    skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1',
-  );
+    await folderB.deleteFolder(child.id);
+    await folderB.deleteMaterial('lesson');
+    await syncB.push();
+    await syncA.pull();
+    expect((await folderA.listFolders()).single.id, parent.id);
+    expect(await materialA.listMaterials(), isEmpty);
+    expect(await syncA.local.materialDeleted('lesson'), isTrue);
+  }, skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1');
 }

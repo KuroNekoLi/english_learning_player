@@ -2,7 +2,7 @@ import 'package:english_learning_player/core/db/account_scope.dart';
 import 'package:english_learning_player/core/db/local_database.dart';
 import 'package:english_learning_player/core/db/web_account_database_service.dart';
 import 'package:english_learning_player/features/progress/data/sqlite_progress_repository.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

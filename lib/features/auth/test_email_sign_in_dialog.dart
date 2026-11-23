@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 final class TestEmailSignInDialog extends StatefulWidget {
   const TestEmailSignInDialog({super.key});
@@ -46,9 +46,8 @@ final class _TestEmailSignInDialogState extends State<TestEmailSignInDialog> {
       FilledButton(
         onPressed: () {
           if (_email.text.trim().isEmpty || _password.text.isEmpty) return;
-          Navigator.of(
-            context,
-          ).pop((email: _email.text, password: _password.text));
+          Navigator.of(context)
+              .pop((email: _email.text, password: _password.text));
         },
         child: const Text('登入'),
       ),
