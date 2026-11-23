@@ -23,7 +23,7 @@
 | ADR-016 | OPEN | SRT encoding fallback 與語言偵測套件 | UTF-8 優先；需平台與授權評估 |
 | ADR-017 | ACCEPTED（本機工具鏈及最低平台版本）／OPEN（發佈簽章與商店驗收） | Flutter/Dart 與四平台最低版本 | 使用者接受 iOS 15、macOS 12、Android API 24；Flutter 3.50.1 / Dart 3.14.0、Gradle 9.5.0 / AGP 9.3.1 / Kotlin 2.4.20 已完成本機四平台 build。發佈簽章、商店與真機登入仍需各自驗收，詳見 ADR-034 |
 
-| ADR-018 | OPEN | FlutterFire Apple 發佈的套件管理方式 | Flutter 3.50.1 對目前 Apple plugins 產生 SwiftPM 整合且 iOS/macOS build 通過；CocoaPods 專案整合仍存在並觸發遷移提示。是否移除 CocoaPods 與正式發佈流程另行決定，不影響目前 build 證據 |
+| ADR-018 | ACCEPTED（本機原生相依）／OPEN（商店發布） | FlutterFire Apple 發佈的套件管理方式採 Flutter Swift Package Manager；iOS/macOS 不再整合 CocoaPods | Flutter 3.50.1 對目前 Apple plugins 產生 `FlutterGeneratedPluginSwiftPackage`；iOS Simulator、iOS device（未簽章）及 macOS build 均通過。已移除舊 Pods build phases、Podfile、lockfile 與 xcconfig 引用。商店簽章與發布另行驗收。依據：[Flutter Swift Package Manager for app developers](https://docs.flutter.dev/packages-and-plugins/swift-package-manager/for-app-developers) |
 | ADR-019 | OPEN | 媒體孤兒回收、跨裝置刪除保留期限 | 媒體回收與同步 tombstone retention 仍待 WP-08；書籤 cue 重定位已由 ADR-025 定義 |
 | ADR-020 | ACCEPTED | WP-02 以 owner namespace 隔離本機 DB/媒體；媒體按 SHA-256 去重，教材只對相同來源鍵與內容雜湊冪等 | 保留不同來源的獨立 materialId；來源鍵不得含原始路徑。孤兒媒體回收沿用 ADR-019，待後續工作包處理 |
 | ADR-021 | ACCEPTED | WP-03 SRT 配對以半開區間重疊判斷；有效重疊至少覆蓋較短 cue 的 25% | 依 T-SRT fixture 驗證多對一、一對多及邊界擦碰；保留門檻參數以便後續 fixture/產品決策調整 |
@@ -47,6 +47,7 @@
 - Riverpod 以 exact pin 與 lockfile 隨 bootstrap 交付。Drift、just_audio、FlutterFire 只在獨立 Spike 解析；個別模組在接線時再加入依賴。單頁先用 MaterialApp。版本、授權、實測與重跑步驟見 [WP-00／01 交棒](agent/wp-00-01-handoff.md)。
 - Firebase Auth／Firestore／Storage 的 macOS 支援表列為 beta。正式 Storage 要 Blaze；即使有免費配額也須先核准專案、預算、單檔上限及區域。驗證先用本機 Emulator 與合成資料。本機 Auth Emulator 匿名登入在目前 debug app 的 Keychain 保存失敗（`SecItemAdd -34018`）。登入方式、具 Keychain Sharing 的有效簽章與帳號切換仍待驗。依據：[FlutterFire 平台表](https://firebase.google.com/docs/flutter/setup)、[Storage 計費要求](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024)。
 - CocoaPods Spike 的 FlutterFire core 5.1.0 固定 Apple SDK 12.19.3。官方已在 2026 年 10 月停止以 CocoaPods 發佈新 Firebase 版本。正式方案需驗證 Flutter 3.32.2 的 SwiftPM 整合及三平台最低 OS；若須升級，另審 SDK、原生目標與回歸範圍。[Apple SDK 套件管理遷移](https://firebase.google.com/docs/ios/cocoapods-deprecation)。
+- 後續依使用者核准升至 Flutter 3.50.1，生成的 iOS/macOS Swift package manifests 列出本機 Apple plugin dependencies；兩平台都以 SwiftPM build 通過。因此只移除 CocoaPods project integration，不改套件或最低部署版本。iOS custom AppDelegate 改用 `FlutterImplicitEngineDelegate` 並在 `Info.plist` 宣告 `FlutterSceneDelegate`，符合 Flutter 3.41+ UIScene 啟動流程；Simulator/device build 均通過。依據：[Flutter UIScene adoption](https://docs.flutter.dev/release/breaking-changes/uiscenedelegate)、[SwiftPM 移除 CocoaPods 步驟](https://docs.flutter.dev/packages-and-plugins/swift-package-manager/for-app-developers)。
 
 ### ADR-010 — Google／Apple 登入補件
 
