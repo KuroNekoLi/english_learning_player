@@ -13,6 +13,7 @@ final class _LinkReadOnlyUsernameDialogState
   final _username = TextEditingController(text: 'kuroneko_li');
   final _password = TextEditingController();
   final _confirm = TextEditingController();
+  String? _validationError;
 
   @override
   void dispose() {
@@ -41,14 +42,27 @@ final class _LinkReadOnlyUsernameDialogState
             key: const ValueKey('linkPassword'),
             controller: _password,
             obscureText: true,
+            onChanged: (_) => setState(() => _validationError = null),
             decoration: const InputDecoration(labelText: '新密碼（至少 6 個字元）'),
           ),
           TextField(
             key: const ValueKey('linkPasswordConfirm'),
             controller: _confirm,
             obscureText: true,
+            onChanged: (_) => setState(() => _validationError = null),
             decoration: const InputDecoration(labelText: '再次輸入新密碼'),
           ),
+          if (_validationError case final message?) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                message,
+                key: const ValueKey('linkPasswordValidationError'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ],
         ],
       ),
     ),
@@ -59,17 +73,27 @@ final class _LinkReadOnlyUsernameDialogState
       ),
       FilledButton(
         key: const ValueKey('linkUsernameSubmit'),
-        onPressed: () {
-          if (_username.text.trim().isEmpty ||
-              _password.text.length < 6 ||
-              _password.text != _confirm.text) {
-            return;
-          }
-          Navigator.of(context)
-              .pop((username: _username.text.trim(), password: _password.text));
-        },
+        onPressed: () => _submit(context),
         child: const Text('建立唯讀帳號'),
       ),
     ],
   );
+
+  void _submit(BuildContext context) {
+    final username = _username.text.trim();
+    final password = _password.text;
+    final confirmation = _confirm.text;
+    final error = switch (true) {
+      _ when username.isEmpty => '帳號不可空白。',
+      _ when password.length < 6 => '密碼至少需要 6 個字元。',
+      _ when confirmation.isEmpty => '請再次輸入密碼。',
+      _ when password != confirmation => '兩次輸入的密碼不一致。',
+      _ => null,
+    };
+    if (error != null) {
+      setState(() => _validationError = error);
+      return;
+    }
+    Navigator.of(context).pop((username: username, password: password));
+  }
 }
