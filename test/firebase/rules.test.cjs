@@ -10,6 +10,7 @@ const {
 } = require('@firebase/rules-unit-testing');
 const { deleteDoc, doc, getDoc, runTransaction, setDoc } = require('firebase/firestore');
 const { deleteObject, ref, getBytes, getMetadata, updateMetadata, uploadBytes } = require('firebase/storage');
+const { isReadOnlyLogin } = require('../../firebase-functions/access.cjs');
 
 const projectId = 'demo-english-learning-player';
 let environment;
@@ -44,6 +45,21 @@ const materialDocument = {
   payloadHash,
   status: 'cloudReady',
 };
+
+test('progress callable classifier only marks the fixed password alias read-only', () => {
+  assert.equal(isReadOnlyLogin({
+    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
+    firebase: { sign_in_provider: 'password' },
+  }), true);
+  assert.equal(isReadOnlyLogin({
+    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
+    firebase: { sign_in_provider: 'google.com' },
+  }), false);
+  assert.equal(isReadOnlyLogin({
+    email: 'ordinary@example.com',
+    firebase: { sign_in_provider: 'password' },
+  }), false);
+});
 
 test.before(async () => {
   environment = await initializeTestEnvironment({
@@ -96,6 +112,41 @@ test('Firestore denies anonymous, cross UID, mismatched owner and invalid fields
   ));
 });
 
+test('password-authenticated login reads cloud materials but cannot write', async () => {
+  await environment.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users/shared-owner/materials/password-reader'), {
+      ...materialDocument,
+      ownerId: 'shared-owner',
+      materialId: 'password-reader',
+      storagePath: `users/shared-owner/assets/${assetId}/${sha}`,
+    });
+  });
+  const passwordUser = environment.authenticatedContext('shared-owner', {
+    firebase: { sign_in_provider: 'password' },
+    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
+  }).firestore();
+  const path = 'users/shared-owner/materials/password-reader';
+  await assertSucceeds(getDoc(doc(passwordUser, path)));
+  await assertFails(setDoc(doc(passwordUser, 'users/shared-owner/materials/new'), {
+    ...materialDocument,
+    ownerId: 'shared-owner',
+    materialId: 'new',
+  }));
+  await assertFails(deleteDoc(doc(passwordUser, path)));
+  const ordinaryPassword = environment.authenticatedContext('ordinary-password', {
+    firebase: { sign_in_provider: 'password' },
+    email: 'ordinary@example.com',
+  }).firestore();
+  await assertSucceeds(setDoc(
+    doc(ordinaryPassword, `users/ordinary-password/mediaAssets/${assetId}`),
+    {
+      ...assetDocument,
+      ownerId: 'ordinary-password',
+      storagePath: `users/ordinary-password/assets/${assetId}/${sha}`,
+    },
+  ));
+});
+
 test('Storage permits owner updates only when bytes and identity stay unchanged', async () => {
   const alice = environment.authenticatedContext('alice').storage();
   const bob = environment.authenticatedContext('bob').storage();
@@ -138,6 +189,38 @@ test('Storage permits owner updates only when bytes and identity stay unchanged'
   await assertFails(deleteObject(ref(bob, storagePath)));
   await assertFails(deleteObject(ref(anonymous, storagePath)));
   await assertSucceeds(deleteObject(objectRef));
+});
+
+test('password-authenticated login can read Storage but cannot mutate it', async () => {
+  const owner = environment.authenticatedContext('shared-storage-owner').storage();
+  const passwordUser = environment.authenticatedContext('shared-storage-owner', {
+    firebase: { sign_in_provider: 'password' },
+    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
+  }).storage();
+  const storagePath = `users/shared-storage-owner/assets/${assetId}/${sha}`;
+  const object = ref(owner, storagePath);
+  const metadata = {
+    contentType: 'audio/mpeg',
+    customMetadata: {
+      ownerId: 'shared-storage-owner', assetId, sha256: sha,
+      opId: 'op-001', payloadHash,
+    },
+  };
+  await assertSucceeds(uploadBytes(object, new Uint8Array([1, 2, 3]), metadata));
+  await assertSucceeds(getBytes(ref(passwordUser, storagePath)));
+  await assertFails(uploadBytes(ref(passwordUser,
+    `users/shared-storage-owner/assets/other/${'c'.repeat(64)}`),
+  new Uint8Array([1]), { ...metadata, customMetadata: { ...metadata.customMetadata, assetId: 'other', sha256: 'c'.repeat(64) } }));
+  await assertFails(deleteObject(ref(passwordUser, storagePath)));
+  const ordinaryPassword = environment.authenticatedContext('ordinary-storage-user', {
+    firebase: { sign_in_provider: 'password' },
+    email: 'ordinary@example.com',
+  }).storage();
+  await assertSucceeds(uploadBytes(
+    ref(ordinaryPassword, `users/ordinary-storage-user/assets/${assetId}/${sha}`),
+    new Uint8Array([7]),
+    { ...metadata, customMetadata: { ...metadata.customMetadata, ownerId: 'ordinary-storage-user' } },
+  ));
 });
 
 // Reference transaction executed on the local emulator as a trusted writer.

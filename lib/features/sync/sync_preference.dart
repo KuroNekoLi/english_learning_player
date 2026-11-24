@@ -46,12 +46,12 @@ final class SyncPreferenceController extends AsyncNotifier<SyncPreference> {
   }
 
   Future<SyncPreferencePersistence> _watchStore() async {
-    _checkScope(ref.watch(accountScopeProvider).ownerId);
+    _checkScope(ref.watch(accountScopeProvider).cloudUid);
     return ref.watch(syncPreferenceStoreProvider.future);
   }
 
   Future<SyncPreferencePersistence> _readStore() async {
-    _checkScope(ref.read(accountScopeProvider).ownerId);
+    _checkScope(ref.read(accountScopeProvider).cloudUid);
     return ref.read(syncPreferenceStoreProvider.future);
   }
 

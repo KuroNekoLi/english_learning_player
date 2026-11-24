@@ -12,6 +12,8 @@ import '../../sync/widgets/sync_consent_controls.dart';
 import '../../sync/widgets/cloud_material_entry.dart';
 import '../../sync/widgets/progress_conflict_dialog.dart';
 import 'web_firebase_session_controller.dart';
+import '../username_password_dialog.dart';
+import '../link_read_only_username_dialog.dart';
 
 final class WebAccountPage extends ConsumerWidget {
   const WebAccountPage({super.key});
@@ -66,50 +68,85 @@ final class WebAccountPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
                 if (state.uid == null)
-                  Semantics(
-                    label: '使用 Google 登入',
-                    button: true,
-                    child: SizedBox(
-                      width: 240,
-                      height: 48,
-                      child: OutlinedButton(
-                        key: const ValueKey('webGoogleSignIn'),
-                        onPressed: state.busy || !port.isConfigured
+                  Column(
+                    children: [
+                      Semantics(
+                        label: '使用 Google 登入',
+                        button: true,
+                        child: SizedBox(
+                          width: 240,
+                          height: 48,
+                          child: OutlinedButton(
+                            key: const ValueKey('webGoogleSignIn'),
+                            onPressed: state.busy || !port.isConfigured
+                                ? null
+                                : () => unawaited(
+                                    ref
+                                        .read(
+                                          webFirebaseSessionProvider.notifier,
+                                        )
+                                        .signInWithGoogle(),
+                                  ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/auth/google-sign-in.png',
+                                  height: 40,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        key: const ValueKey('webUsernamePasswordSignIn'),
+                        onPressed: busy || !port.isConfigured
+                            ? null
+                            : () =>
+                                  unawaited(_signInWithUsername(context, ref)),
+                        child: const Text('使用帳號密碼登入（唯讀）'),
+                      ),
+                    ],
+                  )
+                else
+                  Column(
+                    children: [
+                      if (state.readOnly)
+                        const ListTile(
+                          leading: Icon(Icons.visibility_outlined),
+                          title: Text('帳號密碼登入：唯讀'),
+                          subtitle: Text('可以讀取與下載教材；雲端不接受上傳、修改或刪除。'),
+                        ),
+                      if (!state.readOnly)
+                        TextButton(
+                          key: const ValueKey('webLinkReadOnlyUsername'),
+                          onPressed: busy
+                              ? null
+                              : () => unawaited(
+                                  _linkReadOnlyUsername(context, ref),
+                                ),
+                          child: const Text('設定帳號密碼唯讀登入'),
+                        ),
+                      FilledButton.tonal(
+                        key: const ValueKey('webSignOut'),
+                        onPressed: busy
                             ? null
                             : () => unawaited(
                                 ref
                                     .read(webFirebaseSessionProvider.notifier)
-                                    .signInWithGoogle(),
+                                    .signOut(),
                               ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Image.asset(
-                              'assets/auth/google-sign-in.png',
-                              height: 40,
-                            ),
-                          ],
-                        ),
+                        child: const Text('登出'),
                       ),
-                    ),
-                  )
-                else
-                  FilledButton.tonal(
-                    key: const ValueKey('webSignOut'),
-                    onPressed: busy
-                        ? null
-                        : () => unawaited(
-                            ref
-                                .read(webFirebaseSessionProvider.notifier)
-                                .signOut(),
-                          ),
-                    child: const Text('登出'),
+                    ],
                   ),
                 if (key != null) ...[
                   SyncConsentControls(
                     preferenceKey: key,
                     busy: syncBusy,
                     onSync: viewModel.sync,
+                    readOnly: state.readOnly,
                   ),
                   if (sync.status case final message?)
                     Semantics(liveRegion: true, child: Text(message)),
@@ -130,7 +167,7 @@ final class WebAccountPage extends ConsumerWidget {
                         onDownload: syncBusy
                             ? null
                             : () => viewModel.download(material),
-                        onResolve: busy
+                        onResolve: busy || state.readOnly
                             ? null
                             : (candidate) =>
                                   _resolve(context, viewModel, candidate),
@@ -176,5 +213,30 @@ final class WebAccountPage extends ConsumerWidget {
     if (choice != null && context.mounted) {
       await viewModel.resolve(candidate, choice);
     }
+  }
+
+  Future<void> _signInWithUsername(BuildContext context, WidgetRef ref) async {
+    final entered = await showDialog<({String username, String password})>(
+      context: context,
+      builder: (_) => const UsernamePasswordDialog(),
+    );
+    if (entered == null || !context.mounted) return;
+    await ref
+        .read(webFirebaseSessionProvider.notifier)
+        .signInWithUsername(entered.username, entered.password);
+  }
+
+  Future<void> _linkReadOnlyUsername(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final entered = await showDialog<({String username, String password})>(
+      context: context,
+      builder: (_) => const LinkReadOnlyUsernameDialog(),
+    );
+    if (entered == null || !context.mounted) return;
+    await ref
+        .read(webFirebaseSessionProvider.notifier)
+        .linkReadOnlyUsername(entered.username, entered.password);
   }
 }

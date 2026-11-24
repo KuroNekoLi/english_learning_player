@@ -25,11 +25,17 @@ service firebase.storage {
         return request.auth != null && request.auth.uid == uid;
       }
 
+      function canWriteOwner() {
+        return isOwner()
+          && !(request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'password'
+            && request.auth.token.get('email', '') == 'kuroneko_li@english-learning-player-auth.firebaseapp.com');
+      }
+
       allow read: if isOwner();
-      allow create: if isOwner() && resource == null && validUpload();
+      allow create: if canWriteOwner() && resource == null && validUpload();
       // The content-addressed bytes and application identity remain stable.
       // Owners may update non-content metadata only when both stored checksums match.
-      allow update: if isOwner() && validUpload()
+      allow update: if canWriteOwner() && validUpload()
         && request.resource.md5Hash == resource.md5Hash
         && request.resource.crc32c == resource.crc32c
         && request.resource.metadata.ownerId == resource.metadata.ownerId
@@ -37,12 +43,18 @@ service firebase.storage {
         && request.resource.metadata.sha256 == resource.metadata.sha256
         && request.resource.metadata.opId == resource.metadata.opId
         && request.resource.metadata.payloadHash == resource.metadata.payloadHash;
-      allow delete: if isOwner();
+      allow delete: if canWriteOwner();
     }
 
     match /users/{uid}/subtitles/{materialId}/{sha256} {
       function isOwner() {
         return request.auth != null && request.auth.uid == uid;
+      }
+
+      function canWriteOwner() {
+        return isOwner()
+          && !(request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'password'
+            && request.auth.token.get('email', '') == 'kuroneko_li@english-learning-player-auth.firebaseapp.com');
       }
 
       function validSubtitle() {
@@ -57,14 +69,14 @@ service firebase.storage {
       }
 
       allow read: if isOwner();
-      allow create: if isOwner() && resource == null && validSubtitle();
+      allow create: if canWriteOwner() && resource == null && validSubtitle();
       // Keep the content-addressed subtitle bytes and owner identity unchanged.
-      allow update: if isOwner() && validSubtitle()
+      allow update: if canWriteOwner() && validSubtitle()
         && request.resource.md5Hash == resource.md5Hash
         && request.resource.crc32c == resource.crc32c
         && request.resource.metadata.ownerId == resource.metadata.ownerId
         && request.resource.metadata.sha256 == resource.metadata.sha256;
-      allow delete: if isOwner();
+      allow delete: if canWriteOwner();
     }
 
     match /{allPaths=**} {

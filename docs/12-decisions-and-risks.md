@@ -39,6 +39,7 @@
 | ADR-032 | ACCEPTED（bucket 與 UID 隔離）／OPEN（刪除參照清理、費用上限） | 專案 `english-learning-player-auth` 使用 `english-learning-player-auth.firebasestorage.app`（`us-east1`）；owner 可管理自身 assets/subtitles | Blaze 已由使用者連結。bucket 區域建立後不能變更。內容地址物件更新需保持 bytes checksum 與應用身分 metadata；owner delete 可能留下 Firestore metadata 指向的失效物件，App 刪除/GC 尚未實作。費用上限仍待設定。 |
 | ADR-033 | ACCEPTED（裝置同意與執行時同步） | Firebase 教材同步由每裝置、專案與 UID 分別同意，選擇寫入 SQLite v8 | 首次登入詢問，成功同意後消費本機音檔與字幕佇列。程式暫停或關閉後於下次開啟繼續。接收端自動更新雲端清單與晚到字幕。 |
 | ADR-034 | ACCEPTED（本機升級與建置基線） | Flutter、Dart、相依套件及原生工具鏈升級 | 依使用者同意的 iOS 15 / macOS 12 / Android API 24，升級至 Flutter 3.50.1 / Dart 3.14.0；主要依賴解析為 Riverpod 3.5.0、Drift 2.35.4、just_audio 0.10.6、audio_session 0.2.4、sqlite3 3.9.2。移除已 EOL 的 `sqlite3_flutter_libs`，改用 sqlite3 3.x 原生 assets。Android 對齊 Flutter 3.50 官方 Gradle 9.5.0 / AGP 9.3.1 / Kotlin 2.4.20 模板。`pub outdated` 顯示所有直接 runtime 依賴為最新可解析版本；測試套件及四個受相依約束的 transitives 尚有更新版本但目前不可解析。Analyze、194 tests（3 項 Emulator tests skipped）及 Android/iOS/macOS/Web build 通過。實機 `flutter run` 已自動簽章、安裝且 Runner process 存活，但 Flutter debugger attach 因 `Error executing osascript: -2` 未完成；Google 登入未測。未變更 Firebase 雲端資源。依據：[Flutter 3.50 release notes](https://docs.flutter.dev/release/release-notes/release-notes-3.50.0)、[Flutter supported platforms](https://docs.flutter.dev/reference/supported-platforms)、[Flutter built-in Kotlin migration](https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers)、[sqlite3 3.0 upgrade notes](https://pub.dev/packages/sqlite3/changelog)、[sqlite3_flutter_libs package status](https://pub.dev/documentation/sqlite3_flutter_libs/latest/sqlite3_flutter_libs/)。 |
+| ADR-035 | ACCEPTED（實作契約）／OPEN（Firebase Console 與正式部署） | `kuroneko_li` 唯讀登入沿用既有 Google Firebase UID；密碼 Provider 依 token email/provider 在 Firestore、Storage 與進度 Callable 強制唯讀 | Firebase 不提供 username 欄位，內部 alias 為 `kuroneko_li@english-learning-player-auth.firebaseapp.com`。以 Google 登入原帳號後連結 Email/Password 憑證，兩種方式取得同一 UID；只有 alias + `sign_in_provider=password` 被視為唯讀。此裝置使用獨立 Drift profile namespace，避免唯讀端 outbox 混入 Google writer profile。Rules、Callable 與 Firebase Console 未部署／設定，正式權限仍未生效。交棒與步驟見 [WP-18 交棒](agent/wp-18-readonly-account-handoff.md)。 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -187,6 +188,15 @@
 
 - 選用 Drift 官方 `WasmDatabase` 保持現有 SQLite schema、migration 與 Outbox。瀏覽器媒體由專用 adapter 保存，OPFS 優先，IndexedDB Blob 作為候選 fallback。帳號及 origin 隔離、配額、重新載入與多分頁行為須實測。依據：[Drift Web](https://drift.simonbinder.eu/platforms/web/)、[Storage Standard](https://storage.spec.whatwg.org/)。
 - Google Web OAuth 採既有 Firebase 專案與 UID 契約，驗收 popup、redirect 需求和 HTTPS origin。COOP／COEP 的部署選擇須兼顧 Wasm 資料庫與 OAuth。現行方案、實作順序與證據門檻見 [WP-17](14-web-platform.md)。
+
+### ADR-035 — Google writer 與 `kuroneko_li` password reader
+
+- `kuroneko_li` 不是另一個 Firebase Auth 使用者；它是既有 Google Auth UID 上的 Email/Password 登入憑證。email alias 固定為 `kuroneko_li@english-learning-player-auth.firebaseapp.com`，避免把 username 當作 Firebase Auth 原生欄位。只有此 alias 且 token `firebase.sign_in_provider == password` 時才套唯讀規則；同一 UID 的 Google 登入仍可寫入。一般 Email/Password 測試使用者不因此降權。
+- Firestore、Storage 規則同時保留讀取並拒絕該憑證的 create/update/delete。`syncProgress` Callable 亦依經驗證 token 拒絕寫入。客戶端唯讀狀態只控制 UI／outbox，不作為安全邊界。正式權限只有在 Firebase Rules 與 Functions 部署後才生效。
+- Password 登入使用 `${username}@${project}.firebaseapp.com` Firebase email alias。Google owner 可由 App 連結 credential；成功後要求重新登入，確保後續 token 反映真正的登入 Provider。密碼由使用者在遮蔽欄位輸入，原對話內提供過的弱密碼不應重用；UI 要求至少 12 字元。Firebase Auth Console 的 Email/Password provider 必須先啟用。
+- password reader 以 `${uid}:password-reader` 作為本機 `AccountScope`，但 `cloudUid` 仍為同一 Firebase UID。可讀教材／字幕／遠端進度並下載到本機 reader DB；讀取的遠端進度改以 reader scope 保存。其 outbox、學習紀錄與本機變更不會併入 Google writer scope。退出後仍須先以 Emulator Rules／Functions 驗證，才可部署。
+- 證據：Firebase 官方 REST 文件提供以已登入 ID token 將 Email/Password 連結至目前使用者的 `accounts:update`；Security Rules 可讀取 `firebase.sign_in_provider`；Admin/Rules 文件說明權限必須由服務端規則執行。FlutterUI 官方套件有預建 Email UI，但本專案原生 Auth 使用 REST、Web 使用現有 JS SDK，故沿用既有 Adapter 並提供專用 username 表單，避免引入第二套 Auth 狀態管理。[REST linking](https://firebase.google.com/docs/reference/rest/auth/)、[Auth token fields](https://firebase.google.com/docs/rules/rules-and-auth)、[FirebaseUI Flutter](https://pub.dev/packages/firebase_ui_auth)。
+- 正式前置條件：在 `english-learning-player-auth` Firebase Console 啟用 Email/Password；以 Google 登入原 UID，在 App 設定 alias 並由使用者輸入全新長密碼；部署 `firestore.rules`、`storage.rules` 與 `syncProgress` Function；用 Google 與 password 兩種登入實測同 UID、讀取、拒絕所有雲端寫入、下載及本機 profile 隔離。這些步驟尚未於正式 Firebase 執行。
 
 ## 風險清單
 | 風險 | 嚴重度 | 失敗形態 | 降低方式 / 檢驗 |

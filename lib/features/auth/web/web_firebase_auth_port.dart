@@ -4,9 +4,15 @@ abstract interface class WebFirebaseAuthPort {
 
   String? get currentUid;
 
+  bool get isReadOnly;
+
   String? get unavailableReason;
 
   Future<String?> signInWithGoogle();
+
+  Future<String?> signInWithUsername(String username, String password);
+
+  Future<void> linkReadOnlyUsername(String username, String password);
 
   Future<void> signOut();
 

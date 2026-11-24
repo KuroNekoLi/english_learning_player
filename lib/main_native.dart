@@ -47,10 +47,13 @@ Future<void> main() async {
                   .closeForAccountChange(),
         ),
         accountScopeProvider.overrideWith((ref) {
-          final uid = ref.watch(
-            firebaseSessionProvider.select((state) => state.uid),
+          final session = ref.watch(firebaseSessionProvider);
+          final uid = session.uid;
+          if (uid == null) return AccountScope('local-default');
+          return AccountScope(
+            session.readOnly ? '$uid:password-reader' : uid,
+            cloudUid: uid,
           );
-          return AccountScope(uid ?? 'local-default');
         }),
         audioEngineProvider.overrideWith((ref) {
           ref.onDispose(() => unawaited(engine.dispose()));

@@ -5,6 +5,16 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    function isReadOnlyCredential() {
+      return request.auth != null
+        && request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'password'
+        && request.auth.token.get('email', '') == 'kuroneko_li@english-learning-player-auth.firebaseapp.com';
+    }
+
+    function canWriteOwner(uid) {
+      return isOwner(uid) && !isReadOnlyCredential();
+    }
+
     function validAsset(uid, assetId) {
       let data = request.resource.data;
       return data.keys().hasOnly([
@@ -56,17 +66,17 @@ service cloud.firestore {
 
     match /users/{uid}/mediaAssets/{assetId} {
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid) && validAsset(uid, assetId);
-      allow update: if isOwner(uid) && validAsset(uid, assetId)
+      allow create: if canWriteOwner(uid) && validAsset(uid, assetId);
+      allow update: if canWriteOwner(uid) && validAsset(uid, assetId)
         && request.resource.data == resource.data;
       allow delete: if false;
     }
 
     match /users/{uid}/materials/{materialId} {
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid) && validMaterial(uid, materialId)
+      allow create: if canWriteOwner(uid) && validMaterial(uid, materialId)
         && exists(/databases/$(database)/documents/users/$(uid)/mediaAssets/$(request.resource.data.audioAssetId));
-      allow update: if isOwner(uid) && validMaterial(uid, materialId)
+      allow update: if canWriteOwner(uid) && validMaterial(uid, materialId)
         && request.resource.data == resource.data;
       allow delete: if false;
     }
@@ -90,7 +100,7 @@ service cloud.firestore {
       }
 
       allow read: if isOwner(uid);
-      allow create, update: if isOwner(uid) && validSubtitle()
+      allow create, update: if canWriteOwner(uid) && validSubtitle()
         && exists(/databases/$(database)/documents/users/$(uid)/materials/$(materialId));
       allow delete: if false;
     }
@@ -117,8 +127,8 @@ service cloud.firestore {
       }
 
       allow read: if isOwner(uid);
-      allow create: if isOwner(uid) && validChange();
-      allow update: if isOwner(uid) && validChange()
+      allow create: if canWriteOwner(uid) && validChange();
+      allow update: if canWriteOwner(uid) && validChange()
         && request.resource.data.revision >= resource.data.revision;
       allow delete: if false;
     }

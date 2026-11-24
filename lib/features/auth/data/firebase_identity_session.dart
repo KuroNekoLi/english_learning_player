@@ -8,5 +8,7 @@ abstract interface class FirebaseIdentitySession
     implements SyncIdentityProvider {
   String? get uid;
 
+  bool get isReadOnly;
+
   Future<String> tokenFor(String expectedUid);
 }

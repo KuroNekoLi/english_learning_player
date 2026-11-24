@@ -76,3 +76,10 @@ Web 與原生版共用教材佇列、Firestore 資料格式、Storage 路徑和 
 - 名稱與位置分開合併。同欄位的離線衝突比較邏輯版本，再以操作 ID 排序。Firestore 寫入以讀取到的 `updateTime` 為前置條件，遇到競爭時重新讀取比較。多裝置同時移動導致循環時，循環內的資料夾顯示在首頁。[Firestore REST 寫入前置條件](https://firebase.google.com/docs/firestore/reference/rest/v1/Precondition)
 - 資料夾刪除後，內容移至最近的上層可用資料夾或首頁。從資料夾內把教材移到另一資料夾會替換目前所在的分類，其他分類仍保留。移到首頁會移出所有分類。
 - 教材刪除標記會持續生效，避免離線裝置重新顯示或下載已刪教材。收藏、學習紀錄和檔案內容保留，實體檔案回收仍由 ADR-019 追蹤。新版須先部署對應 Firestore Rules，且每台裝置都需更新 App。既有媒體文件格式不變。
+
+## 9. `kuroneko_li` password 唯讀憑證（ADR-035）
+
+- `kuroneko_li` 是現有 Google UID 上的 Email/Password credential，不建立第二個 UID。Firebase email 欄位使用固定 alias `kuroneko_li@english-learning-player-auth.firebaseapp.com`；使用者只在 UI 輸入 username。
+- App 依帳號憑證提供唯讀標示與下載控制；安全邊界為 Firestore／Storage Rules 和 `syncProgress` Callable：只有該 email alias 且 `firebase.sign_in_provider=password` 時拒絕雲端寫入；同 UID 的 Google provider 保留寫入權。其他測試用 Email/Password 使用者不受此條件影響。
+- 密碼登入建立獨立本機 `AccountScope`，雲端讀取仍以相同 Firebase UID 進行；reader outbox、進度、書籤與本機教材不會流入 Google writer 的本機資料庫。讀取的遠端進度只存到 reader profile。
+- 當前 Rules/Callable 程式碼及 Emulator 測試已新增，但未部署；未啟用 Firebase Email/Password provider 或未部署服務端規則時，不可宣稱唯讀已生效。首次設定需 Google 登入原 UID、在 App 連結固定 username 與全新強密碼，然後以兩種登入方式驗證同一 UID 與寫入拒絕。

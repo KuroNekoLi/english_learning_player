@@ -195,6 +195,57 @@ void main() {
     );
     expect(find.text('尚未設定 Firebase Web App。'), findsOneWidget);
   });
+
+  testWidgets('username login scopes a separate local read-only profile', (
+    tester,
+  ) async {
+    final auth = _FakeWebFirebaseAuthPort()..nextUid = 'shared-owner-uid';
+    final preferences = FakeSyncPreferencePersistence();
+    final container = ProviderContainer(
+      overrides: [
+        webFirebaseAuthPortProvider.overrideWithValue(auth),
+        accountScopeProvider.overrideWith(
+          (ref) => ref.watch(webAccountScopeProvider),
+        ),
+        firebaseMediaEndpointProvider.overrideWithValue(
+          FirebaseEndpoint(
+            project: 'example-project',
+            apiKey: 'test-only',
+            bucket: 'example-project.firebasestorage.app',
+          ),
+        ),
+        syncPreferenceStoreProvider.overrideWith((ref) async => preferences),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(_app(container));
+
+    await tester.tap(find.byKey(const ValueKey('webUsernamePasswordSignIn')));
+    await tester.pumpAndSettle();
+    expect(find.text('帳號密碼登入（唯讀）'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('usernameLoginPassword')),
+      'not-a-real-password',
+    );
+    await tester.tap(find.byKey(const ValueKey('usernameLoginSubmit')));
+    await tester.pumpAndSettle();
+
+    expect(auth.usernameSignIns, 1);
+    expect(container.read(webFirebaseSessionProvider).readOnly, isTrue);
+    expect(
+      container.read(webAccountScopeProvider).ownerId,
+      'shared-owner-uid:password-reader',
+    );
+    expect(
+      container.read(webAccountScopeProvider).cloudUid,
+      'shared-owner-uid',
+    );
+    expect(find.text('帳號密碼登入：唯讀'), findsOneWidget);
+    await tester.tap(find.text('開啟自動下載'));
+    await tester.pumpAndSettle();
+    expect(find.text('自動下載音檔與字幕'), findsOneWidget);
+    expect(find.text('立即更新與下載'), findsOneWidget);
+  });
 }
 
 ProviderContainer _container(
@@ -219,10 +270,13 @@ final class _FakeWebFirebaseAuthPort implements WebFirebaseAuthPort {
   @override
   String? currentUid;
   @override
+  bool isReadOnly = false;
+  @override
   String? unavailableReason;
   String? nextUid = 'google-user-a';
   WebFirebaseAuthException? nextError;
   int signInCalls = 0;
+  int usernameSignIns = 0;
   int signOutCalls = 0;
 
   @override
@@ -232,13 +286,26 @@ final class _FakeWebFirebaseAuthPort implements WebFirebaseAuthPort {
     nextError = null;
     if (error != null) throw error;
     currentUid = nextUid;
+    isReadOnly = false;
     return currentUid;
   }
+
+  @override
+  Future<String?> signInWithUsername(String username, String password) async {
+    usernameSignIns++;
+    currentUid = nextUid ?? 'password-user';
+    isReadOnly = true;
+    return currentUid;
+  }
+
+  @override
+  Future<void> linkReadOnlyUsername(String username, String password) async {}
 
   @override
   Future<void> signOut() async {
     signOutCalls++;
     currentUid = null;
+    isReadOnly = false;
   }
 
   @override

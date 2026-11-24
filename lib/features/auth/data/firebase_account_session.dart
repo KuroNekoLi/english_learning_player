@@ -4,6 +4,7 @@ import '../../../core/sync/sync_contracts.dart';
 import '../social_sign_in.dart';
 import '../../../core/firebase/firebase_endpoint.dart';
 import 'firebase_identity_session.dart';
+import '../username_login.dart';
 
 /// The active account used by all Firebase synchronization transports.
 final class FirebaseAccountSession implements FirebaseIdentitySession {
@@ -13,17 +14,28 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
   final FirebaseHttp http;
   _Credentials? _credentials;
   NativeFirebaseUser? _nativeUser;
+  bool _readOnly = false;
   Future<_Credentials>? _renewing;
   int _generation = 0;
 
   @override
   String? get uid => _credentials?.uid ?? _nativeUser?.uid;
 
+  /// Password credentials are intentionally read-only in Firebase Rules.
+  @override
+  bool get isReadOnly => _readOnly;
+
+  bool get canLinkUsernamePassword => _credentials != null && !_readOnly;
+
   @override
   Future<SyncIdentity?> currentIdentity() async =>
       uid == null ? null : SyncIdentity(uid!);
 
-  Future<String> signIn(String email, String password) async {
+  Future<String> signIn(
+    String email,
+    String password, {
+    bool readOnly = false,
+  }) async {
     signOut();
     final generation = _generation;
     final response = await http.send(
@@ -47,7 +59,78 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     final credentials = _Credentials.parse(await http.json(response));
     if (_generation != generation) _notSignedIn();
     _credentials = credentials;
+    _readOnly = readOnly;
     return credentials.uid;
+  }
+
+  Future<String> signInWithUsername(String username, String password) {
+    final normalized = normalizeLoginUsername(username);
+    if (!isReadOnlyLoginUsername(normalized) ||
+        !isSupportedReadOnlyLoginProject(endpoint.project)) {
+      throw const SyncFailure(SyncFailureKind.invalidData, 'invalid_username');
+    }
+    return signIn(
+      loginEmail(normalized, endpoint.project),
+      password,
+      readOnly: isReadOnlyLoginUsername(normalized),
+    );
+  }
+
+  /// Adds a username/password credential to the current Google account.
+  /// Firebase keeps the same UID, so existing cloud data stays in place.
+  Future<void> linkReadOnlyUsername({
+    required String username,
+    required String password,
+  }) async {
+    final normalized = normalizeLoginUsername(username);
+    if (!isReadOnlyLoginUsername(normalized) ||
+        !isSupportedReadOnlyLoginProject(endpoint.project)) {
+      throw const SyncFailure(
+        SyncFailureKind.permissionDenied,
+        'unsupported_username_credential',
+      );
+    }
+    if (password.length < 12) {
+      throw const SyncFailure(
+        SyncFailureKind.invalidData,
+        'password_too_short',
+      );
+    }
+    final current = _credentials;
+    if (current == null || _readOnly) {
+      throw const SyncFailure(
+        SyncFailureKind.permissionDenied,
+        'google_owner_session_required',
+      );
+    }
+    final generation = _generation;
+    final token = await tokenFor(current.uid);
+    final response = await http.send(
+      'POST',
+      endpoint.auth('update'),
+      contentType: 'application/json',
+      bytes: FirebaseHttp.encode({
+        'idToken': token,
+        'email': loginEmail(normalized, endpoint.project),
+        'password': password,
+        'returnSecureToken': true,
+      }),
+    );
+    if (response.statusCode == 400) {
+      await http.read(response).drain<void>();
+      throw const SyncFailure(
+        SyncFailureKind.invalidData,
+        'username_credential_unavailable',
+      );
+    }
+    await http.requireSuccess(response);
+    final linked = _Credentials.parse(await http.json(response));
+    if (_generation != generation || linked.uid != current.uid) {
+      _notSignedIn();
+    }
+    _credentials = linked;
+    // Require a fresh Google sign-in before using the writer session.
+    signOut();
   }
 
   Future<String?> signInWithProvider(
@@ -71,6 +154,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
         await result.getIdToken();
         if (_generation != generation) _notSignedIn();
         _nativeUser = result;
+        _readOnly = false;
         return uid;
       case ProviderIdToken(:final idToken, :final rawNonce):
         if (idToken.isEmpty ||
@@ -118,6 +202,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
         final credentials = _Credentials.parse(data);
         if (_generation != generation) _notSignedIn();
         _credentials = credentials;
+        _readOnly = false;
         return credentials.uid;
     }
   }
@@ -126,6 +211,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     _generation++;
     _credentials = null;
     _nativeUser = null;
+    _readOnly = false;
     _renewing = null;
   }
 

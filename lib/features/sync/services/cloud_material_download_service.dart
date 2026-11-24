@@ -15,6 +15,7 @@ abstract interface class CloudMaterialDownloadTransport {
 final class CloudMaterialDownloadService {
   const CloudMaterialDownloadService({
     required this._scope,
+    this.remoteOwnerUid,
     required SyncIdentityProvider identityProvider,
     required SyncConsentProvider consentProvider,
     required this._transport,
@@ -24,18 +25,21 @@ final class CloudMaterialDownloadService {
        _consent = consentProvider;
 
   final AccountScope _scope;
+  final String? remoteOwnerUid;
   final SyncIdentityProvider _identity;
   final SyncConsentProvider _consent;
   final CloudMaterialDownloadTransport _transport;
   final CloudMaterialCacheRepository _repository;
   final MediaStore _mediaStore;
 
+  String get _ownerUid => remoteOwnerUid ?? _scope.ownerId;
+
   Future<LearningMaterial> download(
     CloudMaterialMetadata metadata, {
     void Function(int bytesDownloaded, int totalBytes)? onProgress,
     void Function()? onAudioCached,
   }) async {
-    final uid = _scope.ownerId;
+    final uid = _ownerUid;
     final extension = switch (metadata.mediaType) {
       'audio/mpeg' => 'mp3',
       'audio/mp4' => 'm4a',
@@ -94,7 +98,7 @@ final class CloudMaterialDownloadService {
     var length = 0;
     onProgress?.call(0, metadata.byteLength);
     await for (final chunk in _transport.readAudio(
-      uid: _scope.ownerId,
+      uid: _ownerUid,
       storagePath: metadata.storagePath,
     )) {
       length += chunk.length;
@@ -110,7 +114,7 @@ final class CloudMaterialDownloadService {
   }
 
   Future<void> _checkAccess() async {
-    final uid = _scope.ownerId;
+    final uid = _ownerUid;
     if ((await _identity.currentIdentity())?.uid != uid) {
       throw const SyncFailure(
         SyncFailureKind.unauthenticated,

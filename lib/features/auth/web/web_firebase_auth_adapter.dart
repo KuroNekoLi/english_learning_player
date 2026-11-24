@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 
+import '../username_login.dart';
 import 'web_firebase_auth_port.dart';
 
 /// Firebase JavaScript SDK adapter used only by the Flutter Web entry.
@@ -27,6 +28,9 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
 
   @override
   String? get currentUid => isConfigured ? _currentFirebaseUid()?.toDart : null;
+
+  @override
+  bool get isReadOnly => isConfigured && _firebaseAuthReadOnly().toDart;
 
   @override
   final String? unavailableReason;
@@ -97,6 +101,44 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
   }
 
   @override
+  Future<String?> signInWithUsername(String username, String password) async {
+    _requireConfigured();
+    final normalized = normalizeLoginUsername(username);
+    if (!isReadOnlyLoginUsername(normalized) ||
+        !isSupportedReadOnlyLoginProject(_project)) {
+      throw const WebFirebaseAuthException('auth/invalid-email');
+    }
+    final email = loginEmail(normalized, _project);
+    final result = _decode(
+      (await _signInWithUsername(email.toJS, password.toJS).toDart).toDart,
+    );
+    if (result['uid'] case final String uid when uid.isNotEmpty) return uid;
+    final error = result['error'];
+    throw WebFirebaseAuthException(error is String ? error : 'auth/unknown');
+  }
+
+  @override
+  Future<void> linkReadOnlyUsername(String username, String password) async {
+    _requireConfigured();
+    if (password.length < 12) {
+      throw const WebFirebaseAuthException('auth/weak-password');
+    }
+    final normalized = normalizeLoginUsername(username);
+    if (!isReadOnlyLoginUsername(normalized) ||
+        !isSupportedReadOnlyLoginProject(_project)) {
+      throw const WebFirebaseAuthException('auth/invalid-email');
+    }
+    final email = loginEmail(normalized, _project);
+    final result = _decode(
+      (await _linkReadOnlyUsername(email.toJS, password.toJS).toDart).toDart,
+    );
+    if (result['uid'] != currentUid) {
+      final error = result['error'];
+      throw WebFirebaseAuthException(error is String ? error : 'auth/unknown');
+    }
+  }
+
+  @override
   Future<void> signOut() async {
     _requireConfigured();
     final result = _decode((await _signOutFirebase().toDart).toDart);
@@ -150,6 +192,18 @@ external JSPromise<JSString> _initializeFirebaseAuth(JSString optionsJson);
 @JS('elpFirebaseAuthSignInWithGoogle')
 external JSPromise<JSString> _signInWithGoogle();
 
+@JS('elpFirebaseAuthSignInWithUsername')
+external JSPromise<JSString> _signInWithUsername(
+  JSString email,
+  JSString password,
+);
+
+@JS('elpFirebaseAuthLinkReadOnlyUsername')
+external JSPromise<JSString> _linkReadOnlyUsername(
+  JSString email,
+  JSString password,
+);
+
 @JS('elpFirebaseAuthSignOut')
 external JSPromise<JSString> _signOutFirebase();
 
@@ -158,3 +212,6 @@ external JSPromise<JSString> _firebaseIdToken(JSString expectedUid);
 
 @JS('elpFirebaseAuthCurrentUid')
 external JSString? _currentFirebaseUid();
+
+@JS('elpFirebaseAuthIsReadOnly')
+external JSBoolean _firebaseAuthReadOnly();

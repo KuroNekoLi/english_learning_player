@@ -108,7 +108,7 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
     final allowed = await runtime.consent.isCloudSyncEnabled(runtime.uid);
     return allowed &&
         ref.mounted &&
-        ref.read(accountScopeProvider).ownerId == runtime.uid;
+        ref.read(accountScopeProvider).ownerId == runtime.scopeId;
   }
 
   Future<void> runAccountAction(
@@ -362,7 +362,7 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
         final runtime = await _runtime();
         await runtime.resolve(candidate, useCandidate);
         if (ref.mounted &&
-            ref.read(accountScopeProvider).ownerId == runtime.uid) {
+            ref.read(accountScopeProvider).ownerId == runtime.scopeId) {
           state = state.copyWith(status: '已排入進度選擇。請再次同步以確認。');
         }
       });

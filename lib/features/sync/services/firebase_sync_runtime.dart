@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import '../../../core/sync/sync_contracts.dart';
+import '../../../core/sync/progress_policy.dart';
 import '../../library/data/sqlite_material_repository.dart';
 import '../../progress/data/sqlite_progress_repository.dart';
 import '../../progress/domain/progress_models.dart';
@@ -15,10 +16,12 @@ import 'cloud_sync_coordinator.dart';
 final class FirebaseSyncRuntime {
   FirebaseSyncRuntime({
     required this.uid,
+    String? scopeId,
+    this.isReadOnly = false,
     this.library,
     required this.hasDueMedia,
     required this.transport,
-    required this.coordinator,
+    this.coordinator,
     required this.downloader,
     required this.consent,
     required this.repository,
@@ -26,14 +29,16 @@ final class FirebaseSyncRuntime {
     required this.progress,
     required this.progressTransport,
     required this.progressCoordinator,
-  });
+  }) : scopeId = scopeId ?? uid;
 
   final String uid;
+  final String scopeId;
+  final bool isReadOnly;
   final FirebaseLibrarySync? library;
   final Future<bool> Function(DateTime now) hasDueMedia;
   Future<SyncRunResult>? _mediaPass;
   final FirebaseMaterialTransport transport;
-  final CloudSyncCoordinator coordinator;
+  final CloudSyncCoordinator? coordinator;
   final CloudMaterialDownloadService downloader;
   final SyncConsentProvider consent;
   final SqliteMaterialRepository repository;
@@ -90,6 +95,7 @@ final class FirebaseSyncRuntime {
       progress.unresolvedCandidates(materialId);
 
   Future<void> resolve(ProgressCandidate candidate, bool useCandidate) async {
+    if (isReadOnly) return;
     final materialId = candidate.checkpoint.stream.materialId;
     final local = await progress.canonical(materialId);
     if (local == null) return;
@@ -114,8 +120,22 @@ final class FirebaseSyncRuntime {
     final progressSnapshot = await source.canonical(uid, materialId);
     await _checkConsent();
     if (progressSnapshot != null) {
+      final checkpoint = isReadOnly
+          ? ProgressCheckpoint(
+              stream: (
+                ownerId: scopeId,
+                materialId: progressSnapshot.checkpoint.stream.materialId,
+                deviceId: progressSnapshot.checkpoint.stream.deviceId,
+                sessionId: progressSnapshot.checkpoint.stream.sessionId,
+              ),
+              positionMs: progressSnapshot.checkpoint.positionMs,
+              state: progressSnapshot.checkpoint.state,
+              sequence: progressSnapshot.checkpoint.sequence,
+              baseRevision: progressSnapshot.checkpoint.baseRevision,
+            )
+          : progressSnapshot.checkpoint;
       await progress.mergeRemoteCanonical(
-        checkpoint: progressSnapshot.checkpoint,
+        checkpoint: checkpoint,
         revision: progressSnapshot.revision,
         nowMs: DateTime.now().millisecondsSinceEpoch,
       );
@@ -133,6 +153,7 @@ final class FirebaseSyncRuntime {
 
   /// Bound a foreground sync pass and stop at a retry or authorization boundary.
   Future<SyncRunResult> sync({bool mediaOnly = false}) async {
+    if (isReadOnly) return SyncRunResult.idle;
     final status = await (_mediaPass ??= _runMediaPass());
     return !mediaOnly && status == SyncRunResult.idle
         ? _syncProgress()
@@ -148,6 +169,8 @@ final class FirebaseSyncRuntime {
   }
 
   Future<SyncRunResult> _syncMedia() async {
+    final coordinator = this.coordinator;
+    if (coordinator == null) return SyncRunResult.idle;
     if (!await consent.isCloudSyncEnabled(uid)) {
       return SyncRunResult.waitingForConsent;
     }

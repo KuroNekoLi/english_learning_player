@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/account_sign_in_view.dart';
 import '../auth/firebase_session_controller.dart';
 import '../auth/social_sign_in.dart';
-import '../auth/test_email_sign_in_dialog.dart';
+import '../auth/username_password_dialog.dart';
+import '../auth/link_read_only_username_dialog.dart';
 import '../library/library_view_model.dart';
 import '../progress/domain/progress_models.dart';
 import 'firebase_sync_view_model.dart';
@@ -21,10 +22,10 @@ final class FirebaseSyncPanel extends ConsumerStatefulWidget {
 }
 
 final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
-  Future<void> _signInForTesting() async {
-    final entered = await showDialog<({String email, String password})>(
+  Future<void> _signInWithUsername() async {
+    final entered = await showDialog<({String username, String password})>(
       context: context,
-      builder: (_) => const TestEmailSignInDialog(),
+      builder: (_) => const UsernamePasswordDialog(),
     );
     if (entered == null || !mounted) return;
     await ref
@@ -32,8 +33,27 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
         .runAccountAction(
           () => ref
               .read(firebaseSessionProvider.notifier)
-              .signIn(entered.email, entered.password),
+              .signInWithUsername(entered.username, entered.password),
           fallbackMessage: '登入失敗，請稍後重試。',
+        );
+  }
+
+  Future<void> _linkReadOnlyUsername() async {
+    final entered = await showDialog<({String username, String password})>(
+      context: context,
+      builder: (_) => const LinkReadOnlyUsernameDialog(),
+    );
+    if (entered == null || !mounted) return;
+    await ref
+        .read(firebaseSyncViewModelProvider.notifier)
+        .runAccountAction(
+          () => ref
+              .read(firebaseSessionProvider.notifier)
+              .linkReadOnlyUsername(
+                username: entered.username,
+                password: entered.password,
+              ),
+          fallbackMessage: '設定帳號密碼失敗，請稍後重試。',
         );
   }
 
@@ -62,10 +82,7 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
         key != null &&
         ref.watch(syncPreferenceProvider(key)).asData?.value ==
             SyncPreference.enabled;
-    final canUseTestEmail =
-        endpoint != null &&
-        (endpoint.isEmulator ||
-            const bool.fromEnvironment('ELP_ENABLE_TEST_EMAIL_SIGN_IN'));
+    final canUseUsernamePassword = endpoint != null;
     final local = sync.materials.isEmpty
         ? null
         : ref.watch(libraryViewModelProvider).value;
@@ -89,9 +106,24 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
                       .signInWithProvider(provider),
                   fallbackMessage: '${provider.label} 登入失敗，請稍後重試。',
                 ),
-                onTestEmailSignIn: canUseTestEmail ? _signInForTesting : null,
+                onUsernamePasswordSignIn: canUseUsernamePassword
+                    ? _signInWithUsername
+                    : null,
               ),
             ] else ...[
+              if (state.readOnly)
+                const ListTile(
+                  leading: Icon(Icons.visibility_outlined),
+                  title: Text('帳號密碼登入：唯讀'),
+                  subtitle: Text('可以讀取與下載教材；雲端不接受上傳、修改或刪除。'),
+                ),
+              if (state.canLinkPassword)
+                OutlinedButton.icon(
+                  key: const ValueKey('linkReadOnlyUsername'),
+                  onPressed: sync.busy ? null : _linkReadOnlyUsername,
+                  icon: const Icon(Icons.lock_outline),
+                  label: const Text('設定帳號密碼唯讀登入'),
+                ),
               OutlinedButton(
                 onPressed: sync.busy
                     ? null
@@ -108,6 +140,7 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
                   preferenceKey: key,
                   busy: syncBusy,
                   onSync: viewModel.sync,
+                  readOnly: state.readOnly,
                 )
               else
                 const Text('教材同步尚未設定。'),
@@ -128,7 +161,7 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
                   onDownload: syncBusy
                       ? null
                       : () => viewModel.download(material),
-                  onResolve: sync.busy ? null : _resolve,
+                  onResolve: sync.busy || state.readOnly ? null : _resolve,
                 ),
           ],
         ),

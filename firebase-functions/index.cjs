@@ -2,6 +2,7 @@ const { createHash } = require('node:crypto');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { isReadOnlyLogin } = require('./access.cjs');
 
 initializeApp();
 
@@ -64,6 +65,9 @@ exports.syncProgress = onCall({
 }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in to sync progress.');
+  if (isReadOnlyLogin(request.auth.token)) {
+    throw new HttpsError('permission-denied', 'Password sign-in is read-only.');
+  }
   const { checkpoint, resolution } = parse(uid, request.data);
   const { opId, payloadHash } = request.data;
   const db = getFirestore();

@@ -35,14 +35,14 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
   if (endpoint == null ||
       !endpoint.isMediaSyncConfigured ||
       session == null ||
-      session.uid != account.ownerId) {
+      session.uid != account.cloudUid) {
     return null;
   }
-  final key = (uid: account.ownerId, project: endpoint.project);
+  final key = (uid: account.cloudUid, project: endpoint.project);
   final preferenceStore = ref.watch(syncPreferenceStoreProvider.future);
   bool optedInHere(String uid) =>
       ref.mounted &&
-      uid == account.ownerId &&
+      uid == account.cloudUid &&
       platform.isCurrentSyncAccount(ref, uid) &&
       ref.read(syncPreferenceProvider(key)).asData?.value ==
           SyncPreference.enabled;
@@ -71,36 +71,41 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
         );
   final outbox = SqliteSyncOutbox(scope: account, db: db);
   final subtitles = FirebaseSubtitleSync(
-    uid: account.ownerId,
+    uid: account.cloudUid,
     documents: transport.documents,
     objects: transport.objects,
     repository: repository,
     consent: consent,
   );
   final library = FirebaseLibrarySync(
-    uid: account.ownerId,
+    uid: account.cloudUid,
     documents: transport.documents,
     local: SqliteLibraryChanges(db, account.ownerId),
     consent: consent,
   );
   return FirebaseSyncRuntime(
-    uid: account.ownerId,
+    uid: account.cloudUid,
+    scopeId: account.ownerId,
+    isReadOnly: session.isReadOnly,
     hasDueMedia: (now) async =>
         await outbox.hasDueMedia(now) || await library.hasDue(now),
     library: library,
     transport: transport,
-    coordinator: CloudSyncCoordinator(
-      scope: account,
-      identityProvider: session,
-      consentProvider: consent,
-      outbox: outbox,
-      materials: repository,
-      mediaStore: files,
-      transport: transport,
-      publishSubtitles: subtitles.publish,
-    ),
+    coordinator: session.isReadOnly
+        ? null
+        : CloudSyncCoordinator(
+            scope: account,
+            identityProvider: session,
+            consentProvider: consent,
+            outbox: outbox,
+            materials: repository,
+            mediaStore: files,
+            transport: transport,
+            publishSubtitles: subtitles.publish,
+          ),
     downloader: CloudMaterialDownloadService(
       scope: account,
+      remoteOwnerUid: account.cloudUid,
       identityProvider: session,
       consentProvider: consent,
       transport: transport,
@@ -112,7 +117,7 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
     subtitles: subtitles,
     progress: progress,
     progressTransport: progressTransport,
-    progressCoordinator: progressTransport == null
+    progressCoordinator: progressTransport == null || session.isReadOnly
         ? null
         : ProgressSyncCoordinator(
             scope: account,
@@ -143,6 +148,9 @@ final class _GuardedSession implements FirebaseIdentitySession {
 
   @override
   String? get uid => session.uid;
+
+  @override
+  bool get isReadOnly => session.isReadOnly;
 
   @override
   Future<SyncIdentity?> currentIdentity() => session.currentIdentity();

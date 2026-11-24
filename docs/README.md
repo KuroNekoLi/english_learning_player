@@ -2,7 +2,7 @@
 
 > 狀態：Specification baseline v0.1。Stage 1 契約及 Stage 2 WP-02..10、Stage 3 WP-11～WP-14 已重驗；遠端 playlist metadata 與實機跨裝置 E2E 仍有未完成項目，Gate C 尚未通過。日期：2026-11-17。
 > 優先完成一條可量測的使用者旅程：Mac iCloud 資料夾新增 M4A＋雙 SRT → 自動配對匯入 → 雲端同步 → iPhone 同帳號續播。
-> 2026-11-21 納入 Web 為第四個正式支援目標。Web 實作與發布驗收列入 WP-17。
+> 2026-11-21 納入 Web 為第四個正式支援目標。Web 實作與發布驗收列入 WP-17。2026-11-24 新增同 UID password 唯讀登入工作包 WP-18；正式 Firebase 設定、Rules/Functions 部署仍待執行。
 
 ## 文件地圖與閱讀順序
 
@@ -38,3 +38,4 @@
 - [WP-15 Stage 4 QA 報告](agent/wp-15-qa-report.md) 記錄 FR 回歸矩陣、失敗注入、Gate D 結果與未解阻礙。
 - [WP-16 架構修正](agent/wp-16-architecture-remediation.md) 記錄元件拆分、行為修正、回歸證據與發布條件。
 - [WP-17 Web 實作交棒](agent/wp-17-implementation-handoff.md) 記錄分段操作、鎖版資產、測試與交回架構審查的條件。第一段可用 [Prompt E](10-agent-prompts.md#prompt-e--wp-17-第一段-web-實作) 開始。
+- [WP-18 唯讀登入交棒](agent/wp-18-readonly-account-handoff.md) 記錄 username alias、同 UID credential linking、服務端寫入拒絕及正式啟用前置條件。

@@ -9,13 +9,13 @@ final class AccountSignInView extends StatelessWidget {
     required this.configuredProviders,
     required this.busy,
     required this.onSignIn,
-    this.onTestEmailSignIn,
+    this.onUsernamePasswordSignIn,
   });
 
   final Set<SocialProvider> configuredProviders;
   final bool busy;
   final ValueChanged<SocialProvider> onSignIn;
-  final VoidCallback? onTestEmailSignIn;
+  final VoidCallback? onUsernamePasswordSignIn;
 
   @override
   Widget build(BuildContext context) {
@@ -88,10 +88,11 @@ final class AccountSignInView extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
-            if (onTestEmailSignIn != null)
+            if (onUsernamePasswordSignIn != null)
               TextButton(
-                onPressed: busy ? null : onTestEmailSignIn,
-                child: const Text('使用測試帳號'),
+                key: const ValueKey('usernamePasswordSignIn'),
+                onPressed: busy ? null : onUsernamePasswordSignIn,
+                child: const Text('使用帳號密碼登入（唯讀）'),
               ),
           ],
         ),
