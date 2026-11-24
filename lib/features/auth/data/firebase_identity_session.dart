@@ -8,6 +8,10 @@ abstract interface class FirebaseIdentitySession
     implements SyncIdentityProvider {
   String? get uid;
 
+  /// Firebase UID whose remote library this identity may read.
+  /// For normal accounts this is identical to [uid].
+  String? get cloudUid;
+
   bool get isReadOnly;
 
   Future<String> tokenFor(String expectedUid);

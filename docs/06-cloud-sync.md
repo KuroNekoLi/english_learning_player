@@ -77,9 +77,10 @@ Web 與原生版共用教材佇列、Firestore 資料格式、Storage 路徑和 
 - 資料夾刪除後，內容移至最近的上層可用資料夾或首頁。從資料夾內把教材移到另一資料夾會替換目前所在的分類，其他分類仍保留。移到首頁會移出所有分類。
 - 教材刪除標記會持續生效，避免離線裝置重新顯示或下載已刪教材。收藏、學習紀錄和檔案內容保留，實體檔案回收仍由 ADR-019 追蹤。新版須先部署對應 Firestore Rules，且每台裝置都需更新 App。既有媒體文件格式不變。
 
-## 9. `kuroneko_li` password 唯讀憑證（ADR-035）
+## 9. `kuroneko_li` 獨立帳號唯讀讀取（ADR-035）
 
-- `kuroneko_li` 是現有 Google UID 上的 Email/Password credential，不建立第二個 UID。Firebase email 欄位使用固定 alias `kuroneko_li@english-learning-player-auth.firebaseapp.com`；使用者只在 UI 輸入 username。
-- App 依帳號憑證提供唯讀標示與下載控制；安全邊界為 Firestore／Storage Rules 和 `syncProgress` Callable：只有該 email alias 且 `firebase.sign_in_provider=password` 時拒絕雲端寫入；同 UID 的 Google provider 保留寫入權。其他測試用 Email/Password 使用者不受此條件影響。
-- 密碼登入建立獨立本機 `AccountScope`，雲端讀取仍以相同 Firebase UID 進行；reader outbox、進度、書籤與本機教材不會流入 Google writer 的本機資料庫。讀取的遠端進度只存到 reader profile。
-- 當前 Rules/Callable 程式碼及 Emulator 測試已新增，但未部署；未啟用 Firebase Email/Password provider 或未部署服務端規則時，不可宣稱唯讀已生效。首次設定需 Google 登入原 UID、在 App 連結固定 username 與全新強密碼，然後以兩種登入方式驗證同一 UID 與寫入拒絕。
+- `kuroneko_li` 是獨立 Firebase Auth 使用者，Firebase email 欄位使用固定 alias `kuroneko_li@english-learning-player-auth.firebaseapp.com`；UI 只讓使用者輸入 username。其 Firebase UID、本機資料庫和媒體副本都與 Google owner 分離。
+- Google owner 需由 `provisionReadOnlyLogin` callable 建立 reader。Callable 只接受 Google provider，並檢查部署參數 `ELP_READONLY_OWNER_UID`；它以 Admin SDK 設定 reader 的 `elpReadOnlyOwnerUid` custom claim。客戶端不能自行授予此 claim。
+- App 以登入 UID 作本機 `AccountScope`，以 `cloudUid`（server claim 指向的 Google UID）讀取雲端清單、教材、字幕與進度。讀取資料及進度只落在 reader 的本機 scope。Reader 不建立媒體上傳、library 變更及進度同步的 writer coordinator。
+- Firestore／Storage Rules 只允許 reader 讀取 claim 所指 owner 路徑，所有寫入仍要求 `auth.uid == ownerUid` 且非 reader。`syncProgress` callable 也拒絕 reader。客戶端 UI 狀態不作為安全邊界。
+- 使用者回報已在 Firebase Console 啟用 Email/Password；本機未連線驗證此 Console 狀態。Rules/Callable 未部署前不可宣稱正式唯讀已生效。部署前須取得 Google owner UID 設定 `ELP_READONLY_OWNER_UID`，先跑 Emulator，再部署 Rules 與 Functions 並實測 reader read/deny-write。

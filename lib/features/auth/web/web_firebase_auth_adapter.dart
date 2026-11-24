@@ -16,6 +16,10 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
   });
 
   static const _project = String.fromEnvironment('ELP_FIREBASE_PROJECT');
+  static const _functionRegion = String.fromEnvironment(
+    'ELP_FIREBASE_PROGRESS_REGION',
+    defaultValue: 'us-central1',
+  );
   static const _apiKey = String.fromEnvironment('ELP_FIREBASE_API_KEY');
   static const _appId = String.fromEnvironment('ELP_FIREBASE_WEB_APP_ID');
   static const _senderId = String.fromEnvironment(
@@ -30,7 +34,14 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
   String? get currentUid => isConfigured ? _currentFirebaseUid()?.toDart : null;
 
   @override
+  String? get cloudUid => isConfigured ? _currentCloudUid()?.toDart : null;
+
+  @override
   bool get isReadOnly => isConfigured && _firebaseAuthReadOnly().toDart;
+
+  @override
+  bool get canProvisionReadOnlyLogin =>
+      isConfigured && _firebaseAuthCanProvision().toDart;
 
   @override
   final String? unavailableReason;
@@ -118,9 +129,12 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
   }
 
   @override
-  Future<void> linkReadOnlyUsername(String username, String password) async {
+  Future<String> provisionReadOnlyLogin(
+    String username,
+    String password,
+  ) async {
     _requireConfigured();
-    if (password.length < 12) {
+    if (password.length < 6) {
       throw const WebFirebaseAuthException('auth/weak-password');
     }
     final normalized = normalizeLoginUsername(username);
@@ -128,14 +142,19 @@ final class WebFirebaseAuthAdapter implements WebFirebaseAuthPort {
         !isSupportedReadOnlyLoginProject(_project)) {
       throw const WebFirebaseAuthException('auth/invalid-email');
     }
-    final email = loginEmail(normalized, _project);
     final result = _decode(
-      (await _linkReadOnlyUsername(email.toJS, password.toJS).toDart).toDart,
+      (await _provisionReadOnlyLogin(
+        _project.toJS,
+        _functionRegion.toJS,
+        normalized.toJS,
+        password.toJS,
+      ).toDart).toDart,
     );
-    if (result['uid'] != currentUid) {
-      final error = result['error'];
-      throw WebFirebaseAuthException(error is String ? error : 'auth/unknown');
+    if (result['readerUid'] case final String uid when uid.isNotEmpty) {
+      return uid;
     }
+    final error = result['error'];
+    throw WebFirebaseAuthException(error is String ? error : 'auth/unknown');
   }
 
   @override
@@ -198,9 +217,11 @@ external JSPromise<JSString> _signInWithUsername(
   JSString password,
 );
 
-@JS('elpFirebaseAuthLinkReadOnlyUsername')
-external JSPromise<JSString> _linkReadOnlyUsername(
-  JSString email,
+@JS('elpFirebaseAuthProvisionReadOnlyLogin')
+external JSPromise<JSString> _provisionReadOnlyLogin(
+  JSString project,
+  JSString region,
+  JSString username,
   JSString password,
 );
 
@@ -213,5 +234,11 @@ external JSPromise<JSString> _firebaseIdToken(JSString expectedUid);
 @JS('elpFirebaseAuthCurrentUid')
 external JSString? _currentFirebaseUid();
 
+@JS('elpFirebaseAuthCloudUid')
+external JSString? _currentCloudUid();
+
 @JS('elpFirebaseAuthIsReadOnly')
 external JSBoolean _firebaseAuthReadOnly();
+
+@JS('elpFirebaseAuthCanProvisionReadOnlyLogin')
+external JSBoolean _firebaseAuthCanProvision();

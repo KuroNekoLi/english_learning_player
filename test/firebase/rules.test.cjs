@@ -10,7 +10,11 @@ const {
 } = require('@firebase/rules-unit-testing');
 const { deleteDoc, doc, getDoc, runTransaction, setDoc } = require('firebase/firestore');
 const { deleteObject, ref, getBytes, getMetadata, updateMetadata, uploadBytes } = require('firebase/storage');
-const { isReadOnlyLogin } = require('../../firebase-functions/access.cjs');
+const {
+  isGoogleOwner,
+  isReadOnlyLogin,
+  readerEmail,
+} = require('../../firebase-functions/access.cjs');
 
 const projectId = 'demo-english-learning-player';
 let environment;
@@ -46,19 +50,20 @@ const materialDocument = {
   status: 'cloudReady',
 };
 
-test('progress callable classifier only marks the fixed password alias read-only', () => {
+test('read-only access requires a server-issued owner claim', () => {
   assert.equal(isReadOnlyLogin({
-    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
-    firebase: { sign_in_provider: 'password' },
+    elpReadOnlyOwnerUid: 'owner-uid',
   }), true);
   assert.equal(isReadOnlyLogin({
-    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
-    firebase: { sign_in_provider: 'google.com' },
-  }), false);
-  assert.equal(isReadOnlyLogin({
-    email: 'ordinary@example.com',
     firebase: { sign_in_provider: 'password' },
   }), false);
+  assert.equal(isGoogleOwner({ firebase: { sign_in_provider: 'google.com' } },
+    'owner-uid', 'owner-uid'), true);
+  assert.equal(isGoogleOwner({ firebase: { sign_in_provider: 'google.com' } },
+    'other-uid', 'owner-uid'), false);
+  assert.equal(readerEmail('kuroneko_li', 'english-learning-player-auth'),
+    'kuroneko_li@english-learning-player-auth.firebaseapp.com');
+  assert.throws(() => readerEmail('other', 'english-learning-player-auth'));
 });
 
 test.before(async () => {
@@ -112,7 +117,7 @@ test('Firestore denies anonymous, cross UID, mismatched owner and invalid fields
   ));
 });
 
-test('password-authenticated login reads cloud materials but cannot write', async () => {
+test('separate reader UID reads owner materials but cannot write or cross owners', async () => {
   await environment.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'users/shared-owner/materials/password-reader'), {
       ...materialDocument,
@@ -121,12 +126,12 @@ test('password-authenticated login reads cloud materials but cannot write', asyn
       storagePath: `users/shared-owner/assets/${assetId}/${sha}`,
     });
   });
-  const passwordUser = environment.authenticatedContext('shared-owner', {
-    firebase: { sign_in_provider: 'password' },
-    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
+  const passwordUser = environment.authenticatedContext('reader-user', {
+    elpReadOnlyOwnerUid: 'shared-owner',
   }).firestore();
   const path = 'users/shared-owner/materials/password-reader';
   await assertSucceeds(getDoc(doc(passwordUser, path)));
+  await assertFails(getDoc(doc(passwordUser, 'users/another-owner/materials/password-reader')));
   await assertFails(setDoc(doc(passwordUser, 'users/shared-owner/materials/new'), {
     ...materialDocument,
     ownerId: 'shared-owner',
@@ -191,11 +196,10 @@ test('Storage permits owner updates only when bytes and identity stay unchanged'
   await assertSucceeds(deleteObject(objectRef));
 });
 
-test('password-authenticated login can read Storage but cannot mutate it', async () => {
+test('separate reader UID reads Storage but cannot mutate or cross owners', async () => {
   const owner = environment.authenticatedContext('shared-storage-owner').storage();
-  const passwordUser = environment.authenticatedContext('shared-storage-owner', {
-    firebase: { sign_in_provider: 'password' },
-    email: 'kuroneko_li@english-learning-player-auth.firebaseapp.com',
+  const passwordUser = environment.authenticatedContext('shared-storage-reader', {
+    elpReadOnlyOwnerUid: 'shared-storage-owner',
   }).storage();
   const storagePath = `users/shared-storage-owner/assets/${assetId}/${sha}`;
   const object = ref(owner, storagePath);
@@ -208,6 +212,8 @@ test('password-authenticated login can read Storage but cannot mutate it', async
   };
   await assertSucceeds(uploadBytes(object, new Uint8Array([1, 2, 3]), metadata));
   await assertSucceeds(getBytes(ref(passwordUser, storagePath)));
+  await assertFails(getBytes(ref(passwordUser,
+    `users/another-storage-owner/assets/${assetId}/${sha}`)));
   await assertFails(uploadBytes(ref(passwordUser,
     `users/shared-storage-owner/assets/other/${'c'.repeat(64)}`),
   new Uint8Array([1]), { ...metadata, customMetadata: { ...metadata.customMetadata, assetId: 'other', sha256: 'c'.repeat(64) } }));

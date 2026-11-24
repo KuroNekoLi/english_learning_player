@@ -22,7 +22,7 @@
 | WP-15 | S4 Luna High | 02-14 | FR/fixtures → 回歸與失敗注入 → QA 報告 | docs/08 Gate D 的測試面向；各 FR 有結果 |
 | WP-16 | S4 Sol High | 15 | code/data flow → 架構/安全審查 → findings + release decision | P0/P1 無隱藏 blocker，風險與決策可追 |
 | WP-17 | 平台擴充 | 02–09、14 登入契約 | 瀏覽器選檔 → Drift WasmDatabase＋私有媒體儲存 → Google Web OAuth → Web 本機學習及同帳號同步 | T-WEB-01..06；Web build、離線升級、分頁與 UID 隔離、真實 Google OAuth、跨裝置續播及原生回歸。見 [Web 平台規格](14-web-platform.md)。 |
-| WP-18 | Auth／同步安全 | WP-14、WP-17 | 既有 Google UID → 加入 `kuroneko_li` 密碼憑證 → password-provider 唯讀下載 profile | 原生/Web 登入、credential linking、Firestore/Storage deny-write Emulator 測試、Callable deny-write、reader 本機資料隔離；Firebase Console 設定、Rules/Functions 正式部署與真實登入另列 BLOCKED。見 [WP-18 交棒](agent/wp-18-readonly-account-handoff.md)。 |
+| WP-18 | Auth／同步安全 | WP-14、WP-17 | Google owner UID → Callable 建立獨立 Email/Password reader UID 並設定 owner claim → reader 唯讀下載 profile | 原生/Web 登入、Firestore/Storage deny-write Emulator 測試、Callable deny-write、reader 本機資料隔離；Console provider、allowlist UID、Rules/Functions 正式部署與真實登入另列 BLOCKED。見 [WP-18 交棒](agent/wp-18-readonly-account-handoff.md)。 |
 
 ## 工作包共通 Definition of Done
 1. 產出既有模組介面可使用，不引入未核准的隱藏相依。

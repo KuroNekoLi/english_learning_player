@@ -50,10 +50,7 @@ Future<void> main() async {
           final session = ref.watch(firebaseSessionProvider);
           final uid = session.uid;
           if (uid == null) return AccountScope('local-default');
-          return AccountScope(
-            session.readOnly ? '$uid:password-reader' : uid,
-            cloudUid: uid,
-          );
+          return AccountScope(uid, cloudUid: session.cloudUid ?? uid);
         }),
         audioEngineProvider.overrideWith((ref) {
           ref.onDispose(() => unawaited(engine.dispose()));

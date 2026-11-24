@@ -9,12 +9,23 @@ final class FirebaseDocuments {
   final FirebaseIdentitySession session;
   final FirebaseHttp http;
 
+  Future<String> _authToken() async {
+    final uid = session.uid;
+    if (uid == null) {
+      throw const SyncFailure(
+        SyncFailureKind.unauthenticated,
+        'firebase_sign_in_required',
+      );
+    }
+    return session.tokenFor(uid);
+  }
+
   Future<void> checkCollectionAccess(String uid, List<String> path) async {
     _requireOwner(uid, path);
     final response = await http.send(
       'GET',
       endpoint.firestore(path, {'pageSize': '1'}),
-      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      authorization: () async => 'Bearer ${await _authToken()}',
     );
     await http.requireSuccess(response);
     await http.read(response).drain<void>();
@@ -32,7 +43,7 @@ final class FirebaseDocuments {
       final response = await http.send(
         'GET',
         endpoint.firestore(path, {'pageSize': '100', 'pageToken': ?page}),
-        authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+        authorization: () async => 'Bearer ${await _authToken()}',
       );
       await http.requireSuccess(response);
       final json = await http.json(response);
@@ -58,7 +69,7 @@ final class FirebaseDocuments {
     final response = await http.send(
       'GET',
       endpoint.firestore(path),
-      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      authorization: () async => 'Bearer ${await _authToken()}',
     );
     if (response.statusCode == 404) {
       await http.read(response).drain<void>();
@@ -85,7 +96,7 @@ final class FirebaseDocuments {
         path,
         createOnly ? {'currentDocument.exists': 'false'} : null,
       ),
-      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      authorization: () async => 'Bearer ${await _authToken()}',
       contentType: 'application/json',
       bytes: FirebaseHttp.encode({
         'fields': record.map((key, value) => MapEntry(key, _value(value))),
@@ -113,7 +124,7 @@ final class FirebaseDocuments {
           'documents:commit',
         ],
       ),
-      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      authorization: () async => 'Bearer ${await _authToken()}',
       contentType: 'application/json',
       bytes: FirebaseHttp.encode({
         'writes': [

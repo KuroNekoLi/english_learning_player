@@ -15,6 +15,7 @@ import 'firebase_storage_objects.dart';
 final class FirebaseSubtitleSync {
   const FirebaseSubtitleSync({
     required this.uid,
+    this.localOwnerUid,
     required this.documents,
     required this.objects,
     required this.repository,
@@ -23,6 +24,7 @@ final class FirebaseSubtitleSync {
 
   static const maxBytes = 2 * 1024 * 1024;
   final String uid;
+  final String? localOwnerUid;
   final FirebaseDocuments documents;
   final FirebaseStorageObjects objects;
   final CloudSubtitleCacheRepository repository;
@@ -156,7 +158,7 @@ final class FirebaseSubtitleSync {
       await repository.saveDownloadedSubtitleTrack(
         SubtitleTrack(
           id: id,
-          ownerId: uid,
+          ownerId: localOwnerUid ?? uid,
           materialId: materialId,
           languageTag: language,
           sourceName: 'cloud-$language.srt',

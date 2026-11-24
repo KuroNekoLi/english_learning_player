@@ -114,20 +114,21 @@ final class CloudMaterialDownloadService {
   }
 
   Future<void> _checkAccess() async {
-    final uid = _ownerUid;
-    if ((await _identity.currentIdentity())?.uid != uid) {
+    final localUid = _scope.ownerId;
+    final cloudUid = _ownerUid;
+    if ((await _identity.currentIdentity())?.uid != localUid) {
       throw const SyncFailure(
         SyncFailureKind.unauthenticated,
         'account_changed',
       );
     }
-    if (!await _consent.isCloudSyncEnabled(uid)) {
+    if (!await _consent.isCloudSyncEnabled(cloudUid)) {
       throw const SyncFailure(
         SyncFailureKind.permissionDenied,
         'consent_required',
       );
     }
-    if ((await _identity.currentIdentity())?.uid != uid) {
+    if ((await _identity.currentIdentity())?.uid != localUid) {
       throw const SyncFailure(
         SyncFailureKind.unauthenticated,
         'account_changed',

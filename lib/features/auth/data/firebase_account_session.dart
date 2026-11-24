@@ -21,21 +21,22 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
   @override
   String? get uid => _credentials?.uid ?? _nativeUser?.uid;
 
+  @override
+  String? get cloudUid =>
+      _credentials?.readOnlyOwnerUid ?? _nativeUser?.uid ?? _credentials?.uid;
+
   /// Password credentials are intentionally read-only in Firebase Rules.
   @override
   bool get isReadOnly => _readOnly;
 
-  bool get canLinkUsernamePassword => _credentials != null && !_readOnly;
+  bool get canProvisionReadOnlyLogin =>
+      _credentials?.signInProvider == 'google.com' && !_readOnly;
 
   @override
   Future<SyncIdentity?> currentIdentity() async =>
       uid == null ? null : SyncIdentity(uid!);
 
-  Future<String> signIn(
-    String email,
-    String password, {
-    bool readOnly = false,
-  }) async {
+  Future<String> signIn(String email, String password) async {
     signOut();
     final generation = _generation;
     final response = await http.send(
@@ -59,7 +60,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     final credentials = _Credentials.parse(await http.json(response));
     if (_generation != generation) _notSignedIn();
     _credentials = credentials;
-    _readOnly = readOnly;
+    _readOnly = credentials.readOnlyOwnerUid != null;
     return credentials.uid;
   }
 
@@ -69,16 +70,11 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
         !isSupportedReadOnlyLoginProject(endpoint.project)) {
       throw const SyncFailure(SyncFailureKind.invalidData, 'invalid_username');
     }
-    return signIn(
-      loginEmail(normalized, endpoint.project),
-      password,
-      readOnly: isReadOnlyLoginUsername(normalized),
-    );
+    return signIn(loginEmail(normalized, endpoint.project), password);
   }
 
-  /// Adds a username/password credential to the current Google account.
-  /// Firebase keeps the same UID, so existing cloud data stays in place.
-  Future<void> linkReadOnlyUsername({
+  /// Provisions an independent reader UID from the authenticated owner session.
+  Future<String> provisionReadOnlyLogin({
     required String username,
     required String password,
   }) async {
@@ -90,14 +86,14 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
         'unsupported_username_credential',
       );
     }
-    if (password.length < 12) {
+    if (password.length < 6) {
       throw const SyncFailure(
         SyncFailureKind.invalidData,
         'password_too_short',
       );
     }
     final current = _credentials;
-    if (current == null || _readOnly) {
+    if (current == null || !canProvisionReadOnlyLogin) {
       throw const SyncFailure(
         SyncFailureKind.permissionDenied,
         'google_owner_session_required',
@@ -107,30 +103,30 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     final token = await tokenFor(current.uid);
     final response = await http.send(
       'POST',
-      endpoint.auth('update'),
+      endpoint.readOnlyProvisionFunction,
       contentType: 'application/json',
       bytes: FirebaseHttp.encode({
-        'idToken': token,
-        'email': loginEmail(normalized, endpoint.project),
-        'password': password,
-        'returnSecureToken': true,
+        'data': {'username': normalized, 'password': password},
       }),
+      authorization: () async => 'Bearer $token',
     );
     if (response.statusCode == 400) {
-      await http.read(response).drain<void>();
+      await http.json(response);
       throw const SyncFailure(
-        SyncFailureKind.invalidData,
-        'username_credential_unavailable',
+        SyncFailureKind.permissionDenied,
+        'readonly_login_provision_rejected',
       );
     }
     await http.requireSuccess(response);
-    final linked = _Credentials.parse(await http.json(response));
-    if (_generation != generation || linked.uid != current.uid) {
+    final payload = await http.json(response);
+    final result = payload['result'] ?? payload['data'];
+    final readerUid = result is Map ? result['readerUid'] : null;
+    if (_generation != generation ||
+        readerUid is! String ||
+        readerUid.isEmpty) {
       _notSignedIn();
     }
-    _credentials = linked;
-    // Require a fresh Google sign-in before using the writer session.
-    signOut();
+    return readerUid;
   }
 
   Future<String?> signInWithProvider(
@@ -290,7 +286,14 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
 bool _validUid(String uid) => uid.isNotEmpty && !uid.contains('/');
 
 final class _Credentials {
-  const _Credentials(this.uid, this.token, this.refresh, this.expiresAt);
+  const _Credentials(
+    this.uid,
+    this.token,
+    this.refresh,
+    this.expiresAt,
+    this.readOnlyOwnerUid,
+    this.signInProvider,
+  );
 
   factory _Credentials.parse(
     Map<String, dynamic> data, {
@@ -302,6 +305,12 @@ final class _Credentials {
     final expiry = int.tryParse(
       '${data[refreshed ? 'expires_in' : 'expiresIn']}',
     );
+    final claims = _decodeJwtClaims(token is String ? token : '');
+    final ownerClaim = claims['elpReadOnlyOwnerUid'];
+    final firebaseClaim = claims['firebase'];
+    final signInProvider = firebaseClaim is Map
+        ? firebaseClaim['sign_in_provider']
+        : null;
     if (uid is! String ||
         !_validUid(uid) ||
         token is! String ||
@@ -320,6 +329,8 @@ final class _Credentials {
       token,
       refresh,
       DateTime.now().add(Duration(seconds: expiry)),
+      ownerClaim is String && _validUid(ownerClaim) ? ownerClaim : null,
+      signInProvider is String ? signInProvider : null,
     );
   }
 
@@ -327,4 +338,18 @@ final class _Credentials {
   final String token;
   final String refresh;
   final DateTime expiresAt;
+  final String? readOnlyOwnerUid;
+  final String? signInProvider;
+}
+
+Map<String, dynamic> _decodeJwtClaims(String token) {
+  final parts = token.split('.');
+  if (parts.length != 3) return const {};
+  try {
+    return jsonDecode(
+      utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+    ) as Map<String, dynamic>;
+  } catch (_) {
+    return const {};
+  }
 }

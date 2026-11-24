@@ -29,9 +29,7 @@ final class _LinkReadOnlyUsernameDialogState
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            '這會在目前 Google 帳號上新增登入方式，沿用同一份雲端教材。帳號密碼登入只可讀取和下載；請設定至少 12 個字元且未在其他地方使用的密碼。',
-          ),
+          const Text('建立獨立的唯讀登入帳號，並授權它讀取目前 Google 帳號的教材。雲端權限由伺服器控管；請輸入測試帳號密碼。'),
           TextField(
             key: const ValueKey('linkUsername'),
             controller: _username,
@@ -43,7 +41,7 @@ final class _LinkReadOnlyUsernameDialogState
             key: const ValueKey('linkPassword'),
             controller: _password,
             obscureText: true,
-            decoration: const InputDecoration(labelText: '新密碼（至少 12 個字元）'),
+            decoration: const InputDecoration(labelText: '新密碼（至少 6 個字元）'),
           ),
           TextField(
             key: const ValueKey('linkPasswordConfirm'),
@@ -63,14 +61,14 @@ final class _LinkReadOnlyUsernameDialogState
         key: const ValueKey('linkUsernameSubmit'),
         onPressed: () {
           if (_username.text.trim().isEmpty ||
-              _password.text.length < 12 ||
+              _password.text.length < 6 ||
               _password.text != _confirm.text) {
             return;
           }
           Navigator.of(context)
               .pop((username: _username.text.trim(), password: _password.text));
         },
-        child: const Text('設定並登出'),
+        child: const Text('建立唯讀帳號'),
       ),
     ],
   );

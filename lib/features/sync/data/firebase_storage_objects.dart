@@ -14,6 +14,17 @@ final class FirebaseStorageObjects {
   final FirebaseIdentitySession session;
   final FirebaseHttp http;
 
+  Future<String> _authToken() async {
+    final uid = session.uid;
+    if (uid == null) {
+      throw const SyncFailure(
+        SyncFailureKind.unauthenticated,
+        'firebase_sign_in_required',
+      );
+    }
+    return session.tokenFor(uid);
+  }
+
   Future<CloudAssetReceipt> uploadAsset({
     required String uid,
     required CloudMediaAsset asset,
@@ -60,7 +71,7 @@ final class FirebaseStorageObjects {
       final response = await http.send(
         'POST',
         endpoint.storage(query: {'name': path}),
-        authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
+        authorization: () async => 'Firebase ${await _authToken()}',
         contentType: 'multipart/related; boundary=$boundary',
         headers: const {'X-Goog-Upload-Protocol': 'multipart'},
         body: parts(),
@@ -123,7 +134,7 @@ final class FirebaseStorageObjects {
     final response = await http.send(
       'GET',
       endpoint.storage(object: path, query: const {'alt': 'media'}),
-      authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
+      authorization: () async => 'Firebase ${await _authToken()}',
     );
     await http.requireSuccess(response);
     yield* http.read(response);
@@ -147,7 +158,7 @@ final class FirebaseStorageObjects {
       final response = await http.send(
         'POST',
         endpoint.storage(query: {'name': path}),
-        authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
+        authorization: () async => 'Firebase ${await _authToken()}',
         contentType: 'multipart/related; boundary=$boundary',
         headers: const {'X-Goog-Upload-Protocol': 'multipart'},
         bytes: [
@@ -184,7 +195,7 @@ final class FirebaseStorageObjects {
     final response = await http.send(
       'GET',
       endpoint.storage(object: path),
-      authorization: () async => 'Firebase ${await session.tokenFor(uid)}',
+      authorization: () async => 'Firebase ${await _authToken()}',
     );
     if (response.statusCode == 404) {
       await http.read(response).drain<void>();

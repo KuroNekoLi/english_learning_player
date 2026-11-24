@@ -38,8 +38,9 @@ final beforeAccountChangeProvider = Provider<Future<void> Function()>(
 
 typedef FirebaseSessionState = ({
   String? uid,
+  String? cloudUid,
   bool readOnly,
-  bool canLinkPassword,
+  bool canProvisionReadOnlyLogin,
 });
 
 final firebaseSessionProvider =
@@ -52,8 +53,12 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
   bool _changingAccount = false;
 
   @override
-  FirebaseSessionState build() =>
-      (uid: null, readOnly: false, canLinkPassword: false);
+  FirebaseSessionState build() => (
+    uid: null,
+    cloudUid: null,
+    readOnly: false,
+    canProvisionReadOnlyLogin: false,
+  );
 
   Future<void> signIn(String email, String password) async {
     await _signIn((session) => session.signIn(email, password));
@@ -63,24 +68,20 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
     await _signIn((session) => session.signInWithUsername(username, password));
   }
 
-  Future<void> linkReadOnlyUsername({
+  Future<String> provisionReadOnlyLogin({
     required String username,
     required String password,
   }) async {
     final session = ref.read(firebaseAuthSessionProvider);
-    if (session == null || state.uid == null || state.readOnly) {
+    if (session == null ||
+        state.uid == null ||
+        !state.canProvisionReadOnlyLogin) {
       throw StateError('請先使用 Google 登入原有教材帳號。');
     }
-    await ref.read(beforeAccountChangeProvider)();
-    await session.linkReadOnlyUsername(username: username, password: password);
-    if (!ref.mounted) return;
-    final provider = _signedInProvider;
-    ref.read(firebaseAuthSessionProvider)?.signOut();
-    _signedInProvider = null;
-    state = (uid: null, readOnly: false, canLinkPassword: false);
-    if (provider != null) {
-      await ref.read(socialSignInProvider)?.signOut(provider);
-    }
+    return session.provisionReadOnlyLogin(
+      username: username,
+      password: password,
+    );
   }
 
   Future<void> signInWithProvider(SocialProvider provider) async {
@@ -133,8 +134,9 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
       _signedInProvider = provider;
       state = (
         uid: uid,
+        cloudUid: session.cloudUid,
         readOnly: session.isReadOnly,
-        canLinkPassword: session.canLinkUsernamePassword,
+        canProvisionReadOnlyLogin: session.canProvisionReadOnlyLogin,
       );
     } finally {
       _changingAccount = false;
@@ -151,7 +153,12 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
       if (!ref.mounted) return;
       ref.read(firebaseAuthSessionProvider)?.signOut();
       _signedInProvider = null;
-      state = (uid: null, readOnly: false, canLinkPassword: false);
+      state = (
+        uid: null,
+        cloudUid: null,
+        readOnly: false,
+        canProvisionReadOnlyLogin: false,
+      );
       if (provider != null && platform != null) {
         await platform.signOut(provider);
       }

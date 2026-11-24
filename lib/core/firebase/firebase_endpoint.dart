@@ -81,6 +81,15 @@ final class FirebaseEndpoint {
     ], null);
   }
 
+  Uri get readOnlyProvisionFunction {
+    const function = 'provisionReadOnlyLogin';
+    final region = progressRegion ?? 'us-central1';
+    return _uri('$region-$project.cloudfunctions.net', 5001, [
+      if (isEmulator) ...[project, region],
+      function,
+    ], null);
+  }
+
   Uri firestore(List<String> path, [Map<String, String>? query]) => _uri(
     'firestore.googleapis.com',
     8080,

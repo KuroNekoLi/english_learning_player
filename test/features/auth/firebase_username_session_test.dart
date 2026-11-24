@@ -2,64 +2,75 @@ import 'dart:convert';
 
 import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
 import 'package:english_learning_player/features/auth/data/firebase_account_session.dart';
+import 'package:english_learning_player/features/auth/social_sign_in.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
-    'username password sign-in maps alias and enters read-only mode',
+    'username password signs into a distinct reader UID and owner scope',
     () async {
       final http = _FakeFirebaseHttp();
       final session = FirebaseAccountSession(_endpoint, http);
 
-      final uid = await session.signInWithUsername('kuroneko_li', 'secret');
+      final uid = await session.signInWithUsername('kuroneko_li', 'dummy-pass');
 
-      expect(uid, 'shared-google-uid');
+      expect(uid, 'reader-uid');
+      expect(session.uid, 'reader-uid');
+      expect(session.cloudUid, 'google-owner-uid');
       expect(session.isReadOnly, isTrue);
       expect(http.lastUri!.path, contains('accounts:signInWithPassword'));
       expect(
         http.lastBody!['email'],
         'kuroneko_li@english-learning-player-auth.firebaseapp.com',
       );
-      expect(http.lastBody!['password'], 'secret');
     },
   );
 
-  test('ordinary email password session remains writable', () async {
-    final session = FirebaseAccountSession(_endpoint, _FakeFirebaseHttp());
-    await session.signIn('test@example.com', 'test-password');
-    expect(session.isReadOnly, isFalse);
-  });
-
   test(
-    'Google owner can link the read-only alias without changing UID',
+    'Google owner provisions reader through authenticated callable',
     () async {
       final http = _FakeFirebaseHttp();
       final session = FirebaseAccountSession(_endpoint, http);
-      final uid = await session.signIn(
-        'google-owner@example.com',
-        'owner-token',
+      await session.signInWithProvider(
+        SocialProvider.google,
+        () async => const ProviderIdToken('provider-token'),
       );
 
-      await session.linkReadOnlyUsername(
+      expect(session.uid, 'google-owner-uid');
+      expect(session.cloudUid, 'google-owner-uid');
+      expect(session.canProvisionReadOnlyLogin, isTrue);
+      final readerUid = await session.provisionReadOnlyLogin(
         username: 'kuroneko_li',
-        password: 'a-long-unique-password',
+        password: 'dummy-test-password',
       );
 
-      expect(http.lastUri!.path, contains('accounts:update'));
-      expect(http.lastBody!['idToken'], 'firebase-id-token');
+      expect(readerUid, 'reader-uid');
+      expect(http.lastUri, _endpoint.readOnlyProvisionFunction);
+      expect(http.lastBody, {
+        'data': {'username': 'kuroneko_li', 'password': 'dummy-test-password'},
+      });
       expect(
-        http.lastBody!['email'],
-        'kuroneko_li@english-learning-player-auth.firebaseapp.com',
+        http.lastAuthorization,
+        'Bearer ${_jwt({
+          'sub': 'google-owner-uid',
+          'firebase': {'sign_in_provider': 'google.com'},
+        })}',
       );
-      expect(http.lastBody!['password'], 'a-long-unique-password');
       expect(
         session.uid,
-        isNull,
-        reason: 'linking requires a fresh owner sign-in',
+        'google-owner-uid',
+        reason: 'provisioning preserves owner session',
       );
-      expect(uid, 'shared-google-uid');
     },
   );
+
+  test('password identity without server claim is not read-only', () async {
+    final session = FirebaseAccountSession(_endpoint, _FakeFirebaseHttp());
+    await session.signIn('test@example.com', 'dummy-test-password');
+    expect(session.isReadOnly, isFalse);
+    expect(session.cloudUid, 'email-user-uid');
+    expect(session.canProvisionReadOnlyLogin, isFalse);
+  });
 }
 
 final _endpoint = FirebaseEndpoint(
@@ -67,10 +78,13 @@ final _endpoint = FirebaseEndpoint(
   apiKey: 'test-key',
 );
 
+String _jwt(Map<String, Object?> claims) =>
+    'header.${base64Url.encode(utf8.encode(jsonEncode(claims))).replaceAll('=', '')}.signature';
+
 final class _FakeFirebaseHttp implements FirebaseHttp {
   Uri? lastUri;
   Map<String, dynamic>? lastBody;
-  String method = '';
+  String? lastAuthorization;
 
   @override
   Future<FirebaseResponse> send(
@@ -83,27 +97,50 @@ final class _FakeFirebaseHttp implements FirebaseHttp {
     Stream<List<int>>? body,
     int? length,
   }) async {
-    this.method = method;
     lastUri = uri;
+    lastAuthorization = await authorization?.call();
     lastBody = bytes == null
         ? null
         : jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-    final isUpdate = uri.path.endsWith('accounts:update');
+    final response = uri.path.endsWith('provisionReadOnlyLogin')
+        ? {
+            'result': {'readerUid': 'reader-uid'},
+          }
+        : uri.path.endsWith('accounts:signInWithIdp')
+        ? {
+            'localId': 'google-owner-uid',
+            'idToken': _jwt({
+              'sub': 'google-owner-uid',
+              'firebase': {'sign_in_provider': 'google.com'},
+            }),
+            'refreshToken': 'owner-refresh-token',
+            'expiresIn': '3600',
+          }
+        : uri.path.endsWith('accounts:signInWithPassword') &&
+              lastBody?['email'] ==
+                  'kuroneko_li@english-learning-player-auth.firebaseapp.com'
+        ? {
+            'localId': 'reader-uid',
+            'idToken': _jwt({
+              'sub': 'reader-uid',
+              'elpReadOnlyOwnerUid': 'google-owner-uid',
+              'firebase': {'sign_in_provider': 'password'},
+            }),
+            'refreshToken': 'refresh-token',
+            'expiresIn': '3600',
+          }
+        : {
+            'localId': 'email-user-uid',
+            'idToken': _jwt({
+              'sub': 'email-user-uid',
+              'firebase': {'sign_in_provider': 'password'},
+            }),
+            'refreshToken': 'refresh-token',
+            'expiresIn': '3600',
+          };
     return FirebaseResponse(
       200,
-      Stream.value(
-        utf8.encode(
-          jsonEncode({
-            'localId': 'shared-google-uid',
-            'idToken': 'firebase-id-token',
-            'refreshToken': 'firebase-refresh-token',
-            'expiresIn': '3600',
-            if (isUpdate)
-              'email':
-                  'kuroneko_li@english-learning-player-auth.firebaseapp.com',
-          }),
-        ),
-      ),
+      Stream.value(utf8.encode(jsonEncode(response))),
     );
   }
 

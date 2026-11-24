@@ -196,10 +196,12 @@ void main() {
     expect(find.text('尚未設定 Firebase Web App。'), findsOneWidget);
   });
 
-  testWidgets('username login scopes a separate local read-only profile', (
+  testWidgets('username login has a separate UID and owner cloud scope', (
     tester,
   ) async {
-    final auth = _FakeWebFirebaseAuthPort()..nextUid = 'shared-owner-uid';
+    final auth = _FakeWebFirebaseAuthPort()
+      ..nextUid = 'reader-user-uid'
+      ..nextCloudUid = 'shared-owner-uid';
     final preferences = FakeSyncPreferencePersistence();
     final container = ProviderContainer(
       overrides: [
@@ -232,10 +234,7 @@ void main() {
 
     expect(auth.usernameSignIns, 1);
     expect(container.read(webFirebaseSessionProvider).readOnly, isTrue);
-    expect(
-      container.read(webAccountScopeProvider).ownerId,
-      'shared-owner-uid:password-reader',
-    );
+    expect(container.read(webAccountScopeProvider).ownerId, 'reader-user-uid');
     expect(
       container.read(webAccountScopeProvider).cloudUid,
       'shared-owner-uid',
@@ -270,10 +269,15 @@ final class _FakeWebFirebaseAuthPort implements WebFirebaseAuthPort {
   @override
   String? currentUid;
   @override
+  String? cloudUid;
+  @override
   bool isReadOnly = false;
+  @override
+  bool canProvisionReadOnlyLogin = false;
   @override
   String? unavailableReason;
   String? nextUid = 'google-user-a';
+  String? nextCloudUid;
   WebFirebaseAuthException? nextError;
   int signInCalls = 0;
   int usernameSignIns = 0;
@@ -286,26 +290,35 @@ final class _FakeWebFirebaseAuthPort implements WebFirebaseAuthPort {
     nextError = null;
     if (error != null) throw error;
     currentUid = nextUid;
+    cloudUid = nextCloudUid ?? currentUid;
     isReadOnly = false;
+    canProvisionReadOnlyLogin = true;
     return currentUid;
   }
 
   @override
   Future<String?> signInWithUsername(String username, String password) async {
     usernameSignIns++;
-    currentUid = nextUid ?? 'password-user';
+    currentUid = nextUid ?? 'reader-user';
+    cloudUid = nextCloudUid ?? currentUid;
     isReadOnly = true;
+    canProvisionReadOnlyLogin = false;
     return currentUid;
   }
 
   @override
-  Future<void> linkReadOnlyUsername(String username, String password) async {}
+  Future<String> provisionReadOnlyLogin(
+    String username,
+    String password,
+  ) async => 'reader-user';
 
   @override
   Future<void> signOut() async {
     signOutCalls++;
     currentUid = null;
+    cloudUid = null;
     isReadOnly = false;
+    canProvisionReadOnlyLogin = false;
   }
 
   @override

@@ -4,7 +4,11 @@ abstract interface class WebFirebaseAuthPort {
 
   String? get currentUid;
 
+  String? get cloudUid;
+
   bool get isReadOnly;
+
+  bool get canProvisionReadOnlyLogin;
 
   String? get unavailableReason;
 
@@ -12,7 +16,7 @@ abstract interface class WebFirebaseAuthPort {
 
   Future<String?> signInWithUsername(String username, String password);
 
-  Future<void> linkReadOnlyUsername(String username, String password);
+  Future<String> provisionReadOnlyLogin(String username, String password);
 
   Future<void> signOut();
 

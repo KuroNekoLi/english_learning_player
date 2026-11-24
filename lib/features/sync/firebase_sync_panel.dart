@@ -38,23 +38,23 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
         );
   }
 
-  Future<void> _linkReadOnlyUsername() async {
+  Future<void> _provisionReadOnlyUsername() async {
     final entered = await showDialog<({String username, String password})>(
       context: context,
       builder: (_) => const LinkReadOnlyUsernameDialog(),
     );
     if (entered == null || !mounted) return;
-    await ref
-        .read(firebaseSyncViewModelProvider.notifier)
-        .runAccountAction(
-          () => ref
-              .read(firebaseSessionProvider.notifier)
-              .linkReadOnlyUsername(
-                username: entered.username,
-                password: entered.password,
-              ),
-          fallbackMessage: '設定帳號密碼失敗，請稍後重試。',
-        );
+    await ref.read(firebaseSyncViewModelProvider.notifier).runAccountAction(
+      () async {
+        await ref
+            .read(firebaseSessionProvider.notifier)
+            .provisionReadOnlyLogin(
+              username: entered.username,
+              password: entered.password,
+            );
+      },
+      fallbackMessage: '設定唯讀帳號失敗，請稍後重試。',
+    );
   }
 
   Future<void> _resolve(ProgressCandidate candidate) async {
@@ -117,12 +117,12 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
                   title: Text('帳號密碼登入：唯讀'),
                   subtitle: Text('可以讀取與下載教材；雲端不接受上傳、修改或刪除。'),
                 ),
-              if (state.canLinkPassword)
+              if (state.canProvisionReadOnlyLogin)
                 OutlinedButton.icon(
-                  key: const ValueKey('linkReadOnlyUsername'),
-                  onPressed: sync.busy ? null : _linkReadOnlyUsername,
+                  key: const ValueKey('provisionReadOnlyUsername'),
+                  onPressed: sync.busy ? null : _provisionReadOnlyUsername,
                   icon: const Icon(Icons.lock_outline),
-                  label: const Text('設定帳號密碼唯讀登入'),
+                  label: const Text('建立帳號密碼唯讀登入'),
                 ),
               OutlinedButton(
                 onPressed: sync.busy

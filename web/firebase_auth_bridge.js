@@ -3,8 +3,6 @@ import {
   browserLocalPersistence,
   getAuth,
   GoogleAuthProvider,
-  EmailAuthProvider,
-  linkWithCredential,
   signInWithEmailAndPassword,
   setPersistence,
   signInWithPopup,
@@ -13,7 +11,8 @@ import {
 
 let auth;
 let readOnly = false;
-let readOnlyEmail;
+let cloudUid;
+let canProvisionReadOnlyLogin = false;
 
 function result(value) {
   return JSON.stringify(value);
@@ -26,7 +25,6 @@ function authCode(error) {
 globalThis.elpFirebaseAuthInitialize = async (optionsJson) => {
   try {
     const options = JSON.parse(optionsJson);
-    readOnlyEmail = `kuroneko_li@${options.project}.firebaseapp.com`;
     const app = getApps().some((candidate) => candidate.name === 'elp-web-auth')
       ? getApp('elp-web-auth')
       : initializeApp(options, 'elp-web-auth');
@@ -65,12 +63,50 @@ globalThis.elpFirebaseAuthSignInWithUsername = async (email, password) => {
   }
 };
 
-globalThis.elpFirebaseAuthLinkReadOnlyUsername = async (email, password) => {
+globalThis.elpFirebaseAuthProvisionReadOnlyLogin = async (
+  project,
+  region,
+  username,
+  password,
+) => {
   const user = auth?.currentUser;
   if (!user) return result({ error: 'auth/user-mismatch' });
   try {
-    await linkWithCredential(user, EmailAuthProvider.credential(email, password));
-    return result({ uid: user.uid });
+    const tokenResult = await user.getIdTokenResult();
+    if (!user.providerData.some((provider) => provider.providerId === 'google.com') ||
+        tokenResult.claims.firebase?.sign_in_provider !== 'google.com') {
+      return result({ error: 'auth/permission-denied' });
+    }
+    const response = await fetch(
+      `https://${region}-${project}.cloudfunctions.net/provisionReadOnlyLogin`,
+      {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-store',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await user.getIdToken()}`,
+        },
+        body: JSON.stringify({ data: { username, password } }),
+      },
+    );
+    const payload = await response.json();
+    if (!response.ok) {
+      const status = payload?.error?.status;
+      const code = status === 'PERMISSION_DENIED'
+        ? 'auth/permission-denied'
+        : status === 'ALREADY_EXISTS'
+          ? 'auth/email-already-in-use'
+          : status === 'INVALID_ARGUMENT'
+            ? 'auth/invalid-argument'
+            : 'auth/unknown';
+      return result({ error: code });
+    }
+    const readerUid = payload?.result?.readerUid ?? payload?.data?.readerUid;
+    return typeof readerUid === 'string' && readerUid.length > 0
+      ? result({ readerUid })
+      : result({ error: 'auth/unknown' });
   } catch (error) {
     return result({ error: authCode(error) });
   }
@@ -87,7 +123,9 @@ globalThis.elpFirebaseAuthSignOut = async () => {
 };
 
 globalThis.elpFirebaseAuthCurrentUid = () => auth?.currentUser?.uid ?? null;
+globalThis.elpFirebaseAuthCloudUid = () => cloudUid ?? auth?.currentUser?.uid ?? null;
 globalThis.elpFirebaseAuthIsReadOnly = () => readOnly;
+globalThis.elpFirebaseAuthCanProvisionReadOnlyLogin = () => canProvisionReadOnlyLogin;
 
 globalThis.elpFirebaseAuthGetIdToken = async (expectedUid) => {
   const user = auth?.currentUser;
@@ -107,9 +145,15 @@ async function refreshReadOnly() {
   const user = auth?.currentUser;
   if (!user) {
     readOnly = false;
+    cloudUid = null;
+    canProvisionReadOnlyLogin = false;
     return;
   }
   const token = await user.getIdTokenResult();
-  readOnly = token.claims.firebase?.sign_in_provider === 'password'
-    && user.email === readOnlyEmail;
+  const ownerUid = token.claims.elpReadOnlyOwnerUid;
+  readOnly = typeof ownerUid === 'string' && ownerUid.length > 0;
+  cloudUid = readOnly ? ownerUid : user.uid;
+  canProvisionReadOnlyLogin = !readOnly
+    && token.claims.firebase?.sign_in_provider === 'google.com'
+    && user.providerData.some((provider) => provider.providerId === 'google.com');
 }

@@ -1,8 +1,22 @@
-const readOnlyAlias = 'kuroneko_li@english-learning-player-auth.firebaseapp.com';
-
 function isReadOnlyLogin(token) {
-  return token?.firebase?.sign_in_provider === 'password' &&
-    token.email === readOnlyAlias;
+  const ownerUid = token?.elpReadOnlyOwnerUid;
+  return typeof ownerUid === 'string' &&
+    ownerUid.length > 0;
 }
 
-module.exports = { isReadOnlyLogin };
+function isGoogleOwner(token, authenticatedUid, allowedOwnerUid) {
+  return typeof authenticatedUid === 'string' &&
+    authenticatedUid.length > 0 &&
+    authenticatedUid === allowedOwnerUid &&
+    token?.firebase?.sign_in_provider === 'google.com' &&
+    !isReadOnlyLogin(token);
+}
+
+function readerEmail(username, project) {
+  if (username !== 'kuroneko_li' || project !== 'english-learning-player-auth') {
+    throw new Error('invalid-readonly-username');
+  }
+  return `${username}@${project}.firebaseapp.com`;
+}
+
+module.exports = { isReadOnlyLogin, isGoogleOwner, readerEmail };

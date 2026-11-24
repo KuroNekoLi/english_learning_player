@@ -19,6 +19,17 @@ final class FirebaseProgressTransport implements ProgressSyncTransport {
   final FirebaseHttp http;
   final FirebaseDocuments documents;
 
+  Future<String> _authToken() async {
+    final uid = session.uid;
+    if (uid == null) {
+      throw const SyncFailure(
+        SyncFailureKind.unauthenticated,
+        'firebase_sign_in_required',
+      );
+    }
+    return session.tokenFor(uid);
+  }
+
   @override
   Future<ProgressCommitResult> commit({
     required String uid,
@@ -30,7 +41,7 @@ final class FirebaseProgressTransport implements ProgressSyncTransport {
     final response = await http.send(
       'POST',
       endpoint.progressFunction,
-      authorization: () async => 'Bearer ${await session.tokenFor(uid)}',
+      authorization: () async => 'Bearer ${await _authToken()}',
       contentType: 'application/json',
       bytes: FirebaseHttp.encode({
         'data': {

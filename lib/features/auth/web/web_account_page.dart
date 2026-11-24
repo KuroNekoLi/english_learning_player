@@ -118,15 +118,15 @@ final class WebAccountPage extends ConsumerWidget {
                           title: Text('帳號密碼登入：唯讀'),
                           subtitle: Text('可以讀取與下載教材；雲端不接受上傳、修改或刪除。'),
                         ),
-                      if (!state.readOnly)
+                      if (state.canProvisionReadOnlyLogin)
                         TextButton(
-                          key: const ValueKey('webLinkReadOnlyUsername'),
+                          key: const ValueKey('webProvisionReadOnlyUsername'),
                           onPressed: busy
                               ? null
                               : () => unawaited(
-                                  _linkReadOnlyUsername(context, ref),
+                                  _provisionReadOnlyUsername(context, ref),
                                 ),
-                          child: const Text('設定帳號密碼唯讀登入'),
+                          child: const Text('建立帳號密碼唯讀登入'),
                         ),
                       FilledButton.tonal(
                         key: const ValueKey('webSignOut'),
@@ -226,7 +226,7 @@ final class WebAccountPage extends ConsumerWidget {
         .signInWithUsername(entered.username, entered.password);
   }
 
-  Future<void> _linkReadOnlyUsername(
+  Future<void> _provisionReadOnlyUsername(
     BuildContext context,
     WidgetRef ref,
   ) async {
@@ -237,6 +237,6 @@ final class WebAccountPage extends ConsumerWidget {
     if (entered == null || !context.mounted) return;
     await ref
         .read(webFirebaseSessionProvider.notifier)
-        .linkReadOnlyUsername(entered.username, entered.password);
+        .provisionReadOnlyLogin(entered.username, entered.password);
   }
 }

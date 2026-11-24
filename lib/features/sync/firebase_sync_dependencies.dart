@@ -35,15 +35,16 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
   if (endpoint == null ||
       !endpoint.isMediaSyncConfigured ||
       session == null ||
-      session.uid != account.cloudUid) {
+      session.uid != account.ownerId ||
+      session.cloudUid != account.cloudUid) {
     return null;
   }
-  final key = (uid: account.cloudUid, project: endpoint.project);
+  final key = (uid: account.ownerId, project: endpoint.project);
   final preferenceStore = ref.watch(syncPreferenceStoreProvider.future);
-  bool optedInHere(String uid) =>
+  bool optedInHere(String cloudUid) =>
       ref.mounted &&
-      uid == account.cloudUid &&
-      platform.isCurrentSyncAccount(ref, uid) &&
+      cloudUid == account.cloudUid &&
+      platform.isCurrentSyncAccount(ref, account.ownerId) &&
       ref.read(syncPreferenceProvider(key)).asData?.value ==
           SyncPreference.enabled;
   final consent = _Consent((uid) async {
@@ -72,6 +73,7 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
   final outbox = SqliteSyncOutbox(scope: account, db: db);
   final subtitles = FirebaseSubtitleSync(
     uid: account.cloudUid,
+    localOwnerUid: account.ownerId,
     documents: transport.documents,
     objects: transport.objects,
     repository: repository,
@@ -150,6 +152,9 @@ final class _GuardedSession implements FirebaseIdentitySession {
   String? get uid => session.uid;
 
   @override
+  String? get cloudUid => session.cloudUid;
+
+  @override
   bool get isReadOnly => session.isReadOnly;
 
   @override
@@ -157,8 +162,14 @@ final class _GuardedSession implements FirebaseIdentitySession {
 
   @override
   Future<String> tokenFor(String expectedUid) async {
+    if (expectedUid != session.uid || session.cloudUid == null) {
+      throw const SyncFailure(
+        SyncFailureKind.unauthenticated,
+        'account_changed',
+      );
+    }
     final token = await session.tokenFor(expectedUid);
-    if (!await consent.isCloudSyncEnabled(expectedUid)) {
+    if (!await consent.isCloudSyncEnabled(session.cloudUid!)) {
       throw const SyncFailure(
         SyncFailureKind.permissionDenied,
         'consent_required',

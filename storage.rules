@@ -25,13 +25,18 @@ service firebase.storage {
         return request.auth != null && request.auth.uid == uid;
       }
 
-      function canWriteOwner() {
+      function canReadOwner() {
         return isOwner()
-          && !(request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'password'
-            && request.auth.token.get('email', '') == 'kuroneko_li@english-learning-player-auth.firebaseapp.com');
+          || (request.auth != null
+            && request.auth.token.get('elpReadOnlyOwnerUid', '') == uid);
       }
 
-      allow read: if isOwner();
+      function canWriteOwner() {
+        return isOwner()
+          && request.auth.token.get('elpReadOnlyOwnerUid', '') == '';
+      }
+
+      allow read: if canReadOwner();
       allow create: if canWriteOwner() && resource == null && validUpload();
       // The content-addressed bytes and application identity remain stable.
       // Owners may update non-content metadata only when both stored checksums match.
@@ -51,10 +56,15 @@ service firebase.storage {
         return request.auth != null && request.auth.uid == uid;
       }
 
+      function canReadOwner() {
+        return isOwner()
+          || (request.auth != null
+            && request.auth.token.get('elpReadOnlyOwnerUid', '') == uid);
+      }
+
       function canWriteOwner() {
         return isOwner()
-          && !(request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'password'
-            && request.auth.token.get('email', '') == 'kuroneko_li@english-learning-player-auth.firebaseapp.com');
+          && request.auth.token.get('elpReadOnlyOwnerUid', '') == '';
       }
 
       function validSubtitle() {
@@ -68,7 +78,7 @@ service firebase.storage {
           && sha256.matches('^[a-f0-9]{64}$');
       }
 
-      allow read: if isOwner();
+      allow read: if canReadOwner();
       allow create: if canWriteOwner() && resource == null && validSubtitle();
       // Keep the content-addressed subtitle bytes and owner identity unchanged.
       allow update: if canWriteOwner() && validSubtitle()
