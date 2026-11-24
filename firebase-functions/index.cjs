@@ -136,6 +136,8 @@ exports.syncProgress = onCall({
 exports.provisionReadOnlyLogin = onCall({
   region: process.env.ELP_PROGRESS_REGION || 'us-central1',
   timeoutSeconds: 30,
+  // The handler still verifies the Firebase Google owner and configured UID.
+  invoker: 'public',
 }, async (request) => {
   const ownerUid = request.auth?.uid;
   const allowedOwnerUid = readOnlyOwnerUid.value().trim();
