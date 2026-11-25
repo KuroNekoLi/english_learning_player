@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/firebase_account_session.dart';
+import 'data/firebase_credential_store.dart';
 import '../../core/firebase/firebase_endpoint.dart';
 import 'platform_social_sign_in.dart';
 import 'social_sign_in.dart';
@@ -15,11 +16,19 @@ final firebaseHttpProvider = Provider<FirebaseHttp>((ref) {
   return client;
 });
 
+final firebaseCredentialStoreProvider = Provider<FirebaseCredentialStore>(
+  (ref) => MemoryFirebaseCredentialStore(),
+);
+
 final firebaseAuthSessionProvider = Provider<FirebaseAccountSession?>((ref) {
   final endpoint = ref.watch(firebaseEndpointProvider);
   return endpoint == null
       ? null
-      : FirebaseAccountSession(endpoint, ref.watch(firebaseHttpProvider));
+      : FirebaseAccountSession(
+          endpoint,
+          ref.watch(firebaseHttpProvider),
+          credentialStore: ref.watch(firebaseCredentialStoreProvider),
+        );
 });
 
 final socialSignInProvider = Provider<SocialSignIn?>((ref) {
@@ -53,12 +62,16 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
   bool _changingAccount = false;
 
   @override
-  FirebaseSessionState build() => (
-    uid: null,
-    cloudUid: null,
-    readOnly: false,
-    canProvisionReadOnlyLogin: false,
-  );
+  FirebaseSessionState build() {
+    final session = ref.watch(firebaseAuthSessionProvider);
+    _signedInProvider = session?.signedInProvider;
+    return (
+      uid: session?.uid,
+      cloudUid: session?.cloudUid,
+      readOnly: session?.isReadOnly ?? false,
+      canProvisionReadOnlyLogin: session?.canProvisionReadOnlyLogin ?? false,
+    );
+  }
 
   Future<void> signIn(String email, String password) async {
     await _signIn((session) => session.signIn(email, password));
@@ -120,7 +133,7 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
       try {
         await ref.read(beforeAccountChangeProvider)();
       } catch (_) {
-        session.signOut();
+        await session.signOut();
         if (provider != null && ref.mounted) {
           try {
             await ref.read(socialSignInProvider)?.signOut(provider);
@@ -151,7 +164,7 @@ final class FirebaseSessionController extends Notifier<FirebaseSessionState> {
     try {
       await ref.read(beforeAccountChangeProvider)();
       if (!ref.mounted) return;
-      ref.read(firebaseAuthSessionProvider)?.signOut();
+      await ref.read(firebaseAuthSessionProvider)?.signOut();
       _signedInProvider = null;
       state = (
         uid: null,

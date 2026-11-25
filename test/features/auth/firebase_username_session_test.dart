@@ -2,10 +2,51 @@ import 'dart:convert';
 
 import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
 import 'package:english_learning_player/features/auth/data/firebase_account_session.dart';
+import 'package:english_learning_player/features/auth/data/firebase_credential_store.dart';
 import 'package:english_learning_player/features/auth/social_sign_in.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'restores the same account and read-only scope after app restart',
+    () async {
+      final store = MemoryFirebaseCredentialStore();
+      final firstLaunch = FirebaseAccountSession(
+        _endpoint,
+        _FakeFirebaseHttp(),
+        credentialStore: store,
+      );
+      await firstLaunch.signInWithUsername('kuroneko_li', 'dummy-pass');
+
+      final nextLaunch = FirebaseAccountSession(
+        _endpoint,
+        _FakeFirebaseHttp(),
+        credentialStore: store,
+      );
+      await nextLaunch.restore();
+
+      expect(nextLaunch.uid, 'reader-uid');
+      expect(nextLaunch.cloudUid, 'google-owner-uid');
+      expect(nextLaunch.isReadOnly, isTrue);
+      expect(await nextLaunch.currentIdentity(), isNotNull);
+    },
+  );
+
+  test('sign out removes the persisted Firebase session', () async {
+    final store = MemoryFirebaseCredentialStore();
+    final session = FirebaseAccountSession(
+      _endpoint,
+      _FakeFirebaseHttp(),
+      credentialStore: store,
+    );
+    await session.signIn('test@example.com', 'dummy-test-password');
+    expect(store.value, isNotNull);
+
+    await session.signOut();
+
+    expect(store.value, isNull);
+  });
+
   test(
     'username password signs into a distinct reader UID and owner scope',
     () async {

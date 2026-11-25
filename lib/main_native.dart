@@ -13,6 +13,8 @@ import 'app/library_page.dart';
 import 'core/db/account_scope.dart';
 import 'core/db/account_database_providers.dart';
 import 'features/auth/firebase_session_controller.dart';
+import 'features/auth/data/secure_firebase_credential_store.dart';
+import 'features/auth/social_sign_in.dart';
 import 'features/player/player_view_model.dart';
 import 'features/sync/firebase_sync_panel.dart';
 import 'features/sync/widgets/sync_landing.dart';
@@ -37,33 +39,50 @@ Future<void> main() async {
   } catch (_) {
     await candidateHandler.close();
   }
+  final container = ProviderContainer(
+    overrides: [
+      firebaseCredentialStoreProvider.overrideWithValue(
+        SecureFirebaseCredentialStore(),
+      ),
+      beforeAccountChangeProvider.overrideWith(
+        (ref) =>
+            () => ref
+                .read(playerViewModelProvider.notifier)
+                .closeForAccountChange(),
+      ),
+      accountScopeProvider.overrideWith((ref) {
+        final session = ref.watch(firebaseSessionProvider);
+        final uid = session.uid;
+        if (uid == null) return AccountScope('local-default');
+        return AccountScope(uid, cloudUid: session.cloudUid ?? uid);
+      }),
+      audioEngineProvider.overrideWith((ref) {
+        ref.onDispose(() => unawaited(engine.dispose()));
+        return engine;
+      }),
+      audioMediaSessionProvider.overrideWith((ref) {
+        final mediaSession = handler ?? const NoopAudioMediaSession();
+        if (handler case final currentHandler?) {
+          ref.onDispose(() => unawaited(currentHandler.close()));
+        }
+        return Future.value(mediaSession);
+      }),
+    ],
+  );
+  final session = container.read(firebaseAuthSessionProvider);
+  try {
+    final socialSignIn = container.read(socialSignInProvider);
+    final nativeUser = await socialSignIn?.restore(SocialProvider.apple);
+    await session?.restore(
+      nativeUser: nativeUser is NativeFirebaseUser ? nativeUser : null,
+    );
+  } catch (_) {
+    // Keep the offline library available if secure storage is temporarily
+    // unavailable. The account can still be restored on a later launch.
+  }
   runApp(
-    ProviderScope(
-      overrides: [
-        beforeAccountChangeProvider.overrideWith(
-          (ref) =>
-              () => ref
-                  .read(playerViewModelProvider.notifier)
-                  .closeForAccountChange(),
-        ),
-        accountScopeProvider.overrideWith((ref) {
-          final session = ref.watch(firebaseSessionProvider);
-          final uid = session.uid;
-          if (uid == null) return AccountScope('local-default');
-          return AccountScope(uid, cloudUid: session.cloudUid ?? uid);
-        }),
-        audioEngineProvider.overrideWith((ref) {
-          ref.onDispose(() => unawaited(engine.dispose()));
-          return engine;
-        }),
-        audioMediaSessionProvider.overrideWith((ref) {
-          final mediaSession = handler ?? const NoopAudioMediaSession();
-          if (handler case final currentHandler?) {
-            ref.onDispose(() => unawaited(currentHandler.close()));
-          }
-          return Future.value(mediaSession);
-        }),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: const EnglishLearningPlayer(),
     ),
   );

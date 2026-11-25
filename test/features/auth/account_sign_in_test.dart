@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:english_learning_player/core/db/account_database_providers.dart';
 import 'package:english_learning_player/core/db/account_scope.dart';
 import 'package:english_learning_player/features/sync/sync_preference.dart';
 import 'package:english_learning_player/core/sync/sync_contracts.dart';
 import 'package:english_learning_player/features/auth/social_sign_in.dart';
+import 'package:english_learning_player/features/auth/data/firebase_credential_store.dart';
 import 'package:english_learning_player/core/firebase/firebase_endpoint.dart';
 import 'package:english_learning_player/features/auth/firebase_session_controller.dart';
 import 'package:english_learning_player/features/sync/firebase_sync_dependencies.dart';
@@ -16,6 +18,44 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../fakes/fake_sync_preference.dart';
 
 void main() {
+  test(
+    'session controller exposes an account restored before app launch',
+    () async {
+      final store = MemoryFirebaseCredentialStore()
+        ..value = jsonEncode({
+          'uid': 'reader-uid',
+          'token': 'test-id-token',
+          'refresh': 'test-refresh-token',
+          'expiresAtMs': DateTime.now()
+              .add(const Duration(hours: 1))
+              .millisecondsSinceEpoch,
+          'readOnlyOwnerUid': 'google-owner-uid',
+          'signInProvider': 'password',
+        });
+      final container = ProviderContainer(
+        overrides: [
+          firebaseEndpointProvider.overrideWithValue(
+            FirebaseEndpoint(
+              project: 'example-project',
+              bucket: 'example-project.appspot.com',
+              apiKey: 'test-only',
+            ),
+          ),
+          firebaseCredentialStoreProvider.overrideWithValue(store),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final session = container.read(firebaseAuthSessionProvider)!;
+      await session.restore();
+      final state = container.read(firebaseSessionProvider);
+
+      expect(state.uid, 'reader-uid');
+      expect(state.cloudUid, 'google-owner-uid');
+      expect(state.readOnly, isTrue);
+    },
+  );
+
   testWidgets('shows disabled social buttons in an unconfigured build', (
     tester,
   ) async {
@@ -213,6 +253,9 @@ final class _FakeSocialSignIn implements SocialSignIn {
     attempts.add(provider);
     return result;
   }
+
+  @override
+  Future<SocialSignInResult?> restore(SocialProvider provider) async => null;
 
   @override
   Future<void> signOut(SocialProvider provider) async => signOuts.add(provider);

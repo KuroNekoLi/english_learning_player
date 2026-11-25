@@ -3,15 +3,17 @@ import 'dart:convert';
 import '../../../core/sync/sync_contracts.dart';
 import '../social_sign_in.dart';
 import '../../../core/firebase/firebase_endpoint.dart';
+import 'firebase_credential_store.dart';
 import 'firebase_identity_session.dart';
 import '../username_login.dart';
 
 /// The active account used by all Firebase synchronization transports.
 final class FirebaseAccountSession implements FirebaseIdentitySession {
-  FirebaseAccountSession(this.endpoint, this.http);
+  FirebaseAccountSession(this.endpoint, this.http, {this.credentialStore});
 
   final FirebaseEndpoint endpoint;
   final FirebaseHttp http;
+  final FirebaseCredentialStore? credentialStore;
   _Credentials? _credentials;
   NativeFirebaseUser? _nativeUser;
   bool _readOnly = false;
@@ -32,12 +34,46 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
   bool get canProvisionReadOnlyLogin =>
       _credentials?.signInProvider == 'google.com' && !_readOnly;
 
+  SocialProvider? get signedInProvider =>
+      switch (_credentials?.signInProvider ??
+      (_nativeUser == null ? null : 'apple.com')) {
+        'google.com' => SocialProvider.google,
+        'apple.com' => SocialProvider.apple,
+        _ => null,
+      };
+
   @override
   Future<SyncIdentity?> currentIdentity() async =>
       uid == null ? null : SyncIdentity(uid!);
 
+  /// Restores only credentials previously saved to the injected secure store.
+  /// Refreshing an expired token remains lazy so startup works offline.
+  Future<String?> restore({NativeFirebaseUser? nativeUser}) async {
+    if (nativeUser != null && _validUid(nativeUser.uid)) {
+      _nativeUser = nativeUser;
+      _credentials = null;
+      _readOnly = false;
+      await credentialStore?.clear();
+      return nativeUser.uid;
+    }
+    final stored = await credentialStore?.read();
+    if (stored == null || stored.isEmpty) return null;
+    try {
+      final credentials = _Credentials.fromStored(jsonDecode(stored));
+      _credentials = credentials;
+      _readOnly = credentials.readOnlyOwnerUid != null;
+      return credentials.uid;
+    } on FormatException {
+      await credentialStore?.clear();
+      return null;
+    } on TypeError {
+      await credentialStore?.clear();
+      return null;
+    }
+  }
+
   Future<String> signIn(String email, String password) async {
-    signOut();
+    await signOut();
     final generation = _generation;
     final response = await http.send(
       'POST',
@@ -59,6 +95,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     await http.requireSuccess(response);
     final credentials = _Credentials.parse(await http.json(response));
     if (_generation != generation) _notSignedIn();
+    await _persistCredentials(credentials, generation);
     _credentials = credentials;
     _readOnly = credentials.readOnlyOwnerUid != null;
     return credentials.uid;
@@ -149,6 +186,8 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
         }
         await result.getIdToken();
         if (_generation != generation) _notSignedIn();
+        await credentialStore?.clear();
+        if (_generation != generation) _notSignedIn();
         _nativeUser = result;
         _readOnly = false;
         return uid;
@@ -197,18 +236,20 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
         }
         final credentials = _Credentials.parse(data);
         if (_generation != generation) _notSignedIn();
+        await _persistCredentials(credentials, generation);
         _credentials = credentials;
         _readOnly = false;
         return credentials.uid;
     }
   }
 
-  void signOut() {
+  Future<void> signOut() async {
     _generation++;
     _credentials = null;
     _nativeUser = null;
     _readOnly = false;
     _renewing = null;
+    await credentialStore?.clear();
   }
 
   @override
@@ -235,10 +276,22 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
       if (_generation != generation || updated.uid != expectedUid) {
         _notSignedIn();
       }
+      await _persistCredentials(updated, generation);
       _credentials = updated;
       return updated.token;
     } finally {
       if (identical(_renewing, renew)) _renewing = null;
+    }
+  }
+
+  Future<void> _persistCredentials(
+    _Credentials credentials,
+    int generation,
+  ) async {
+    await credentialStore?.write(jsonEncode(credentials.toStored()));
+    if (_generation != generation) {
+      await credentialStore?.clear();
+      _notSignedIn();
     }
   }
 
@@ -258,6 +311,7 @@ final class FirebaseAccountSession implements FirebaseIdentitySession {
     );
     if (response.statusCode == 400) {
       await http.read(response).drain<void>();
+      await credentialStore?.clear();
       _notSignedIn();
     }
     await http.requireSuccess(response);
@@ -333,6 +387,46 @@ final class _Credentials {
       signInProvider is String ? signInProvider : null,
     );
   }
+
+  factory _Credentials.fromStored(Object? value) {
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Invalid stored Firebase session.');
+    }
+    final uid = value['uid'];
+    final token = value['token'];
+    final refresh = value['refresh'];
+    final expiresAtMs = value['expiresAtMs'];
+    final ownerUid = value['readOnlyOwnerUid'];
+    final provider = value['signInProvider'];
+    if (uid is! String ||
+        !_validUid(uid) ||
+        token is! String ||
+        token.isEmpty ||
+        refresh is! String ||
+        refresh.isEmpty ||
+        expiresAtMs is! int ||
+        (ownerUid != null && (ownerUid is! String || !_validUid(ownerUid))) ||
+        (provider != null && provider is! String)) {
+      throw const FormatException('Invalid stored Firebase session.');
+    }
+    return _Credentials(
+      uid,
+      token,
+      refresh,
+      DateTime.fromMillisecondsSinceEpoch(expiresAtMs),
+      ownerUid as String?,
+      provider as String?,
+    );
+  }
+
+  Map<String, Object?> toStored() => {
+    'uid': uid,
+    'token': token,
+    'refresh': refresh,
+    'expiresAtMs': expiresAt.millisecondsSinceEpoch,
+    'readOnlyOwnerUid': readOnlyOwnerUid,
+    'signInProvider': signInProvider,
+  };
 
   final String uid;
   final String token;

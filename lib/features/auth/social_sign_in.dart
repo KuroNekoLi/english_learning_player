@@ -11,6 +11,7 @@ enum SocialProvider {
 abstract interface class SocialSignIn {
   bool isConfigured(SocialProvider provider);
   Future<SocialSignInResult?> signIn(SocialProvider provider);
+  Future<SocialSignInResult?> restore(SocialProvider provider) async => null;
   Future<void> signOut(SocialProvider provider);
 }
 

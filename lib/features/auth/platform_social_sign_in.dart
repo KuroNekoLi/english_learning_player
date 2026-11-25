@@ -77,6 +77,41 @@ final class PlatformSocialSignIn implements SocialSignIn {
     };
   }
 
+  @override
+  Future<SocialSignInResult?> restore(SocialProvider provider) async {
+    if (provider != SocialProvider.apple ||
+        defaultTargetPlatform != TargetPlatform.android ||
+        !isConfigured(provider)) {
+      return null;
+    }
+    final String? uid;
+    try {
+      uid = await _androidApple.invokeMethod<String>('restore', {
+        'project': project,
+        'apiKey': apiKey,
+        'appId': _androidAppId,
+      });
+    } on PlatformException catch (error) {
+      throw _mapAndroidError(error);
+    }
+    if (uid == null) return null;
+    return NativeFirebaseUser(uid, () async {
+      final String? token;
+      try {
+        token = await _androidApple.invokeMethod<String>('getIdToken', uid);
+      } on PlatformException catch (error) {
+        throw _mapAndroidError(error);
+      }
+      if (token == null || token.isEmpty) {
+        throw const SyncFailure(
+          SyncFailureKind.unauthenticated,
+          'missing_token',
+        );
+      }
+      return token;
+    });
+  }
+
   Future<ProviderIdToken?> _signInWithGoogle() async {
     if (defaultTargetPlatform == TargetPlatform.macOS &&
         _googleDesktopId.isNotEmpty) {

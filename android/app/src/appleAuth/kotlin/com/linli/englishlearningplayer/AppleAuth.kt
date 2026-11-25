@@ -14,6 +14,36 @@ internal fun MainActivity.registerAppleAuth(engine: FlutterEngine) {
 
     channel.setMethodCallHandler { call, result ->
         when (call.method) {
+            "restore" -> {
+                val project = call.argument<String>("project")
+                val apiKey = call.argument<String>("apiKey")
+                val appId = call.argument<String>("appId")
+                if (project.isNullOrBlank() || apiKey.isNullOrBlank() || appId.isNullOrBlank()) {
+                    result.error("configuration", null, null)
+                    return@setMethodCallHandler
+                }
+
+                val instance = try {
+                    val options = FirebaseOptions.Builder()
+                        .setProjectId(project)
+                        .setApiKey(apiKey)
+                        .setApplicationId(appId)
+                        .build()
+                    val app = FirebaseApp.getApps(applicationContext)
+                        .firstOrNull { it.name == FirebaseApp.DEFAULT_APP_NAME }
+                        ?: FirebaseApp.initializeApp(applicationContext, options)
+                    require(app.options == options) { "Unexpected Firebase configuration" }
+                    FirebaseAuth.getInstance(app)
+                } catch (_: IllegalArgumentException) {
+                    result.error("configuration", null, null)
+                    return@setMethodCallHandler
+                } catch (_: IllegalStateException) {
+                    result.error("configuration", null, null)
+                    return@setMethodCallHandler
+                }
+                auth = instance
+                result.success(instance.currentUser?.uid)
+            }
             "signIn" -> {
                 val project = call.argument<String>("project")
                 val apiKey = call.argument<String>("apiKey")
