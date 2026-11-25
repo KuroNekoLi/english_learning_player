@@ -12,6 +12,9 @@ import 'package:english_learning_player/features/subtitles/domain/subtitle_model
 import 'package:english_learning_player/features/bookmarks/bookmarks_page.dart';
 import 'package:english_learning_player/features/bookmarks/domain/bookmark.dart';
 import 'package:english_learning_player/features/library/library_dependencies.dart';
+import 'package:english_learning_player/features/dictionary/data/dictionary_repository.dart';
+import 'package:english_learning_player/features/dictionary/dictionary_dependencies.dart';
+import 'package:english_learning_player/features/dictionary/domain/word.dart';
 import 'package:english_learning_player/features/progress/progress_dependencies.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,6 +84,9 @@ void main() {
         ProviderScope(
           overrides: [
             audioEngineProvider.overrideWithValue(audio),
+            dictionaryRepositoryProvider.overrideWith(
+              (ref) async => _FixtureDictionaryRepository(),
+            ),
             bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
             progressRepositoryProvider.overrideWith((ref) async => progress),
             audioMediaSessionProvider.overrideWith((ref) async => mediaSession),
@@ -524,6 +530,15 @@ final class _FixedLoader implements MaterialPlaybackLoader {
   @override
   Future<MaterialPlaybackBundle> load(LearningMaterial material) async =>
       bundle;
+}
+
+final class _FixtureDictionaryRepository implements DictionaryRepository {
+  @override
+  Future<Word> lookupWord(String word) async => Word(
+    word: word,
+    pronunciations: const WordPronunciations(uk: '', us: ''),
+    entries: const [],
+  );
 }
 
 final class _FakeMaterialRepository implements MaterialRepository {

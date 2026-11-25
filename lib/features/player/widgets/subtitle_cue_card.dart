@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../learning/domain/learning_session.dart';
+import '../../dictionary/widgets/dictionary_word_text.dart';
 import '../../subtitles/domain/subtitle_time.dart';
 import '../../subtitles/domain/subtitle_timeline.dart';
 import 'playback_time_label.dart';
@@ -91,13 +92,14 @@ final class SubtitleCueCard extends StatelessWidget {
                 if (showEnglish)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      line.english,
+                    child: DictionaryWordText(
+                      text: line.english,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: active
                             ? FontWeight.w700
                             : FontWeight.normal,
                       ),
+                      onWordSelected: (_) => onPlay(),
                     ),
                   ),
                 if (showChinese)

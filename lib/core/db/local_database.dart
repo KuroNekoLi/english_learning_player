@@ -10,7 +10,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -72,6 +72,7 @@ class LocalDatabase extends GeneratedDatabase {
       await _createFolderLibrarySchema();
       await _createSyncPreferenceSchema();
       await _createLibraryChangesSchema();
+      await _createDictionarySchema();
     },
     onUpgrade: (migrator, from, to) async {
       if (from < 2) await _createSubtitleSchema();
@@ -87,6 +88,7 @@ class LocalDatabase extends GeneratedDatabase {
       if (from < 9) {
         await transaction(() => _createLibraryChangesSchema(backfill: true));
       }
+      if (from < 10) await _createDictionarySchema();
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -159,6 +161,15 @@ class LocalDatabase extends GeneratedDatabase {
       project_id TEXT NOT NULL,
       enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
       PRIMARY KEY (owner_id, project_id)
+    )
+  ''');
+
+  Future<void> _createDictionarySchema() => customStatement('''
+    CREATE TABLE IF NOT EXISTS dictionary_words (
+      word TEXT NOT NULL PRIMARY KEY,
+      payload_json TEXT NOT NULL,
+      cached_at_ms INTEGER NOT NULL,
+      last_lookup_at_ms INTEGER NOT NULL
     )
   ''');
 
