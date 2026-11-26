@@ -19,6 +19,7 @@ final class SubtitleCueCard extends StatelessWidget {
     required this.onBookmark,
     required this.onRepeat,
     required this.onNext,
+    this.dictionaryLookup,
   });
 
   final SubtitleLine line;
@@ -31,6 +32,7 @@ final class SubtitleCueCard extends StatelessWidget {
   final VoidCallback onBookmark;
   final VoidCallback onRepeat;
   final VoidCallback onNext;
+  final DictionaryLookupCoordinator? dictionaryLookup;
 
   @override
   Widget build(BuildContext context) {
@@ -94,12 +96,12 @@ final class SubtitleCueCard extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: DictionaryWordText(
                       text: line.english,
+                      coordinator: dictionaryLookup,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: active
                             ? FontWeight.w700
                             : FontWeight.normal,
                       ),
-                      onWordSelected: (_) => onPlay(),
                     ),
                   ),
                 if (showChinese)

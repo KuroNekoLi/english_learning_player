@@ -10,7 +10,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 12;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -73,6 +73,7 @@ class LocalDatabase extends GeneratedDatabase {
       await _createSyncPreferenceSchema();
       await _createLibraryChangesSchema();
       await _createDictionarySchema();
+      await _createWordBankSchema();
     },
     onUpgrade: (migrator, from, to) async {
       if (from < 2) await _createSubtitleSchema();
@@ -89,6 +90,8 @@ class LocalDatabase extends GeneratedDatabase {
         await transaction(() => _createLibraryChangesSchema(backfill: true));
       }
       if (from < 10) await _createDictionarySchema();
+      if (from < 11) await _createWordBankSchema();
+      if (from == 11) await transaction(_upgradeWordBankSchema);
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -172,6 +175,32 @@ class LocalDatabase extends GeneratedDatabase {
       last_lookup_at_ms INTEGER NOT NULL
     )
   ''');
+
+  Future<void> _createWordBankSchema() => customStatement('''
+    CREATE TABLE IF NOT EXISTS dictionary_saved_words (
+      word TEXT NOT NULL PRIMARY KEY,
+      payload_json TEXT NOT NULL,
+      saved_at_ms INTEGER NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
+      pending INTEGER NOT NULL DEFAULT 0,
+      op_id TEXT NOT NULL DEFAULT ''
+    )
+  ''');
+
+  Future<void> _upgradeWordBankSchema() async {
+    await customStatement(
+      'ALTER TABLE dictionary_saved_words ADD COLUMN revision INTEGER NOT NULL DEFAULT 0',
+    );
+    await customStatement(
+      'ALTER TABLE dictionary_saved_words ADD COLUMN pending INTEGER NOT NULL DEFAULT 2',
+    );
+    await customStatement(
+      "ALTER TABLE dictionary_saved_words ADD COLUMN op_id TEXT NOT NULL DEFAULT ''",
+    );
+    await customStatement(
+      'UPDATE dictionary_saved_words SET op_id = lower(hex(randomblob(16)))',
+    );
+  }
 
   Future<void> _createSubtitleSchema() async {
     await customStatement('''

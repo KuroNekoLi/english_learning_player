@@ -1,6 +1,7 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
+import '../features/dictionary/widgets/word_bank_page.dart';
 import '../features/library/library_view_model.dart';
 import '../features/library/library_folder_view_model.dart';
 import '../features/library/material_repository.dart';
@@ -76,6 +77,7 @@ final class _WebLibraryPageState extends ConsumerState<WebLibraryPage> {
       appBar: AppBar(
         title: const Text('教材庫'),
         actions: [
+          const OpenWordBankButton(),
           LibraryActionsMenu(onImportMedia: _importing ? null : _importMedia),
           IconButton(
             tooltip: '帳號與同步',

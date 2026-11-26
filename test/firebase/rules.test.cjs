@@ -414,3 +414,31 @@ test('library structure is UID-scoped and validates placement and persistent tom
   await assertFails(setDoc(tombstone, { ...data, field: 'materialDeleted', value: '0', revision: 3 }));
   await assertFails(deleteDoc(tombstone));
 });
+
+test('word bank permits owner revisions and authorizes only its reader', async () => {
+  const alice = environment.authenticatedContext('alice').firestore();
+  const reader = environment.authenticatedContext('alice-reader', {
+    elpReadOnlyOwnerUid: 'alice',
+  }).firestore();
+  const bob = environment.authenticatedContext('bob').firestore();
+  const guest = environment.unauthenticatedContext().firestore();
+  const path = "users/alice/wordBank/isn't";
+  const word = doc(alice, path);
+  const saved = {
+    schemaVersion: 1, ownerId: 'alice', word: "isn't", payload: '{}',
+    savedAtMs: 123, opId: 'a'.repeat(32), revision: 1,
+  };
+  await assertFails(setDoc(word, { ...saved, revision: 2 }));
+  await assertFails(setDoc(word, { ...saved, word: 'hello' }));
+  await assertSucceeds(setDoc(word, saved));
+  await assertSucceeds(getDoc(doc(reader, path)));
+  await assertFails(getDoc(doc(bob, path)));
+  await assertFails(getDoc(doc(guest, path)));
+  const removed = { ...saved, payload: '', revision: 2, opId: 'b'.repeat(32) };
+  await assertFails(setDoc(doc(reader, path), removed));
+  await assertFails(setDoc(doc(bob, path), removed));
+  await assertFails(setDoc(word, { ...removed, opId: saved.opId }));
+  await assertSucceeds(setDoc(word, removed));
+  await assertFails(setDoc(word, saved));
+  await assertFails(deleteDoc(word));
+});

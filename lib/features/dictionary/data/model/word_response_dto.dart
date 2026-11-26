@@ -82,7 +82,7 @@ final class DefinitionDto {
 
   factory DefinitionDto.fromJson(Map<String, dynamic> json) => DefinitionDto(
     enDefinition: json['en_definition'] as String,
-    zhDefinition: json['zh_definition'] as String,
+    zhDefinition: json['zh_definition'] as String? ?? '',
     examples: (json['examples'] as List<dynamic>)
         .map((value) => ExampleDto.fromJson(value as Map<String, dynamic>))
         .toList(growable: false),
@@ -96,11 +96,36 @@ final class DefinitionDto {
 }
 
 final class ExampleDto {
-  const ExampleDto({required this.exampleText});
+  const ExampleDto({
+    required this.exampleText,
+    this.source,
+    this.author,
+    this.sourceUrl,
+    this.licenseUrl,
+    this.matchType,
+  });
   final String exampleText;
+  final String? source;
+  final String? author;
+  final String? sourceUrl;
+  final String? licenseUrl;
+  final String? matchType;
 
-  factory ExampleDto.fromJson(Map<String, dynamic> json) =>
-      ExampleDto(exampleText: json['example_text'] as String);
+  factory ExampleDto.fromJson(Map<String, dynamic> json) => ExampleDto(
+    exampleText: json['example_text'] as String,
+    source: json['source'] as String?,
+    author: json['author'] as String?,
+    sourceUrl: json['source_url'] as String?,
+    licenseUrl: json['license_url'] as String?,
+    matchType: json['match_type'] as String?,
+  );
 
-  Map<String, dynamic> toJson() => {'example_text': exampleText};
+  Map<String, dynamic> toJson() => {
+    'example_text': exampleText,
+    if (source != null) 'source': source,
+    if (author != null) 'author': author,
+    if (sourceUrl != null) 'source_url': sourceUrl,
+    if (licenseUrl != null) 'license_url': licenseUrl,
+    if (matchType != null) 'match_type': matchType,
+  };
 }

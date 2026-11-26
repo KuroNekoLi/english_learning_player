@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/firebase/firebase_endpoint.dart';
 import '../../core/db/account_database_providers.dart';
 import '../auth/data/firebase_identity_session.dart';
+import '../dictionary/data/firebase_word_bank_sync.dart';
+import '../dictionary/data/word_bank_repository.dart';
 import '../library/library_dependencies.dart';
 import 'data/firebase_sync_session_native.dart'
     if (dart.library.js_interop) 'data/firebase_sync_session_web.dart'
@@ -92,6 +94,13 @@ final firebaseSyncRuntimeProvider = FutureProvider<FirebaseSyncRuntime?>((
     hasDueMedia: (now) async =>
         await outbox.hasDueMedia(now) || await library.hasDue(now),
     library: library,
+    wordBank: FirebaseWordBankSync(
+      uid: account.cloudUid,
+      documents: transport.documents,
+      local: WordBankRepository(db),
+      consent: consent,
+      readOnly: session.isReadOnly,
+    ),
     transport: transport,
     coordinator: session.isReadOnly
         ? null

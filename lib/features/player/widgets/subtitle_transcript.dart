@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../dictionary/widgets/dictionary_word_text.dart';
 import '../../learning/domain/learning_session.dart';
 import '../../subtitles/domain/subtitle_timeline.dart';
 import 'subtitle_cue_card.dart';
@@ -36,6 +37,7 @@ final class SubtitleTranscript extends StatefulWidget {
 
 final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
   final _scrollController = ScrollController();
+  final _dictionaryLookup = DictionaryLookupCoordinator();
   final _rowKeys = <String, GlobalKey>{};
   String? _lastAutoScrolledCueId;
   double _averageRowExtent = 176;
@@ -49,30 +51,40 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
   @override
   Widget build(BuildContext context) {
     _keepCurrentCueVisible();
-    return ListView.builder(
-      key: const ValueKey('subtitleTranscriptList'),
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-      itemCount: widget.timeline.lines.length,
-      itemBuilder: (context, index) {
-        final line = widget.timeline.lines[index];
-        final active = widget.activeCueId == line.cue.id;
-        return SubtitleCueCard(
-          key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
-          line: line,
-          offsetMs: widget.timeline.offsetMs,
-          hasChineseTrack: widget.timeline.hasChineseTrack,
-          active: active,
-          visibility: widget.intensive && !active
-              ? SubtitleVisibility.hidden
-              : widget.visibility,
-          bookmarked: widget.isCurrentCueBookmarked,
-          onPlay: () => unawaited(widget.onPlayCue(line.cue.id)),
-          onBookmark: () => unawaited(widget.onBookmark()),
-          onRepeat: () => unawaited(widget.onRepeatCue()),
-          onNext: () => unawaited(widget.onNextCue()),
-        );
+    return NotificationListener<ScrollStartNotification>(
+      onNotification: (notification) {
+        if (notification.depth != 0) return false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _dictionaryLookup.close();
+        });
+        return false;
       },
+      child: ListView.builder(
+        key: const ValueKey('subtitleTranscriptList'),
+        controller: _scrollController,
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+        itemCount: widget.timeline.lines.length,
+        itemBuilder: (context, index) {
+          final line = widget.timeline.lines[index];
+          final active = widget.activeCueId == line.cue.id;
+          return SubtitleCueCard(
+            dictionaryLookup: _dictionaryLookup,
+            key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
+            line: line,
+            offsetMs: widget.timeline.offsetMs,
+            hasChineseTrack: widget.timeline.hasChineseTrack,
+            active: active,
+            visibility: widget.intensive && !active
+                ? SubtitleVisibility.hidden
+                : widget.visibility,
+            bookmarked: widget.isCurrentCueBookmarked,
+            onPlay: () => unawaited(widget.onPlayCue(line.cue.id)),
+            onBookmark: () => unawaited(widget.onBookmark()),
+            onRepeat: () => unawaited(widget.onRepeatCue()),
+            onNext: () => unawaited(widget.onNextCue()),
+          );
+        },
+      ),
     );
   }
 

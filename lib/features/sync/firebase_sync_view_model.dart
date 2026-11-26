@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/db/account_database_providers.dart';
 import '../../core/sync/sync_contracts.dart';
+import '../dictionary/dictionary_dependencies.dart';
 import '../library/library_view_model.dart';
 import '../library/library_folder_view_model.dart';
 import '../progress/domain/progress_models.dart';
@@ -69,6 +70,14 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
     try {
       final runtime = await _runtime();
       if (!await _canPresent(runtime)) return;
+      final wordBankIssue = await _syncWordBank(
+        runtime,
+        refresh: refreshCatalog,
+      );
+      if (!await _canPresent(runtime)) return;
+      if (wordBankIssue != null && !state.busy) {
+        state = state.copyWith(status: wordBankIssue);
+      }
       final due = await runtime.hasDueMedia(DateTime.now());
       if (!due && !refreshCatalog) return;
       if (due) {
@@ -122,6 +131,8 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
 
   Future<void> sync() => _run(() async {
     final runtime = await _runtime();
+    final wordBankIssue = await _syncWordBank(runtime, refresh: true);
+    if (!await _canPresent(runtime)) return;
     final result = await runtime.sync();
     if (!ref.mounted) return;
     ref.invalidate(libraryViewModelProvider);
@@ -146,10 +157,25 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
       busy: true,
       materials: List.unmodifiable(catalog),
       conflicts: Map.unmodifiable(conflicts),
-      status: _message(result),
+      status: wordBankIssue ?? _message(result),
     );
     await _downloadMissing(runtime, catalog);
   });
+
+  Future<String?> _syncWordBank(
+    FirebaseSyncRuntime runtime, {
+    required bool refresh,
+  }) async {
+    try {
+      final changed = await runtime.wordBank?.run(refresh: refresh) ?? false;
+      if (changed && await _canPresent(runtime)) {
+        ref.invalidate(savedDictionaryWordsProvider);
+      }
+      return null;
+    } catch (_) {
+      return '單字庫同步暫時失敗，已保留本機收藏和待送變更。';
+    }
+  }
 
   void _refreshLibrary() {
     ref.invalidate(libraryViewModelProvider);

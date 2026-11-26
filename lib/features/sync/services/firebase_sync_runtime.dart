@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/sync/sync_contracts.dart';
 import '../../../core/sync/progress_policy.dart';
+import '../../dictionary/data/firebase_word_bank_sync.dart';
 import '../../library/data/sqlite_material_repository.dart';
 import '../../progress/data/sqlite_progress_repository.dart';
 import '../../progress/domain/progress_models.dart';
@@ -19,6 +20,7 @@ final class FirebaseSyncRuntime {
     String? scopeId,
     this.isReadOnly = false,
     this.library,
+    this.wordBank,
     required this.hasDueMedia,
     required this.transport,
     this.coordinator,
@@ -35,6 +37,7 @@ final class FirebaseSyncRuntime {
   final String scopeId;
   final bool isReadOnly;
   final FirebaseLibrarySync? library;
+  final FirebaseWordBankSync? wordBank;
   final Future<bool> Function(DateTime now) hasDueMedia;
   Future<SyncRunResult>? _mediaPass;
   final FirebaseMaterialTransport transport;

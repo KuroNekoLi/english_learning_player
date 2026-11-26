@@ -36,5 +36,23 @@ final class WordDefinition {
 
   final String enDefinition;
   final String zhDefinition;
-  final List<String> examples;
+  final List<WordExample> examples;
+}
+
+final class WordExample {
+  const WordExample({
+    required this.text,
+    this.source,
+    this.author,
+    this.sourceUrl,
+    this.licenseUrl,
+    this.matchType,
+  });
+
+  final String text;
+  final String? source;
+  final String? author;
+  final String? sourceUrl;
+  final String? licenseUrl;
+  final String? matchType;
 }

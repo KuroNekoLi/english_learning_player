@@ -19,6 +19,7 @@ import 'package:english_learning_player/features/progress/progress_dependencies.
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../fakes/fake_audio_engine.dart';
 import '../../fakes/fake_audio_media_session.dart';
@@ -87,6 +88,7 @@ void main() {
             dictionaryRepositoryProvider.overrideWith(
               (ref) async => _FixtureDictionaryRepository(),
             ),
+            savedDictionaryWordsProvider.overrideWith((ref) async => []),
             bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
             progressRepositoryProvider.overrideWith((ref) async => progress),
             audioMediaSessionProvider.overrideWith((ref) async => mediaSession),
@@ -127,6 +129,33 @@ void main() {
     expect(find.text('英文'), findsWidgets);
     expect(find.text('中文'), findsWidgets);
   });
+
+  testWidgets(
+    'long pressing an English cue opens the dictionary without playing',
+    (tester) async {
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+      final cue = find.text('A sentence to learn.');
+      final paragraph = tester.renderObject<RenderParagraph>(cue);
+      final wordBounds = paragraph
+          .getBoxesForSelection(
+            const TextSelection(baseOffset: 2, extentOffset: 10),
+          )
+          .single
+          .toRect();
+      final at = paragraph.localToGlobal(wordBounds.center);
+      await tester.longPressAt(at);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('關閉單字查詢'), findsOneWidget);
+      expect(audio.snapshot.playing, isFalse);
+      await tester.tap(find.byTooltip('關閉單字查詢'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(at);
+      await tester.pumpAndSettle();
+      expect(audio.snapshot.playing, isTrue);
+      expect(find.byTooltip('關閉單字查詢'), findsNothing);
+    },
+  );
 
   testWidgets(
     'shows the full bilingual transcript before the first cue plays',

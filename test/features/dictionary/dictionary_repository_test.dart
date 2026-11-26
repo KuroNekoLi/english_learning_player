@@ -49,7 +49,7 @@ void main() {
     expect(word.pronunciations.uk, '/ɪɡˈzɑːmpəl/');
     expect(word.entries.single.partOfSpeech, 'noun');
     expect(word.entries.single.definitions.single.zhDefinition, '例子；實例');
-    expect(word.entries.single.definitions.single.examples, [
+    expect(word.entries.single.definitions.single.examples.map((e) => e.text), [
       'This is a good example.',
     ]);
     expect(WordResponseDto.fromJson(response.toJson()).toJson(), wordFixture);
@@ -123,6 +123,23 @@ void main() {
     expect(results.map((word) => word.word), ['example', 'example']);
     expect(api.calls, 1);
   });
+
+  test(
+    'refreshes pre-upgrade entries and keeps them available offline',
+    () async {
+      await database.customStatement(
+        'INSERT INTO dictionary_words VALUES (?, ?, ?, ?)',
+        ['example', jsonEncode(wordFixture), 1, 1],
+      );
+      api.error = const FormatException('Offline fixture');
+      expect((await repository.lookupWord('example')).word, 'example');
+
+      api.error = null;
+      await repository.lookupWord('example');
+      await repository.lookupWord('example');
+      expect(api.calls, 2);
+    },
+  );
 
   test('propagates API failure without inserting a fake cache entry', () async {
     api.error = StateError('offline');

@@ -15,6 +15,8 @@ abstract interface class DictionaryRepository {
 final class SqliteDictionaryRepository implements DictionaryRepository {
   SqliteDictionaryRepository({required this.database, required this.api});
 
+  static const _cacheVersion = 2;
+  static const _cacheLifetime = Duration(days: 7);
   final LocalDatabase database;
   final DictionaryApi api;
   final Map<String, Future<Word>> _inFlight = {};
@@ -33,22 +35,31 @@ final class SqliteDictionaryRepository implements DictionaryRepository {
   Future<Word> _lookupNormalized(String normalized) async {
     final cached = await database
         .customSelect(
-          'SELECT payload_json FROM dictionary_words WHERE word = ?',
+          'SELECT payload_json, cached_at_ms FROM dictionary_words WHERE word = ?',
           variables: [Variable.withString(normalized)],
         )
         .getSingleOrNull();
-    if (cached != null) {
-      await database.customStatement(
-        'UPDATE dictionary_words SET last_lookup_at_ms = ? WHERE word = ?',
-        [DateTime.now().millisecondsSinceEpoch, normalized],
-      );
-      return WordResponseDto.fromJson(
-        jsonDecode(cached.read<String>('payload_json')) as Map<String, dynamic>,
-      ).toDomain();
+    final cachedPayload = cached == null
+        ? null
+        : jsonDecode(cached.read<String>('payload_json'))
+              as Map<String, dynamic>;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (cachedPayload?['_cache_version'] == _cacheVersion &&
+        now - cached!.read<int>('cached_at_ms') <
+            _cacheLifetime.inMilliseconds) {
+      return _useCached(normalized, cachedPayload!);
     }
 
-    final wordData = await api.lookupWord(normalized);
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final WordResponseDto wordData;
+    try {
+      wordData = await api
+          .lookupWord(normalized)
+          .timeout(const Duration(seconds: 8));
+    } on Exception {
+      if (cachedPayload != null) return _useCached(normalized, cachedPayload);
+      rethrow;
+    }
+    final payload = wordData.toJson()..['_cache_version'] = _cacheVersion;
     await database.customStatement(
       '''INSERT INTO dictionary_words
          (word, payload_json, cached_at_ms, last_lookup_at_ms)
@@ -57,9 +68,17 @@ final class SqliteDictionaryRepository implements DictionaryRepository {
            payload_json = excluded.payload_json,
            cached_at_ms = excluded.cached_at_ms,
            last_lookup_at_ms = excluded.last_lookup_at_ms''',
-      [normalized, jsonEncode(wordData.toJson()), now, now],
+      [normalized, jsonEncode(payload), now, now],
     );
     return wordData.toDomain();
+  }
+
+  Future<Word> _useCached(String word, Map<String, dynamic> payload) async {
+    await database.customStatement(
+      'UPDATE dictionary_words SET last_lookup_at_ms = ? WHERE word = ?',
+      [DateTime.now().millisecondsSinceEpoch, word],
+    );
+    return WordResponseDto.fromJson(payload).toDomain();
   }
 }
 

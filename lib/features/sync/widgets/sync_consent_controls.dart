@@ -42,9 +42,7 @@ final class SyncConsentControls extends ConsumerWidget {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           Text(
-            readOnly
-                ? '此帳號密碼登入只能讀取雲端教材。開啟後會自動下載此 Google 帳號的音檔與字幕，不會上傳或修改雲端資料。'
-                : '開啟後，這個帳號匯入的音檔與字幕會自動上傳到 Firebase。其他裝置用同一帳號登入並開啟同步後，就能下載。',
+            readOnly ? '開啟後會自動讀取此 Google 帳號的音檔、字幕與單字庫。此登入方式是唯讀。' : '開啟後，這個帳號的音檔、字幕與單字庫會同步至 Firebase。其他裝置使用同一帳號登入並開啟同步後，就能取得這些資料。',
           ),
           Wrap(
             spacing: 12,

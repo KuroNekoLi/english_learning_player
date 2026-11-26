@@ -144,6 +144,27 @@ service cloud.firestore {
       allow list, write: if false;
     }
 
+    match /users/{uid}/wordBank/{wordId} {
+      function validWord() {
+        let data = request.resource.data;
+        let keys = ['schemaVersion', 'ownerId', 'word', 'payload', 'savedAtMs', 'opId', 'revision'];
+        return data.keys().hasOnly(keys) && data.keys().hasAll(keys)
+          && data.schemaVersion == 1 && data.ownerId == uid && data.word == wordId
+          && wordId.size() <= 128 && wordId.matches("^[a-z]+(['’][a-z]+)*$")
+          && data.payload is string && data.payload.size() <= 500000
+          && data.savedAtMs is int && data.savedAtMs > 0 && data.savedAtMs <= 9007199254740991
+          && data.opId is string && data.opId.matches('^[a-f0-9]{32}$')
+          && data.revision is int && data.revision > 0 && data.revision <= 9007199254740991;
+      }
+
+      allow read: if canReadOwner(uid);
+      allow create: if canWriteOwner(uid) && validWord() && request.resource.data.revision == 1;
+      allow update: if canWriteOwner(uid) && validWord()
+        && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.opId != resource.data.opId;
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

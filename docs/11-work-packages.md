@@ -23,7 +23,7 @@
 | WP-16 | S4 Sol High | 15 | code/data flow → 架構/安全審查 → findings + release decision | P0/P1 無隱藏 blocker，風險與決策可追 |
 | WP-17 | 平台擴充 | 02–09、14 登入契約 | 瀏覽器選檔 → Drift WasmDatabase＋私有媒體儲存 → Google Web OAuth → Web 本機學習及同帳號同步 | T-WEB-01..06；Web build、離線升級、分頁與 UID 隔離、真實 Google OAuth、跨裝置續播及原生回歸。見 [Web 平台規格](14-web-platform.md)。 |
 | WP-18 | Auth／同步安全 | WP-14、WP-17 | Google owner UID → Callable 建立獨立 Email/Password reader UID 並設定 owner claim → reader 唯讀下載 profile | 原生/Web 登入、Firestore/Storage deny-write Emulator 測試、Callable deny-write、reader 本機資料隔離；Console provider、allowlist UID、Rules/Functions 正式部署與真實登入另列 BLOCKED。見 [WP-18 交棒](agent/wp-18-readonly-account-handoff.md)。 |
-| WP-19 | Dictionary 增量功能 | WP-03、WP-06 | 字幕英文 cue → 完整單字辨識/高亮 → BlackCatNews Dictionary API + Drift local-first cache → 浮動詞典視窗 | DTO/domain mapping fixture、快取命中/網路失敗、字幕 token 點選與詞典內容 Widget tests；Android/iOS/macOS/Web 使用共用 HTTP/Drift adapter，不改雲端同步或加入 FSRS。 |
+| WP-19 | Dictionary 增量功能 | WP-03、WP-06、WP-08 | 滑鼠停留或長按英文字幕單字、字典浮窗、單字與例句朗讀、可離線使用且跨裝置同步的帳號單字庫 | DTO 與快取、滑鼠和觸控 Widget、語音語系、Drift 遷移及 Firebase Emulator 同帳號與唯讀權限驗收。支援 Android/iOS/macOS/Web。 |
 
 ## 工作包共通 Definition of Done
 1. 產出既有模組介面可使用，不引入未核准的隱藏相依。

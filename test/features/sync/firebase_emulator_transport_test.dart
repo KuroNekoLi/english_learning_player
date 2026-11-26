@@ -4,6 +4,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:english_learning_player/core/db/local_database.dart';
+import 'package:english_learning_player/features/dictionary/data/firebase_word_bank_sync.dart';
+import 'package:english_learning_player/features/dictionary/data/word_bank_repository.dart';
+import 'package:english_learning_player/features/dictionary/domain/word.dart';
 import 'package:english_learning_player/features/library/data/sqlite_library_folder_repository.dart';
 import 'package:english_learning_player/features/library/data/sqlite_library_changes.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
@@ -38,6 +41,81 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../fakes/fake_cloud_sync.dart';
 
 void main() {
+  test('Firebase emulator: word bank converges across devices and preserves a removal', () async {
+    final endpoint = FirebaseEndpoint(
+      project: 'demo-english-learning-player',
+      bucket: 'demo-english-learning-player.appspot.com',
+      apiKey: 'fake-api-key',
+      emulatorHost: '127.0.0.1',
+    );
+    final http = FirebaseHttp();
+    addTearDown(http.close);
+    final first = FirebaseAccountSession(endpoint, http);
+    final second = FirebaseAccountSession(endpoint, http);
+    final credential = ProviderIdToken(
+      jsonEncode({
+        'sub': 'word-bank-${DateTime.now().microsecondsSinceEpoch}',
+        'email': 'word-bank@example.test',
+        'email_verified': true,
+      }),
+    );
+    final uid = (await first.signInWithProvider(
+      SocialProvider.google,
+      () async => credential,
+    ))!;
+    expect(
+      await second.signInWithProvider(
+        SocialProvider.google,
+        () async => credential,
+      ),
+      uid,
+    );
+    final dbA = LocalDatabase(NativeDatabase.memory());
+    final dbB = LocalDatabase(NativeDatabase.memory());
+    addTearDown(dbA.close);
+    addTearDown(dbB.close);
+    final a = WordBankRepository(dbA);
+    final b = WordBankRepository(dbB);
+    FirebaseWordBankSync sync(
+      WordBankRepository local,
+      FirebaseAccountSession session,
+    ) => FirebaseWordBankSync(
+      uid: uid,
+      documents: FirebaseDocuments(endpoint, session, http),
+      local: local,
+      consent: FakeSyncConsentProvider(),
+      readOnly: false,
+    );
+    final syncA = sync(a, first);
+    final syncB = sync(b, second);
+    const word = Word(
+      word: 'refine',
+      pronunciations: WordPronunciations(),
+      entries: [],
+    );
+    await a.save(word);
+    expect((await a.list()).single.word, 'refine');
+    expect(await b.list(), isEmpty);
+    await syncA.run(refresh: false);
+    expect(await a.pending(), isEmpty);
+    expect(await syncB.run(refresh: true), isTrue);
+    expect((await b.list()).single.word, 'refine');
+    await a.remove('refine');
+    await b.save(
+      word,
+    ); // Another edit still based on the first remote revision.
+    await syncA.run(refresh: false);
+    await syncB.run(refresh: true);
+    expect(await b.list(), isEmpty);
+    expect(await b.pending(), isEmpty);
+    await syncA.run(refresh: true);
+    expect(await a.list(), isEmpty);
+    await b.save(word);
+    await syncB.run(refresh: false);
+    await syncA.run(refresh: true);
+    expect((await a.list()).single.word, 'refine');
+  }, skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1');
+
   test('Firebase emulator: Google and Apple exchange mock credentials for isolated UIDs', () async {
     final http = FirebaseHttp();
     addTearDown(http.close);
