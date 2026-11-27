@@ -8,8 +8,14 @@ final class FakeLibraryFolderRepository implements LibraryFolderRepository {
   final deleted = <String>{};
 
   @override
-  Future<void> createFolder(String title) async {
-    _folders['folder-${_folders.length}'] = title;
+  Future<void> createFolder(
+    String title, {
+    String? id,
+    String? parentId,
+  }) async {
+    final folderId = id ?? 'folder-${_folders.length}';
+    _folders[folderId] = title;
+    _parents[folderId] = parentId;
   }
 
   @override

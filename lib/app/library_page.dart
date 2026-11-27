@@ -98,6 +98,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
   @override
   Widget build(BuildContext context) {
     final library = ref.watch(libraryViewModelProvider);
+    final folderSource = ref.watch(folderSourceViewModelProvider);
     final folders = ref.watch(libraryFoldersProvider);
     final assigned =
         ref.watch(libraryAssignedMaterialsProvider).value ?? const <String>{};
@@ -172,7 +173,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   library: library,
                   materials: visibleMaterials,
                   gridMode: _gridMode,
-                  importProgress: _importProgress,
+                  importProgress: [
+                    ..._importProgress,
+                    ...folderSource.importProgress,
+                  ],
                   downloadProgress: downloadProgress,
                   folders: (folders.value ?? const [])
                       .where(

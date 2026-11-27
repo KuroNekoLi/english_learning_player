@@ -89,10 +89,14 @@ final class SqliteLibraryFolderRepository implements LibraryFolderRepository {
   });
 
   @override
-  Future<void> createFolder(String title) => _database.transaction(
-    () =>
-        _changes.edit(LibraryField.folderName, const Uuid().v4(), title.trim()),
-  );
+  Future<void> createFolder(String title, {String? id, String? parentId}) =>
+      _database.transaction(() async {
+        final folderId = id ?? const Uuid().v4();
+        await _changes.edit(LibraryField.folderName, folderId, title.trim());
+        if (parentId != null) {
+          await _changes.edit(LibraryField.folderParent, folderId, parentId);
+        }
+      });
 
   @override
   Future<void> renameFolder(String folderId, String title) =>

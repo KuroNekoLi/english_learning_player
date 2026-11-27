@@ -9,7 +9,9 @@ import '../../core/platform/folder_access_gateway_provider.dart';
 import '../subtitles/services/subtitle_import_service.dart';
 import 'material_repository.dart';
 import 'services/folder_import_reconciler.dart';
+import 'services/media_selection_import_service.dart';
 import 'library_dependencies.dart';
+import 'library_folder_view_model.dart';
 import 'library_view_model.dart';
 
 const macFolderBindingId = 'primary-icloud-source';
@@ -31,6 +33,10 @@ final reconcileFolderInventoryProvider =
         }
         final materials = ref.read(materialRepositoryProvider.future);
         final importer = ref.read(audioImportServiceProvider.future);
+        final libraryFolders = ref.read(libraryFolderRepositoryProvider.future);
+        final sourceFolderName = ref
+            .read(folderSourceViewModelProvider)
+            .displayLabel;
         final repository = await materials;
         return FolderImportReconciler(
           gateway: gateway,
@@ -40,7 +46,20 @@ final reconcileFolderInventoryProvider =
           subtitleImporter: SubtitleImportService(repository: repository),
           ownerId: scope.ownerId,
           bindingId: bindingId,
-        ).reconcileInventory(entries);
+          libraryFolders: await libraryFolders,
+        ).reconcileInventory(
+          entries,
+          sourceFolderName: sourceFolderName,
+          onProgress: (progress) {
+            if (ref.mounted &&
+                bindingId ==
+                    folderBindingForAccount(ref.read(accountScopeProvider))) {
+              ref
+                  .read(folderSourceViewModelProvider.notifier)
+                  .updateImportProgress(progress);
+            }
+          },
+        );
       },
     );
 
@@ -57,6 +76,7 @@ final class FolderSourceState {
     this.isBusy = false,
     this.error,
     this.reconciliationSummary,
+    this.importProgress = const [],
   });
 
   final GrantStatus grantStatus;
@@ -65,6 +85,7 @@ final class FolderSourceState {
   final bool isBusy;
   final String? error;
   final String? reconciliationSummary;
+  final List<MediaFileImportProgress> importProgress;
 
   int get availableCount => entries
       .where((entry) => entry.status == FolderEntryStatus.available)
@@ -82,6 +103,8 @@ final class FolderSourceState {
     bool clearError = false,
     String? reconciliationSummary,
     bool clearSummary = false,
+    List<MediaFileImportProgress>? importProgress,
+    bool clearImportProgress = false,
   }) => FolderSourceState(
     grantStatus: grantStatus ?? this.grantStatus,
     displayLabel: displayLabel ?? this.displayLabel,
@@ -91,6 +114,9 @@ final class FolderSourceState {
     reconciliationSummary:
         reconciliationSummary ??
         (clearSummary ? null : this.reconciliationSummary),
+    importProgress: clearImportProgress
+        ? const []
+        : importProgress ?? this.importProgress,
   );
 }
 
@@ -159,6 +185,12 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
     _rescanRequested = true;
     _showScanProgress = _showScanProgress || showProgress;
     return _refreshing ??= _drainScans().whenComplete(() => _refreshing = null);
+  }
+
+  void updateImportProgress(List<MediaFileImportProgress> progress) {
+    if (ref.mounted && !_disconnecting) {
+      state = state.copyWith(importProgress: progress);
+    }
   }
 
   Future<void> _drainScans() async {
@@ -247,12 +279,15 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
     try {
       final entries = await _gateway.scan(binding);
       if (_disconnecting || !_ownsBinding(binding)) return;
+      state = state.copyWith(clearImportProgress: true);
       final result = await ref.read(reconcileFolderInventoryProvider)(
         binding,
         entries,
       );
       if (_disconnecting || !_ownsBinding(binding)) return;
       ref.invalidate(libraryViewModelProvider);
+      ref.invalidate(libraryFoldersProvider);
+      ref.invalidate(libraryAssignedMaterialsProvider);
       state = state.copyWith(
         grantStatus: GrantStatus.valid,
         entries: entries,
@@ -270,6 +305,7 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
         clearSummary: true,
         isBusy: showProgress ? false : state.isBusy,
         clearError: true,
+        clearImportProgress: true,
       );
     } on FolderAccessException catch (error) {
       if (_disconnecting || !_ownsBinding(binding)) return;
@@ -279,12 +315,14 @@ final class FolderSourceViewModel extends Notifier<FolderSourceState> {
             : state.grantStatus,
         isBusy: showProgress ? false : state.isBusy,
         error: _message(error.failure),
+        clearImportProgress: true,
       );
     } catch (_) {
       if (!_disconnecting && _ownsBinding(binding)) {
         state = state.copyWith(
           isBusy: showProgress ? false : state.isBusy,
           error: '資料夾掃描或匯入失敗',
+          clearImportProgress: true,
         );
       }
     }

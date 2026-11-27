@@ -14,7 +14,7 @@ final class LibraryFolder {
 
 abstract interface class LibraryFolderRepository {
   Future<List<LibraryFolder>> listFolders();
-  Future<void> createFolder(String title);
+  Future<void> createFolder(String title, {String? id, String? parentId});
   Future<Set<String>> materialIds(String folderId);
   Future<Set<String>> assignedMaterialIds();
   Future<void> addMaterial(String folderId, String materialId);

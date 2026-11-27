@@ -5,6 +5,7 @@
 - 新增 `FolderImportReconciler`，透過 `FolderAccessGateway` 取得完整 inventory、交由 WP-02 `AudioImportService` 匯入 app-private media / material / material outbox，並呼叫 WP-03 `SubtitleFilenameMatcher`、`SubtitleImportService` 處理已到或晚到字幕。
 - 新增 `FolderReconciliationRepository` 契約及 SQLite 實作。Drift schema v6 新增 `playlists`、`playlist_entries`、`folder_source_entries`；owner 複合鍵/外鍵限制每個 account namespace。v5→v6 migration 只新增表，不修改既有 material / bookmark / progress。
 - Library 的 Mac folder panel 新增「匯入並更新清單」操作與結果摘要。
+- 從 Library 使用「匯入資料夾」時，選取的來源資料夾會成為教材庫分類根資料夾，inventory 中的相對目錄會建立為巢狀分類，音訊教材加入對應分類。使用 binding + 相對目錄計算穩定分類 ID，重掃重用分類；單檔複製進度顯示在 Library 既有匯入卡片中。空的巢狀來源目錄不會建立，因原生 inventory 僅回傳檔案。
 - 本機來源相對路徑留在 account DB，不進 material outbox 或 remote payload。來源唯讀；掃描缺席不刪 material、playlist entry、bookmark 或 progress。
 
 ## 對外介面

@@ -9,8 +9,14 @@ import '../../subtitles/domain/subtitle_filename_matcher.dart';
 import '../../subtitles/domain/subtitle_models.dart';
 import '../../subtitles/services/subtitle_import_service.dart';
 import '../domain/audio_import_source.dart';
+import '../library_folder_repository.dart';
 import '../material_repository.dart';
 import 'audio_import_service.dart';
+import 'media_selection_import_service.dart';
+
+typedef FolderImportProgressCallback = void Function(
+  List<MediaFileImportProgress> progress,
+);
 
 final class FolderImportReconciler {
   FolderImportReconciler({
@@ -20,6 +26,7 @@ final class FolderImportReconciler {
     required this._audioImporter,
     required this._subtitleImporter,
     required this.ownerId,
+    this.libraryFolders,
     this.bindingId = 'primary-icloud-source',
     this.playlistTitle = 'iCloud 資料夾',
   });
@@ -30,6 +37,7 @@ final class FolderImportReconciler {
   final AudioImportService _audioImporter;
   final SubtitleImportService _subtitleImporter;
   final String ownerId;
+  final LibraryFolderRepository? libraryFolders;
   final String bindingId;
   final String playlistTitle;
   final SubtitleFilenameMatcher _matcher = const SubtitleFilenameMatcher();
@@ -38,8 +46,10 @@ final class FolderImportReconciler {
       reconcileInventory(await _gateway.scan(bindingId));
 
   Future<FolderReconciliationResult> reconcileInventory(
-    List<FolderEntry> inventory,
-  ) async {
+    List<FolderEntry> inventory, {
+    String? sourceFolderName,
+    FolderImportProgressCallback? onProgress,
+  }) async {
     // A failed scan cannot imply source deletion. Mark absent only after a
     // complete inventory has been returned successfully.
     final previous = await _repository.listFolderSources(bindingId);
@@ -56,6 +66,10 @@ final class FolderImportReconciler {
     final subtitleEntries = inventory
         .where((entry) => _isSubtitle(entry.relativePath))
         .toList();
+    final folderIds = await _ensureImportedFolders(
+      inventory,
+      sourceFolderName: sourceFolderName,
+    );
     final currentAudioPaths = audioEntries
         .map((entry) => entry.relativePath)
         .toSet();
@@ -77,6 +91,9 @@ final class FolderImportReconciler {
     var pending = 0;
     var failures = 0;
     final materialByAudioPath = <String, LearningMaterial>{};
+    final importProgress = <MediaFileImportProgress>[];
+    void publishProgress() =>
+        onProgress?.call(List.unmodifiable(importProgress));
 
     for (final entry in audioEntries) {
       final oldAtPath = previousByPath[entry.relativePath];
@@ -129,15 +146,36 @@ final class FolderImportReconciler {
           }
         }
         if (material == null) {
+          final progressIndex = importProgress.length;
+          importProgress.add(
+            MediaFileImportProgress(
+              sourceName: entry.relativePath,
+              status: MediaFileImportStatus.importing,
+            ),
+          );
+          publishProgress();
           final result = await _audioImporter.importAudio(
             AudioImportSource(
               sourceKey: _sourceKey(entry.relativePath),
               name: p.basename(entry.relativePath),
+              byteLength: entry.byteLength,
               openRead: file.openRead,
             ),
+            onProgress: (bytesCopied, totalBytes) {
+              importProgress[progressIndex] = importProgress[progressIndex]
+                  .copyWith(
+                    bytesCopied: bytesCopied,
+                    totalBytes: totalBytes,
+                    status: MediaFileImportStatus.importing,
+                  );
+              publishProgress();
+            },
           );
           material = result.material;
           knownMaterials[material.id] = material;
+          importProgress[progressIndex] = importProgress[progressIndex]
+              .copyWith(status: MediaFileImportStatus.completed);
+          publishProgress();
           if (result.wasDuplicate) {
             duplicates++;
           } else {
@@ -157,8 +195,20 @@ final class FolderImportReconciler {
           materialId: material.id,
           title: playlistTitle,
         );
+        final directory = p.posix.dirname(entry.relativePath);
+        final folderId = folderIds[directory == '.' ? '' : directory];
+        if (folderId != null) {
+          await libraryFolders?.addMaterial(folderId, material.id);
+        }
       } catch (_) {
         failures++;
+        if (importProgress.isNotEmpty &&
+            importProgress.last.sourceName == entry.relativePath &&
+            importProgress.last.status != MediaFileImportStatus.completed) {
+          importProgress[importProgress.length - 1] = importProgress.last
+              .copyWith(status: MediaFileImportStatus.failed);
+          publishProgress();
+        }
       } finally {
         await _deleteStaging(stagedFile);
       }
@@ -268,6 +318,59 @@ final class FolderImportReconciler {
           .length,
     );
   }
+
+  Future<Map<String, String>> _ensureImportedFolders(
+    List<FolderEntry> inventory, {
+    String? sourceFolderName,
+  }) async {
+    final repository = libraryFolders;
+    if (repository == null) return const {};
+
+    final directories = <String>{''};
+    for (final entry in inventory) {
+      var directory = p.posix.dirname(entry.relativePath);
+      while (directory != '.' && directory.isNotEmpty) {
+        directories.add(directory);
+        directory = p.posix.dirname(directory);
+      }
+    }
+    final ordered = directories.toList()
+      ..sort((left, right) {
+        final depthOrder = left
+            .split('/')
+            .length
+            .compareTo(right.split('/').length);
+        return depthOrder != 0 ? depthOrder : left.compareTo(right);
+      });
+    final existingFolders = {
+      for (final folder in await repository.listFolders()) folder.id: folder,
+    };
+    final ids = <String, String>{};
+    for (final directory in ordered) {
+      final isRoot = directory.isEmpty;
+      final parentPath = isRoot ? null : p.posix.dirname(directory);
+      final parentId = parentPath == null || parentPath == '.'
+          ? null
+          : ids[parentPath];
+      final id = _importedFolderId(directory);
+      final existing = existingFolders[id];
+      final title = isRoot
+          ? (sourceFolderName?.trim().isNotEmpty == true
+                ? sourceFolderName!.trim()
+                : existing?.title ?? playlistTitle)
+          : p.posix.basename(directory);
+      if (existing == null ||
+          existing.title != title ||
+          existing.parentId != parentId) {
+        await repository.createFolder(title, id: id, parentId: parentId);
+      }
+      ids[directory] = id;
+    }
+    return ids;
+  }
+
+  String _importedFolderId(String relativeDirectory) =>
+      'import-${sha256.convert(utf8.encode('$bindingId\u0000$relativeDirectory')).toString().substring(0, 32)}';
 
   Future<void> _deleteStaging(File? file) async {
     try {
