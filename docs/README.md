@@ -6,6 +6,8 @@
 
 > 2026-11-27：Editorial Reader Visual Baseline v1.0 已獲使用者人工驗證回報；WP-22 主要 Flutter 視覺重構已實作，發布驗收與 Figma Phase 4 同步仍有未完成項目。
 
+> 2026-11-27：新增產品功能盤點及競品研究；下一功能優先候選為每日智慧複習，完成後再研究與實作成熟競品的 AI 能力。此為產品研究及開發意向，尚非核准工作包。
+
 ## 文件地圖與閱讀順序
 
 | 文件 | 唯一責任 | 主要讀者 |
@@ -26,6 +28,7 @@
 | [13-skills-and-sources.md](13-skills-and-sources.md) | 官方 Skill 安裝、更新、來源與覆寫 | 全體 |
 | [14-web-platform.md](14-web-platform.md) | Web 平台範圍、瀏覽器儲存、Google Web OAuth、WP-17 驗收 | Web Agent / QA |
 | [15-editorial-design-system.md](15-editorial-design-system.md) | Editorial Reader 明暗主題、共用元件與無障礙規格（Visual Baseline v1.0） | UI Agent / QA |
+| [16-product-research-and-roadmap.md](16-product-research-and-roadmap.md) | 現有功能盤點、競品研究、每日智慧複習與後續 AI 候選 Roadmap（研究提案） | PM / Product Agent / Architecture |
 
 ## 讀法：接收 → 處理 → 輸出
 每一個元件都要回答：收到上一層什麼？處理哪些規則？交給下一層什麼？如何證明正確？不得堆砌互不相連的檔案名稱。
