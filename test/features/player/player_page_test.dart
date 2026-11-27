@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+import 'package:english_learning_player/core/design_system/editorial_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:english_learning_player/features/player/subtitle_style.dart';
 import 'package:english_learning_player/features/dictionary/domain/saved_dictionary_word.dart';
@@ -40,7 +42,7 @@ void main() {
   late FakeAudioMediaSession mediaSession;
   OriginalWordContext? savedOriginalContext;
   late List<SavedDictionaryWord> savedWords;
-  late Widget Function({TextScaler textScaler}) buildApp;
+  late Widget Function({TextScaler textScaler, ThemeMode themeMode}) buildApp;
 
   setUp(() {
     material = LearningMaterial(
@@ -90,8 +92,11 @@ void main() {
     savedOriginalContext = null;
     savedWords = [];
     SharedPreferences.setMockInitialValues({});
-    buildApp = ({TextScaler textScaler = TextScaler.noScaling}) =>
-        ProviderScope(
+    buildApp =
+        ({
+          TextScaler textScaler = TextScaler.noScaling,
+          ThemeMode themeMode = ThemeMode.light,
+        }) => ProviderScope(
           overrides: [
             audioEngineProvider.overrideWithValue(audio),
             dictionaryRepositoryProvider.overrideWith(
@@ -119,10 +124,14 @@ void main() {
             ),
           ],
           child: MaterialApp(
-            home: MediaQuery(
-              data: MediaQueryData(textScaler: textScaler),
-              child: PlayerPage(material: material),
+            theme: EditorialTheme.light,
+            darkTheme: EditorialTheme.dark,
+            themeMode: themeMode,
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+              child: child!,
             ),
+            home: PlayerPage(material: material),
           ),
         );
   });
@@ -279,6 +288,9 @@ void main() {
     (name: 'wide desktop', size: const Size(1280, 720), scale: 1.0),
     (name: 'large text', size: const Size(390, 844), scale: 1.8),
     (name: 'compact with large text', size: const Size(320, 600), scale: 1.8),
+    (name: 'medium breakpoint', size: const Size(600, 720), scale: 1.3),
+    (name: 'expanded breakpoint', size: const Size(900, 720), scale: 1.0),
+    (name: 'double text size', size: const Size(390, 844), scale: 2.0),
   ]) {
     testWidgets('renders ${scenario.name} without layout exceptions', (
       tester,
@@ -289,7 +301,10 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(
-        buildApp(textScaler: TextScaler.linear(scenario.scale)),
+        buildApp(
+          textScaler: TextScaler.linear(scenario.scale),
+          themeMode: scenario.scale >= 1.3 ? ThemeMode.dark : ThemeMode.light,
+        ),
       );
       await tester.pumpAndSettle();
       audio.advanceTo(1800);
@@ -655,6 +670,91 @@ void main() {
     expect(audio.playCalls, 1);
     expect(audio.snapshot.positionMs, 3000);
   });
+  for (final sample in [
+    (name: 'desktop_light', size: const Size(900, 640), mode: ThemeMode.light),
+    (name: 'mobile_dark', size: const Size(390, 844), mode: ThemeMode.dark),
+  ]) {
+    testWidgets('editorial golden ${sample.name}', (tester) async {
+      await tester.runAsync(() async {
+        for (final entry in {
+          'Inter': 'Inter.ttf',
+          'Source Serif 4': 'SourceSerif4.ttf',
+          'Noto Sans TC': 'NotoSansTC.ttf',
+          'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
+        }.entries) {
+          final asset = entry.key == 'MaterialIcons'
+              ? entry.value
+              : 'assets/fonts/${entry.value}';
+          final loader = FontLoader(entry.key)..addFont(rootBundle.load(asset));
+          await loader.load();
+        }
+      });
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = sample.size;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final english = [
+        'Learning a language takes practice.',
+        'Consistency is the key to progress.',
+        'Make time for curiosity.',
+        'Listen closely and enjoy the process.',
+      ];
+      final chinese = [
+        '學習一門語言需要練習。',
+        '持之以恆是進步的關鍵。',
+        '為好奇心留下一點時間。',
+        '仔細聆聽，享受學習的過程。',
+      ];
+      tracks[0] = _track(
+        id: 'en-track',
+        language: 'en',
+        selected: true,
+        cues: [
+          for (var i = 0; i < english.length; i++)
+            SubtitleCue(
+              id: 'gold-en-$i',
+              sequence: i + 1,
+              startMs: 1000 + i * 4000,
+              endMs: 4000 + i * 4000,
+              text: english[i],
+            ),
+        ],
+      );
+      tracks[1] = _track(
+        id: 'zh-track',
+        language: 'zh-TW',
+        selected: true,
+        cues: [
+          for (var i = 0; i < chinese.length; i++)
+            SubtitleCue(
+              id: 'gold-zh-$i',
+              sequence: i + 1,
+              startMs: 1000 + i * 4000,
+              endMs: 4000 + i * 4000,
+              text: chinese[i],
+            ),
+        ],
+      );
+      savedWords = [
+        SavedDictionaryWord(
+          word: Word(
+            word: 'progress',
+            pronunciations: const WordPronunciations(),
+            entries: const [],
+          ),
+        ),
+      ];
+      await tester.pumpWidget(buildApp(themeMode: sample.mode));
+      await tester.pumpAndSettle();
+      audio.advanceTo(5600);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await expectLater(
+        find.byType(PlayerPage),
+        matchesGoldenFile('goldens/editorial_${sample.name}.png'),
+      );
+    });
+  }
 }
 
 SubtitleTrack _track({

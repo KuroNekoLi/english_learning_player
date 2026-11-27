@@ -1,4 +1,7 @@
 import 'package:material_ui/material_ui.dart';
+
+import '../../core/design_system/theme_mode_tile.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/account_sign_in_view.dart';
@@ -93,6 +96,10 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            const ThemeModeTile(),
+            if (sync.busy) const LinearProgressIndicator(),
+            if (sync.status case final message?)
+              Semantics(liveRegion: true, child: Text(message)),
             if (state.uid == null) ...[
               AccountSignInView(
                 configuredProviders: {
@@ -145,9 +152,6 @@ final class _FirebaseSyncPanelState extends ConsumerState<FirebaseSyncPanel> {
               else
                 const Text('教材同步尚未設定。'),
             ],
-            if (sync.busy) const LinearProgressIndicator(),
-            if (sync.status case final message?)
-              Semantics(liveRegion: true, child: Text(message)),
             if (consent)
               for (final material in sync.materials)
                 CloudMaterialEntry(

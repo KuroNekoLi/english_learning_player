@@ -1,7 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/design_system/editorial_components.dart';
+
 import '../features/dictionary/widgets/word_bank_page.dart';
+import '../features/bookmarks/bookmarks_page.dart';
 import '../features/library/library_view_model.dart';
 import '../features/library/library_folder_view_model.dart';
 import '../features/library/material_repository.dart';
@@ -79,6 +82,14 @@ final class _WebLibraryPageState extends ConsumerState<WebLibraryPage> {
         title: const Text('教材庫'),
         actions: [
           const OpenWordBankButton(),
+          IconButton(
+            tooltip: '我的收藏',
+            icon: const Icon(Icons.bookmark_border),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const BookmarksPage()),
+            ),
+          ),
+
           LibraryActionsMenu(onImportMedia: _importing ? null : _importMedia),
           IconButton(
             tooltip: '帳號與同步',
@@ -94,6 +105,10 @@ final class _WebLibraryPageState extends ConsumerState<WebLibraryPage> {
           constraints: const BoxConstraints(maxWidth: 1000),
           child: LibraryMaterialList(
             library: library,
+            heading: const EditorialPageHeading(
+              eyebrow: "LISTENING LIBRARY",
+              title: "我的教材",
+            ),
             materials: materials
                 .where((item) => !assigned.contains(item.id))
                 .toList(),

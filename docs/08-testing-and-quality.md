@@ -1,5 +1,12 @@
 # 測試策略與品質門檻
 
+## Editorial Reader UI 回歸（WP-22）
+所有 UI 修改須按 [設計規範](15-editorial-design-system.md) 執行明暗、RWD、字體縮放、對比、鍵盤及適用 Golden/Widget 測試。既有基準：
+- `flutter test test/core/design_system test/features/player/player_page_test.dart`（色彩契約、主題持久化、播放及明暗畫面）。
+- `flutter test test/features/player/player_page_test.dart --plain-name 'editorial golden'`（固定 DPR 與內嵌字型；僅在確認設計變更後用 --update-goldens）。
+- 實機、Accessibility Guideline、VoiceOver/TalkBack、Web 鍵盤及正式建置驗收另計；不可用 Golden 或人工回報取代所有 release gate。
+- 最近一次完整測試與平台限制見 [WP-22 交棒](agent/wp-22-editorial-handoff.md)，包含原始 commit 已存在的 T-FOLDER-08 失敗。
+
 ## 1. 測試金字塔與執行環境
 | 層級 | 目標 | 執行方式 |
 |---|---|---|

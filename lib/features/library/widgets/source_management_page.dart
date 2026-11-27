@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/design_system/theme_mode_tile.dart';
+
 import '../../bookmarks/bookmarks_page.dart';
 import '../../sync/firebase_sync_panel.dart';
 import '../folder_source_panel.dart';
@@ -13,6 +15,16 @@ final class SourceManagementPage extends StatelessWidget {
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        const ThemeModeTile(),
+        ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: const Text('開放原始碼授權'),
+          onTap: () => showLicensePage(
+            context: context,
+            applicationName: 'English Learning Player',
+          ),
+        ),
+
         const FolderSourcePanel(),
         ListTile(
           leading: const Icon(Icons.manage_accounts_outlined),

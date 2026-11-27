@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/design_system/editorial_tokens.dart';
+
 import '../../learning/domain/learning_session.dart';
 import '../player_view_model.dart';
 import 'playback_time_label.dart';
@@ -47,6 +49,10 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
     final mode = learning?.playbackMode ?? CuePlaybackMode.continuous;
     final intensive = learning?.mode == LearningMode.intensive;
     final theme = Theme.of(context);
+    final editorial = EditorialColors.of(context);
+    final playSize = MediaQuery.sizeOf(context).width >= EditorialSize.compact
+        ? EditorialSize.desktopPlay
+        : EditorialSize.mobilePlay;
     final timeStyle = theme.textTheme.bodySmall?.copyWith(
       fontSize: 12,
       fontWeight: FontWeight.w400,
@@ -110,8 +116,23 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
       tooltip: intensive ? '退出精聽' : '精聽',
       isSelected: intensive,
       onPressed: learning == null ? null : viewModel.toggleIntensiveMode,
-      icon: const Icon(Icons.school_outlined),
-      selectedIcon: Icon(Icons.school, color: theme.colorScheme.primary),
+      icon: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.school_outlined, size: 24),
+          Text('精聽', style: timeStyle),
+        ],
+      ),
+      selectedIcon: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.school, color: theme.colorScheme.primary, size: 24),
+          Text(
+            '精聽',
+            style: timeStyle?.copyWith(color: theme.colorScheme.primary),
+          ),
+        ],
+      ),
     );
     final primaryControls = SizedBox(
       width: 248,
@@ -141,7 +162,15 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
           IconButton.filled(
             key: const ValueKey('primaryPlayPauseButton'),
             tooltip: playback?.playing == true ? '暫停 (Space)' : '播放 (Space)',
-            style: IconButton.styleFrom(fixedSize: const Size(56, 56)),
+            style: IconButton.styleFrom(
+              fixedSize: Size(playSize, playSize),
+              backgroundColor: editorial.primary,
+              foregroundColor: editorial.onPrimary,
+              disabledBackgroundColor: editorial.controlOutline.withValues(
+                alpha: .22,
+              ),
+              disabledForegroundColor: editorial.textSecondary,
+            ),
             onPressed: state.isReady
                 ? () => unawaited(viewModel.togglePlayback())
                 : null,
@@ -149,6 +178,10 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
               playback?.playing == true
                   ? Icons.pause_rounded
                   : Icons.play_arrow_rounded,
+              color: state.isReady
+                  ? editorial.onPrimary
+                  : editorial.textSecondary,
+              size: 24,
             ),
           ),
           Expanded(
@@ -207,7 +240,7 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final wide =
-                    constraints.maxWidth >= 600 &&
+                    constraints.maxWidth >= EditorialSize.compact &&
                     MediaQuery.textScalerOf(context).scale(12) <= 18;
                 if (wide) {
                   return Row(

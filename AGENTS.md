@@ -6,7 +6,7 @@
 1. 使用者本次明確指示與安全限制。
 2. 本檔與 `docs/00-product-requirements.md` 的已核准範圍。
 3. `docs/01-architecture.md`、`docs/02-domain-models.md` 與各模組規格。
-4. `docs/11-work-packages.md` 的任務驗收。
+4. `docs/11-work-packages.md` 的任務驗收；Presentation 視覺規範以 `docs/15-editorial-design-system.md` 為準。
 5. 對應的 `.agents/skills/*/SKILL.md` 與 Flutter/Dart 官方文件。
 
 衝突時不要擅自改變產品行為；把衝突、選項、風險寫入 `docs/12-decisions-and-risks.md`。不可將「提議」視為使用者已批准的事實。
@@ -22,6 +22,14 @@
 - 不要添加無關功能、帳號付費機制、強制 AI 或 Android 開發類比。
 - 新增套件前檢查官方文件、現有 Flutter/Dart 相容性、macOS 支援與授權；不可默默升級 SDK 或繞過平台權限。
 - 未實際執行的命令與真機測試不可標註 PASS。對需要 Apple Developer/Firebase 專案的步驟，標記 BLOCKED 與人工前置條件。
+
+## Editorial Reader UI 硬規則（WP-22 / Visual Baseline v1.0）
+- 所有 UI/UX 任務先讀 [設計規範](docs/15-editorial-design-system.md)、[Tokens](docs/design-system/editorial-tokens.json) 與 [WP-22 交棒](docs/agent/wp-22-editorial-handoff.md)。設計風格已獲使用者確認；重大視覺改動先提案確認，不得自行改品牌。
+- 原生與 Web 共用 `lib/core/design_system/`；優先使用 `EditorialTheme`、`EditorialColors.of(context)`、`EditorialTypography`、`EditorialSpacing/Radius/Size` 與既有共用元件。Feature 不新增硬編碼品牌色、任意字體、獨立主題、裝飾漸層或重複元件。官方第三方品牌資產例外；必要的新 token 集中定義並同步 JSON 與測試。
+- 暖白紙感、森林綠、襯線英文、低干擾控制；明暗主題皆必須可讀。保留裝置外觀及字幕偏好相容性；不得為了美觀移除功能、錯誤提示、唯讀限制或改動 AudioEngine、同步、資料契約。
+- 以可用寬度及 TextScaler 決定排版；不關閉系統字體縮放。一般文字 4.5:1、必要控制邊界 3:1、操作區 48×48 logical px 為設計基準；使用可見焦點、Semantics、Tooltip，狀態不得只靠顏色。翻譯色使用 readableTranslation 保護對比。
+- 重要畫面修改需涵蓋明暗、窄/寬視窗、大字體、功能回歸及適用 Golden；更新 Golden 前必須審查實際渲染，不得以更新基準掩蓋缺陷。區分使用者人工確認、工具觀察與未驗證平台，不把視覺驗收視為正式發布認證。
+- 規格、程式、Tokens、測試及交棒文件須同批更新；未完成驗收與既有缺陷記錄於 WP-22 及風險文件。
 
 ## Agent Skills
 依任務選擇性讀取 `.agents/skills/`，詳見 `docs/13-skills-and-sources.md`。本專案附有 Flutter/Dart 官方維護的 Skill 副本與專案專屬 Skill `english-learning-player-engineering`。

@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+
+import '../../core/design_system/editorial_components.dart';
+import '../../core/design_system/editorial_typography.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../player/player_page.dart';
@@ -16,25 +20,42 @@ final class BookmarksPage extends ConsumerWidget {
     final viewModel = ref.read(bookmarkListViewModelProvider.notifier);
     return Scaffold(
       appBar: AppBar(title: const Text('我的收藏')),
-      body: items.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => Center(
-          child: TextButton(
-            onPressed: viewModel.refresh,
-            child: const Text('無法讀取收藏，重試'),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: items.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (_, _) => Center(
+              child: TextButton(
+                onPressed: viewModel.refresh,
+                child: const Text('無法讀取收藏，重試'),
+              ),
+            ),
+            data: (bookmarks) => bookmarks.isEmpty
+                ? const Center(child: Text('目前沒有收藏句子'))
+                : Column(
+                    children: [
+                      const EditorialPageHeading(
+                        eyebrow: 'SAVED SENTENCES',
+                        title: '我的收藏句子',
+                        subtitle: '已收藏的句子，可回到原教材繼續聆聽。',
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: bookmarks.length,
+                          itemBuilder: (context, index) => _BookmarkTile(
+                            item: bookmarks[index],
+                            onRemove: () => unawaited(
+                              viewModel.remove(bookmarks[index].bookmark.id),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
         ),
-        data: (bookmarks) => bookmarks.isEmpty
-            ? const Center(child: Text('目前沒有收藏句子'))
-            : ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: bookmarks.length,
-                itemBuilder: (context, index) => _BookmarkTile(
-                  item: bookmarks[index],
-                  onRemove: () =>
-                      unawaited(viewModel.remove(bookmarks[index].bookmark.id)),
-                ),
-              ),
       ),
     );
   }
@@ -59,8 +80,7 @@ final class _BookmarkTile extends StatelessWidget {
       BookmarkResolutionStatus.ambiguous => '字幕有多個可能句子，無法安全定位',
     };
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    return EditorialListRow(
       child: ListTile(
         enabled: canPlay,
         onTap: canPlay
@@ -73,7 +93,10 @@ final class _BookmarkTile extends StatelessWidget {
                 ),
               )
             : null,
-        title: Text(resolution.cue?.text ?? bookmark.anchor.cueText),
+        title: Text(
+          resolution.cue?.text ?? bookmark.anchor.cueText,
+          style: EditorialTypography.english(context, size: 20),
+        ),
         subtitle: Text(statusLabel),
         isThreeLine: false,
         trailing: IconButton(

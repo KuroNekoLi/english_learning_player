@@ -1,6 +1,11 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+
+import '../../../core/design_system/editorial_typography.dart';
+
+import '../../../core/design_system/theme_mode_tile.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../library/library_view_model.dart';
@@ -49,11 +54,34 @@ final class WebAccountPage extends ConsumerWidget {
             child: ListView(
               padding: const EdgeInsets.all(24),
               children: [
-                Icon(
-                  Icons.account_circle_outlined,
-                  size: 52,
-                  color: Theme.of(context).colorScheme.primary,
+                const ThemeModeTile(),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('開放原始碼授權'),
+                  onTap: () => showLicensePage(
+                    context: context,
+                    applicationName: 'English Learning Player',
+                  ),
                 ),
+
+                if (state.uid == null) ...[
+                  Text(
+                    'EDITORIAL READER',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'A quieter way to learn.',
+                    style: EditorialTypography.english(
+                      context,
+                      size: 36,
+                      height: 1.2,
+                    ),
+                  ),
+                  const Divider(),
+                ],
                 const SizedBox(height: 16),
                 Text(
                   state.uid == null ? '登入同步帳號' : '已登入同步帳號',

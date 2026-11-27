@@ -1,4 +1,8 @@
 import 'package:material_ui/material_ui.dart';
+
+import '../../../core/design_system/editorial_typography.dart';
+import '../../../core/design_system/editorial_tokens.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../library/material_repository.dart';
@@ -30,6 +34,7 @@ final class RecentPlaybackMiniPlayer extends ConsumerWidget {
         ? (positionMs / durationMs).clamp(0.0, 1.0)
         : null;
 
+    final editorial = EditorialColors.of(context);
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerHigh,
       child: InkWell(
@@ -59,7 +64,10 @@ final class RecentPlaybackMiniPlayer extends ConsumerWidget {
                             material.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall,
+                            style: EditorialTypography.english(
+                              context,
+                              size: 17,
+                            ),
                           ),
                           Text(
                             '繼續播放 · ${_time(positionMs)}',
@@ -68,8 +76,12 @@ final class RecentPlaybackMiniPlayer extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    IconButton(
+                    IconButton.filled(
                       tooltip: playing ? '暫停' : '播放',
+                      style: IconButton.styleFrom(
+                        backgroundColor: editorial.primary,
+                        foregroundColor: editorial.onPrimary,
+                      ),
                       onPressed: () {
                         if (active) {
                           ref
@@ -79,7 +91,10 @@ final class RecentPlaybackMiniPlayer extends ConsumerWidget {
                           _open(context, material, autoplay: true);
                         }
                       },
-                      icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                      icon: Icon(
+                        playing ? Icons.pause : Icons.play_arrow,
+                        color: editorial.onPrimary,
+                      ),
                     ),
                   ],
                 ),

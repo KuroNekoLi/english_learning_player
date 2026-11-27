@@ -1,4 +1,7 @@
 import 'package:material_ui/material_ui.dart';
+
+import '../../../core/design_system/editorial_components.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/sync/sync_contracts.dart';
@@ -22,6 +25,7 @@ final class LibraryMaterialList extends StatefulWidget {
     this.onFolderAction,
     this.onMaterialAction,
     this.onRetryFolders,
+    this.heading,
     this.emptyMessage = '目前沒有教材',
     required this.onRetry,
     required this.onOpen,
@@ -38,6 +42,7 @@ final class LibraryMaterialList extends StatefulWidget {
   final void Function(LearningMaterial, LibraryItemAction)? onMaterialAction;
   final VoidCallback? onRetryFolders;
   final String emptyMessage;
+  final Widget? heading;
   final VoidCallback onRetry;
   final ValueChanged<LearningMaterial> onOpen;
 
@@ -83,7 +88,14 @@ final class _LibraryMaterialListState extends State<LibraryMaterialList> {
             child: const Text('無法讀取教材，重試'),
           ),
         ),
-        data: (_) => _content(),
+        data: (_) => widget.heading == null
+            ? _content()
+            : Column(
+                children: [
+                  widget.heading!,
+                  Expanded(child: _content()),
+                ],
+              ),
       ),
     ),
   );
@@ -101,7 +113,8 @@ final class _LibraryMaterialListState extends State<LibraryMaterialList> {
         widget.materials.length;
     if (itemCount == 0) return Center(child: Text(widget.emptyMessage));
     const padding = EdgeInsets.all(16);
-    final list = widget.gridMode
+    final list =
+        widget.gridMode && MediaQuery.textScalerOf(context).scale(14) <= 18
         ? GridView.builder(
             padding: padding,
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -149,7 +162,7 @@ final class _LibraryMaterialListState extends State<LibraryMaterialList> {
     }
     if (index < widget.folders.length) {
       final folder = widget.folders[index];
-      return Card(
+      return EditorialListRow(
         child: ListTile(
           leading: const Icon(Icons.folder_outlined),
           title: Text(folder.title),
@@ -243,8 +256,7 @@ final class _MaterialTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
+  Widget build(BuildContext context) => EditorialListRow(
     child: ListTile(
       onTap: onTap,
       minVerticalPadding: 12,
@@ -259,7 +271,7 @@ final class _MaterialTile extends StatelessWidget {
 
   Widget _leading(BuildContext context) {
     if (downloadProgress == null) {
-      return const CircleAvatar(child: Icon(Icons.headphones_rounded));
+      return const Icon(Icons.headphones_outlined, size: 28);
     }
     final progress = downloadProgress!;
     final theme = Theme.of(context);
@@ -268,7 +280,7 @@ final class _MaterialTile extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          const CircleAvatar(child: Icon(Icons.headphones_rounded)),
+          const Icon(Icons.headphones_outlined, size: 28),
           if (progress.phase == CloudDownloadPhase.failed)
             Icon(Icons.error_outline, color: theme.colorScheme.error)
           else if (progress.phase == CloudDownloadPhase.subtitles)

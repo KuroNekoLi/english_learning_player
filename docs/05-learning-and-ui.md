@@ -1,5 +1,7 @@
 # 精聽模式與跨尺寸 UI
 
+> 2026-11-27：視覺與元件規範以 [Editorial Reader v1.0](15-editorial-design-system.md) 為準；本文件保留學習行為與流程契約。實作、驗收證據與未完成項目見 [WP-22 交棒](agent/wp-22-editorial-handoff.md)。
+
 ## 1. 頁面
 `LibraryScreen`：教材列表、下載/同步狀態、播放清單綁定入口、最近進度。
 `PlayerScreen`：播放控制列、字幕區、模式切換、單句循環、倍速。

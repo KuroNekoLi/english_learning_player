@@ -270,8 +270,13 @@ final class _DictionaryWordTextState extends State<DictionaryWordText> {
                   },
                   onExit: (_) => _scheduleDismiss(),
                   child: Material(
-                    elevation: 10,
-                    borderRadius: BorderRadius.circular(16),
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
                     clipBehavior: Clip.antiAlias,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(maxHeight: height),

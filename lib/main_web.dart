@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/web_library_page.dart';
 import 'core/audio/audio_engine_provider.dart';
+import 'core/design_system/editorial_theme.dart';
+import 'core/design_system/editorial_font_licenses.dart';
+import 'core/design_system/theme_preference.dart';
 import 'core/audio/audio_media_session_port.dart';
 import 'core/audio/audio_media_session_provider.dart';
 import 'core/audio/just_audio_adapter.dart';
@@ -17,6 +20,7 @@ import 'features/sync/widgets/sync_landing.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerEditorialFontLicenses();
   final webAuth = await WebFirebaseAuthAdapter.initialize();
   final engine = JustAudioAdapter();
   runApp(
@@ -56,7 +60,10 @@ final class EnglishLearningWebApp extends ConsumerWidget {
     return MaterialApp(
       key: ValueKey(uid),
       title: 'English Learning Player',
-      theme: ThemeData(colorSchemeSeed: Colors.indigo),
+      theme: EditorialTheme.light,
+      darkTheme: EditorialTheme.dark,
+      themeMode:
+          ref.watch(themePreferenceProvider).asData?.value ?? ThemeMode.system,
       home: SyncLanding(
         uid: uid,
         library: const WebLibraryPage(),

@@ -54,6 +54,35 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
   String? _lastAutoScrolledCueId;
   double _averageRowExtent = 110;
   bool _following = true;
+  bool _activeOffscreen = false;
+  final _viewportKey = GlobalKey();
+  bool _visibilityCheckScheduled = false;
+  void _checkVisibility() {
+    if (_visibilityCheckScheduled) return;
+    _visibilityCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _visibilityCheckScheduled = false;
+      if (!mounted || _following) return;
+      final id = widget.activeCueId;
+      final viewport = _viewportKey.currentContext?.findRenderObject();
+      final row = id == null
+          ? null
+          : _rowKeys[id]?.currentContext?.findRenderObject();
+      var offscreen = id != null;
+      if (viewport is RenderBox &&
+          row is RenderBox &&
+          viewport.hasSize &&
+          row.hasSize) {
+        final viewRect = viewport.localToGlobal(Offset.zero) & viewport.size;
+        final rowRect = row.localToGlobal(Offset.zero) & row.size;
+        offscreen = !viewRect.overlaps(rowRect);
+      }
+      if (offscreen != _activeOffscreen) {
+        setState(() => _activeOffscreen = offscreen);
+      }
+    });
+  }
+
   final _translationOverrides = <String>{};
 
   @override
@@ -77,6 +106,7 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
   @override
   Widget build(BuildContext context) {
     _keepCurrentCueVisible();
+    if (!_following) _checkVisibility();
     return Stack(
       children: [
         Listener(
@@ -85,95 +115,105 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
               setState(() => _following = false);
             }
           },
-          child: NotificationListener<ScrollStartNotification>(
+          child: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
               if (notification.depth != 0) return false;
-              if (notification.dragDetails != null && _following) {
+              if (notification is ScrollStartNotification &&
+                  notification.dragDetails != null &&
+                  _following) {
                 setState(() => _following = false);
               }
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) _dictionaryLookup.close();
-              });
+              _checkVisibility();
+              if (notification is ScrollStartNotification) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _dictionaryLookup.close();
+                });
+              }
               return false;
             },
-            child: ListView.builder(
-              key: const ValueKey('subtitleTranscriptList'),
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-              itemCount: widget.timeline.lines.length,
-              itemBuilder: (context, index) {
-                final line = widget.timeline.lines[index];
-                final active = widget.activeCueId == line.cue.id;
-                final startMs = subtitleToAudioMs(
-                  line.cue.startMs,
-                  widget.timeline.offsetMs,
-                );
-                final endMs = subtitleToAudioMs(
-                  line.cue.endMs,
-                  widget.timeline.offsetMs,
-                );
-                final originalContext =
-                    endMs > startMs && line.english.trim().isNotEmpty
-                    ? OriginalWordContext(
-                        materialId: widget.materialId,
-                        materialTitle: widget.materialTitle,
-                        startMs: startMs < 0 ? 0 : startMs,
-                        endMs: endMs,
-                        english: line.english.trim(),
-                        translations: [
-                          for (final translation in line.translations)
-                            if (translation.text.trim().isNotEmpty)
-                              translation.text.trim(),
-                        ],
-                      )
-                    : null;
-                final canToggleTranslation =
-                    !widget.intensive &&
-                    (widget.visibility == SubtitleVisibility.englishOnly ||
-                        widget.visibility == SubtitleVisibility.bilingual) &&
-                    line.translations.any((t) => t.text.trim().isNotEmpty);
-                final overridden = _translationOverrides.contains(line.cue.id);
-                return SubtitleCueCard(
-                  dictionaryLookup: _dictionaryLookup,
-                  key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
-                  line: line,
-                  style: widget.style,
-                  savedWords: widget.savedWords,
-                  translationOverride: canToggleTranslation && overridden,
-                  onToggleTranslation: canToggleTranslation
-                      ? () => setState(() {
-                          if (!_translationOverrides.remove(line.cue.id)) {
-                            _translationOverrides.add(line.cue.id);
-                          }
-                        })
-                      : null,
-                  originalContext: originalContext,
-                  offsetMs: widget.timeline.offsetMs,
-                  hasChineseTrack: widget.timeline.hasChineseTrack,
-                  active: active,
-                  playing: active && widget.playing,
-                  visibility: widget.intensive && !active
-                      ? SubtitleVisibility.hidden
-                      : widget.visibility,
-                  bookmarked: widget.isCurrentCueBookmarked,
-                  onPlay: () {
-                    setState(() {
-                      _following = true;
-                      _lastAutoScrolledCueId = null;
-                    });
-                    if (active) {
-                      unawaited(widget.onTogglePlayback());
-                    } else {
-                      unawaited(widget.onPlayCue(line.cue.id));
-                    }
-                  },
-                  onBookmark: () => unawaited(widget.onBookmark()),
-                );
-              },
+            child: SizedBox.expand(
+              key: _viewportKey,
+              child: ListView.builder(
+                key: const ValueKey('subtitleTranscriptList'),
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                itemCount: widget.timeline.lines.length,
+                itemBuilder: (context, index) {
+                  final line = widget.timeline.lines[index];
+                  final active = widget.activeCueId == line.cue.id;
+                  final startMs = subtitleToAudioMs(
+                    line.cue.startMs,
+                    widget.timeline.offsetMs,
+                  );
+                  final endMs = subtitleToAudioMs(
+                    line.cue.endMs,
+                    widget.timeline.offsetMs,
+                  );
+                  final originalContext =
+                      endMs > startMs && line.english.trim().isNotEmpty
+                      ? OriginalWordContext(
+                          materialId: widget.materialId,
+                          materialTitle: widget.materialTitle,
+                          startMs: startMs < 0 ? 0 : startMs,
+                          endMs: endMs,
+                          english: line.english.trim(),
+                          translations: [
+                            for (final translation in line.translations)
+                              if (translation.text.trim().isNotEmpty)
+                                translation.text.trim(),
+                          ],
+                        )
+                      : null;
+                  final canToggleTranslation =
+                      !widget.intensive &&
+                      (widget.visibility == SubtitleVisibility.englishOnly ||
+                          widget.visibility == SubtitleVisibility.bilingual) &&
+                      line.translations.any((t) => t.text.trim().isNotEmpty);
+                  final overridden = _translationOverrides.contains(
+                    line.cue.id,
+                  );
+                  return SubtitleCueCard(
+                    dictionaryLookup: _dictionaryLookup,
+                    key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
+                    line: line,
+                    style: widget.style,
+                    savedWords: widget.savedWords,
+                    translationOverride: canToggleTranslation && overridden,
+                    onToggleTranslation: canToggleTranslation
+                        ? () => setState(() {
+                            if (!_translationOverrides.remove(line.cue.id)) {
+                              _translationOverrides.add(line.cue.id);
+                            }
+                          })
+                        : null,
+                    originalContext: originalContext,
+                    offsetMs: widget.timeline.offsetMs,
+                    hasChineseTrack: widget.timeline.hasChineseTrack,
+                    active: active,
+                    playing: active && widget.playing,
+                    visibility: widget.intensive && !active
+                        ? SubtitleVisibility.hidden
+                        : widget.visibility,
+                    bookmarked: widget.isCurrentCueBookmarked,
+                    onPlay: () {
+                      setState(() {
+                        _following = true;
+                        _lastAutoScrolledCueId = null;
+                      });
+                      if (active) {
+                        unawaited(widget.onTogglePlayback());
+                      } else {
+                        unawaited(widget.onPlayCue(line.cue.id));
+                      }
+                    },
+                    onBookmark: () => unawaited(widget.onBookmark()),
+                  );
+                },
+              ),
             ),
           ),
         ),
-        if (!_following)
+        if (!_following && _activeOffscreen)
           Positioned(
             bottom: 12,
             left: 0,

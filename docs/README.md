@@ -4,6 +4,8 @@
 > 優先完成一條可量測的使用者旅程：Mac iCloud 資料夾新增 M4A＋雙 SRT → 自動配對匯入 → 雲端同步 → iPhone 同帳號續播。
 > 2026-11-21 納入 Web 為第四個正式支援目標。Web 實作與發布驗收列入 WP-17。2026-11-24 新增同 UID password 唯讀登入工作包 WP-18；正式 Firebase 設定、Rules/Functions 部署仍待執行。
 
+> 2026-11-27：Editorial Reader Visual Baseline v1.0 已獲使用者人工驗證回報；WP-22 主要 Flutter 視覺重構已實作，發布驗收與 Figma Phase 4 同步仍有未完成項目。
+
 ## 文件地圖與閱讀順序
 
 | 文件 | 唯一責任 | 主要讀者 |
@@ -23,6 +25,7 @@
 | [12-decisions-and-risks.md](12-decisions-and-risks.md) | ADR、未決事項、風險與決策人 | Sol |
 | [13-skills-and-sources.md](13-skills-and-sources.md) | 官方 Skill 安裝、更新、來源與覆寫 | 全體 |
 | [14-web-platform.md](14-web-platform.md) | Web 平台範圍、瀏覽器儲存、Google Web OAuth、WP-17 驗收 | Web Agent / QA |
+| [15-editorial-design-system.md](15-editorial-design-system.md) | Editorial Reader 明暗主題、共用元件與無障礙規格（Visual Baseline v1.0） | UI Agent / QA |
 
 ## 讀法：接收 → 處理 → 輸出
 每一個元件都要回答：收到上一層什麼？處理哪些規則？交給下一層什麼？如何證明正確？不得堆砌互不相連的檔案名稱。
@@ -42,3 +45,5 @@
 - [WP-19 Dictionary 交棒](agent/wp-19-dictionary-handoff.md) 記錄字幕單字查詢、BlackCatNews API/模型契約、Drift local-first cache 與驗收限制。
 - [WP-20 單字庫原句卡規格](agent/wp-20-word-bank-original-context-spec.md) 定義字幕快照、片段回放、TTS 備援與同步契約。
 - [WP-20 實作交接](agent/wp-20-handoff.md) 記錄完成項目、測試結果與平台驗收限制。
+- [WP-22 Editorial Reader 交棒](agent/wp-22-editorial-handoff.md) 記錄已實作模組、使用者人工驗收、自動化證據、既有缺陷與發布前剩餘項目。
+- [Editorial Tokens](design-system/editorial-tokens.json) 為設計系統機器可讀對照基線；Flutter 色彩契約測試須與其一致。

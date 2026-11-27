@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/design_system/editorial_typography.dart';
+
 import '../dictionary_dependencies.dart';
 import '../domain/word.dart';
 import '../domain/original_word_context.dart';
@@ -51,7 +53,11 @@ final class _DictionaryLookupPanelState
             Expanded(
               child: Text(
                 widget.word,
-                style: Theme.of(context).textTheme.titleLarge,
+                style: EditorialTypography.english(
+                  context,
+                  size: 32,
+                  height: 1.2,
+                ),
               ),
             ),
             IconButton(
@@ -160,10 +166,13 @@ final class DictionaryWordDetails extends StatelessWidget {
               child: Text('收錄 $senseCount 個詞義'),
             ),
           const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 12),
           for (final entry in word.entries) ...[
             Text(
               entry.partOfSpeech,
-              style: Theme.of(context).textTheme.labelLarge,
+              style: Theme.of(context).textTheme.labelMedium
+                  ?.copyWith(color: Theme.of(context).colorScheme.primary),
             ),
             for (final (index, definition) in entry.definitions.indexed) ...[
               Padding(
@@ -237,7 +246,9 @@ final class _DictionaryExample extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '“$line”',
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: _hasHan.hasMatch(line)
+                        ? EditorialTypography.translation(context)
+                        : EditorialTypography.english(context, size: 17),
                   ),
                 ),
                 DictionarySpeechButton(

@@ -76,6 +76,19 @@ flutter:
   uses-material-design: true
   assets:
     - assets/auth/google-sign-in.png
+    - assets/fonts/inter-OFL.txt
+    - assets/fonts/notosanstc-OFL.txt
+    - assets/fonts/sourceserif4-OFL.txt
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter.ttf
+    - family: Source Serif 4
+      fonts:
+        - asset: assets/fonts/SourceSerif4.ttf
+    - family: Noto Sans TC
+      fonts:
+        - asset: assets/fonts/NotoSansTC.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

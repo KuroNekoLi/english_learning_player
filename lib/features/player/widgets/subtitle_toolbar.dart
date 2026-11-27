@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/design_system/editorial_components.dart';
+
 import '../../learning/domain/learning_session.dart';
 
 final class SubtitleToolbar extends StatelessWidget {
@@ -31,33 +33,14 @@ final class SubtitleToolbar extends StatelessWidget {
           spacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            SegmentedButton<SubtitleVisibility>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: SubtitleVisibility.englishOnly,
-                  label: Text('英文'),
-                ),
-                ButtonSegment(
-                  value: SubtitleVisibility.chineseOnly,
-                  label: Text('中文'),
-                ),
-                ButtonSegment(
-                  value: SubtitleVisibility.bilingual,
-                  label: Text('雙語'),
-                ),
-              ],
-              selected: {
-                if (visibility != SubtitleVisibility.hidden) visibility,
+            EditorialLanguageControl<SubtitleVisibility>(
+              options: const {
+                SubtitleVisibility.englishOnly: '英文',
+                SubtitleVisibility.chineseOnly: '中文',
+                SubtitleVisibility.bilingual: '雙語',
               },
-              emptySelectionAllowed: true,
-              onSelectionChanged: onVisibilityChanged == null
-                  ? null
-                  : (selection) {
-                      if (selection.isNotEmpty) {
-                        onVisibilityChanged!(selection.first);
-                      }
-                    },
+              selected: visibility,
+              onChanged: onVisibilityChanged,
             ),
             IconButton(
               tooltip: '字幕設定',

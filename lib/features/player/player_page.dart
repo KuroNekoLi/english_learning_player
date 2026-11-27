@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+
+import '../../core/design_system/editorial_typography.dart';
+import '../../core/design_system/editorial_tokens.dart';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -94,6 +98,11 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
               excludeFromSemantics: true,
               child: Text(
                 _displayTitle(widget.material.title),
+                style: EditorialTypography.english(
+                  context,
+                  size: 20,
+                  height: 1.25,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -138,9 +147,7 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: style.readingWidth < 900 ? 900 : style.readingWidth,
-          ),
+          constraints: BoxConstraints(maxWidth: EditorialSize.readerMax),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

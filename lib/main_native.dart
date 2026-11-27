@@ -5,6 +5,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/audio/audio_engine_provider.dart';
+import 'core/design_system/editorial_theme.dart';
+import 'core/design_system/editorial_font_licenses.dart';
+import 'core/design_system/theme_preference.dart';
 import 'core/audio/audio_media_session_port.dart';
 import 'core/audio/audio_media_session_provider.dart';
 import 'core/audio/english_audio_handler.dart';
@@ -28,6 +31,7 @@ const audioServiceConfig = service.AudioServiceConfig(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerEditorialFontLicenses();
   final engine = JustAudioAdapter();
   EnglishAudioHandler? handler;
   final candidateHandler = EnglishAudioHandler(engine);
@@ -97,7 +101,10 @@ class EnglishLearningPlayer extends ConsumerWidget {
     return MaterialApp(
       key: ValueKey(uid),
       title: 'English Learning Player',
-      theme: ThemeData(colorSchemeSeed: Colors.indigo),
+      theme: EditorialTheme.light,
+      darkTheme: EditorialTheme.dark,
+      themeMode:
+          ref.watch(themePreferenceProvider).asData?.value ?? ThemeMode.system,
       home: SyncLanding(
         uid: uid,
         library: const LibraryPage(),

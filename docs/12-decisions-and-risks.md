@@ -41,6 +41,7 @@
 | ADR-034 | ACCEPTED（本機升級與建置基線） | Flutter、Dart、相依套件及原生工具鏈升級 | 依使用者同意的 iOS 15 / macOS 12 / Android API 24，升級至 Flutter 3.50.1 / Dart 3.14.0；主要依賴解析為 Riverpod 3.5.0、Drift 2.35.4、just_audio 0.10.6、audio_session 0.2.4、sqlite3 3.9.2。移除已 EOL 的 `sqlite3_flutter_libs`，改用 sqlite3 3.x 原生 assets。Android 對齊 Flutter 3.50 官方 Gradle 9.5.0 / AGP 9.3.1 / Kotlin 2.4.20 模板。`pub outdated` 顯示所有直接 runtime 依賴為最新可解析版本；測試套件及四個受相依約束的 transitives 尚有更新版本但目前不可解析。Analyze、194 tests（3 項 Emulator tests skipped）及 Android/iOS/macOS/Web build 通過。實機 `flutter run` 已自動簽章、安裝且 Runner process 存活，但 Flutter debugger attach 因 `Error executing osascript: -2` 未完成；Google 登入未測。未變更 Firebase 雲端資源。依據：[Flutter 3.50 release notes](https://docs.flutter.dev/release/release-notes/release-notes-3.50.0)、[Flutter supported platforms](https://docs.flutter.dev/reference/supported-platforms)、[Flutter built-in Kotlin migration](https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers)、[sqlite3 3.0 upgrade notes](https://pub.dev/packages/sqlite3/changelog)、[sqlite3_flutter_libs package status](https://pub.dev/documentation/sqlite3_flutter_libs/latest/sqlite3_flutter_libs/)。 |
 | ADR-035 | ACCEPTED（實作契約）／OPEN（Firebase Console 與正式部署） | `kuroneko_li` 使用獨立 Email/Password reader UID；受信任 Callable 只允許明確 allowlist 的 Google owner 建立 reader，並以伺服器 custom claim 指向 owner UID | reader 的 Firebase Auth UID 與本機 Drift profile 分開，雲端讀取路徑使用 claim 指向的 owner UID。Firestore/Storage 只允許 reader 讀取該 owner 資料，所有寫入只接受 owner 本人；進度 Callable 同樣拒絕 reader。`ELP_READONLY_OWNER_UID` 未填入已確認的 Google UID，provider 為使用者回報已啟用但尚未即時驗證，Rules/Functions 尚未部署，因此正式權限仍未生效。交棒與前置條件見 [WP-18 交棒](agent/wp-18-readonly-account-handoff.md)。 |
 | ADR-036 | ACCEPTED | 首頁顯示最近播放教材與本機續播點；已同意雲端同步的帳號在前景背景循環派送進度 outbox。衝突以 canonical server revision 排序，舊 revision 保留候選供使用者決定 | 不用裝置時間或位置大小判勝負；連線時最後成功提交的 revision 是 canonical，離線/競爭寫入因 baseRevision 過期成為候選，使用者選擇後以新 revision 提交。同步/下載不對正在播放的 session seek。Firebase 真實兩裝置交錯測試待具備兩端登入環境。 |
+| ADR-037 | ACCEPTED（視覺基線）／OPEN（發布驗收） | Editorial Reader v1.0 全平台共用 Theme、語意 Tokens、離線字型與共用元件 | 使用者已回報人工驗證完成；完整平台建置、無障礙、既有 T-FOLDER-08 及 Figma 同步仍待驗。見 [WP-22 交棒](agent/wp-22-editorial-handoff.md)。 |
 
 ## Stage 1 決策細節（2026-11-10）
 
@@ -199,6 +200,13 @@
 - 證據：[Firebase custom claims](https://firebase.google.com/docs/auth/admin/custom-claims) 說明 custom claims 只能由受信任 Admin 環境設定，適合角色／存取控制；[Firebase Rules 與 Auth](https://firebase.google.com/docs/rules/rules-and-auth) 說明 Security Rules 可使用驗證 UID 及 token claims；[Email/Password Auth](https://firebase.google.com/docs/auth/flutter/password-auth)。
 - 正式前置條件：確認 Console 的 Email/Password 狀態、取得 Google owner UID 並部署 `ELP_READONLY_OWNER_UID`；Emulator 驗證通過後部署 callable、Firestore Rules、Storage Rules，再用 Google 與 reader 帳號驗證讀取、拒絕寫入、下載及本機隔離。使用者表示已啟用 Email/Password，但此工作環境尚未讀取 Console 狀態；雲端 Functions/Rules 未部署，故讀取能力目前未生效。
 
+### ADR-037 — Editorial Reader 共用視覺基線 v1.0
+狀態：ACCEPTED（視覺方向及人工驗證回報，非 release gate PASS）
+- 2026-11-27 使用者選定方案 A，後續確認設計方向並回報人工驗證完成。採暖白/森林綠與 Ink 深色主題、三套內嵌 OFL 字型、ThemeExtension 與共用元件；不使用平台各自的品牌主題。
+- 以 docs/15-editorial-design-system.md 及 tokens JSON 約束 Presentation；既有音訊、字幕、帳號和同步契約不變。新增的外觀偏好裝置本地持久化，既有字幕偏好保持相容。不增加後端依賴或變更雲端規則。
+- 選擇 Flutter ThemeData 加語意 tokens，而非逐頁硬編碼或整套原生重寫。未來重大視覺變更需先獲使用者確認並更新文件與測試。
+- WP-22 尚有既有 T-FOLDER-08、原生建置、完整無障礙及 Figma Phase 4 同步限制；詳見交棒文件，不宣告已可發布。
+
 ## 風險清單
 | 風險 | 嚴重度 | 失敗形態 | 降低方式 / 檢驗 |
 |---|---|---|---|
@@ -213,6 +221,7 @@
 | R-09 跨帳號殘留 | Critical | 舊用戶本機資料洩漏給新用戶 | UID namespace，登出隔離測試 |
 | R-10 操作時序競爭 | High | 切媒體、seek、loop 時串流倒退 | generation token + cancel + fake clock |
 | R-11 Web 本機儲存與 OAuth 相容性 | High | 分頁競態、配額耗盡、瀏覽器清除離線資料、彈窗受限 | 觀察 Wasm 儲存模式、驗證多分頁和配額失敗、依 browser matrix 驗收授權設定 |
+| R-12 Editorial 發布驗收缺口 | High | 原生建置未確認、低磁碟空間、既有 T-FOLDER-08、未完整驗證無障礙；Web Wasm plugin 警告 | 保留原缺陷證據，獨立修復同步問題；騰出建置空間並逐平台重跑及人工確認，依 WP-22 交棒記錄，不自動豁免 |
 
 ## ADR 變更模板
 ```md

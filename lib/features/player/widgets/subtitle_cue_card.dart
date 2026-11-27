@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/design_system/editorial_tokens.dart';
+import '../../../core/design_system/editorial_typography.dart';
+
 import '../../learning/domain/learning_session.dart';
 import '../../dictionary/domain/original_word_context.dart';
 import '../../dictionary/widgets/dictionary_word_text.dart';
@@ -64,140 +67,152 @@ final class SubtitleCueCard extends StatelessWidget {
     ).clamp(0, 9007199254740991).toInt();
     final timeRange = '${playbackTimeLabel(start)} – ${playbackTimeLabel(end)}';
     final colors = Theme.of(context).colorScheme;
+    final editorial = EditorialColors.of(context);
+    final background = active ? editorial.activeSubtitle : editorial.background;
     return Material(
-      color: active
-          ? colors.primaryContainer.withValues(alpha: 0.45)
-          : Colors.transparent,
+      color: background,
       borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        key: active ? const ValueKey('activeSubtitleCard') : null,
-        onTap: onPlay,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            4,
-            style.spacing / 2,
-            4,
-            style.spacing / 2,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              width: EditorialSize.rail,
+              color: active ? editorial.primary : Colors.transparent,
+            ),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              IconButton(
-                tooltip: playing ? '暫停本句' : '播放本句',
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                onPressed: onPlay,
-                color: active ? colors.primary : colors.onSurfaceVariant,
-                icon: Icon(
-                  playing
-                      ? Icons.pause_circle_filled
-                      : Icons.play_circle_outline,
+        ),
+        child: InkWell(
+          key: active ? const ValueKey('activeSubtitleCard') : null,
+          onTap: onPlay,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              4,
+              style.spacing / 2,
+              4,
+              style.spacing / 2,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconButton(
+                  tooltip: playing ? '暫停本句' : '播放本句',
+                  constraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
+                  ),
+                  onPressed: onPlay,
+                  color: active ? colors.primary : colors.onSurfaceVariant,
+                  icon: Icon(
+                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  ),
                 ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 5, bottom: 2),
-                      child: Text(
-                        active
-                            ? '$timeRange · ${playing ? '播放中' : '已暫停'}'
-                            : timeRange,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          color: colors.onSurfaceVariant,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5, bottom: 2),
+                        child: Text(
+                          active
+                              ? '$timeRange · ${playing ? '播放中' : '已暫停'}'
+                              : timeRange,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                color: colors.onSurfaceVariant,
+                              ),
                         ),
                       ),
-                    ),
-                    if (visibility == SubtitleVisibility.hidden)
-                      const Text('字幕已遮蔽')
-                    else ...[
-                      if (showEnglish)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: DictionaryWordText(
-                            text: line.english
-                                .replaceAll(RegExp(r'\s+'), ' ')
-                                .trim(),
-                            coordinator: dictionaryLookup,
-                            savedWords: savedWords,
-                            originalContext: originalContext,
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w400,
-                                  fontSize: style.englishSize,
-                                  height: style.lineHeight,
-                                ),
-                          ),
-                        ),
-                      if (showChinese)
-                        if (line.translations.isEmpty)
-                          if (hasChineseTrack ||
-                              visibility == SubtitleVisibility.chineseOnly)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 4),
-                              child: Text('未找到對應中文字幕'),
-                            )
-                          else
-                            const SizedBox.shrink()
-                        else
-                          for (final translation in line.translations)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                translation.text
-                                    .replaceAll(RegExp(r'\s+'), ' ')
-                                    .trim(),
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(
-                                      color: colors.onSurfaceVariant.withValues(
-                                        alpha: style.translationOpacity,
-                                      ),
-                                      fontSize: style.chineseSize,
-                                      fontWeight: FontWeight.w400,
-                                      height: style.lineHeight,
-                                    ),
+                      if (visibility == SubtitleVisibility.hidden)
+                        const Text('字幕已遮蔽')
+                      else ...[
+                        if (showEnglish)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: DictionaryWordText(
+                              text: line.english
+                                  .replaceAll(RegExp(r'\s+'), ' ')
+                                  .trim(),
+                              coordinator: dictionaryLookup,
+                              savedWords: savedWords,
+                              originalContext: originalContext,
+                              style: EditorialTypography.english(
+                                context,
+                                size: style.englishSize,
+                                height: style.lineHeight,
                               ),
                             ),
+                          ),
+                        if (showChinese)
+                          if (line.translations.isEmpty)
+                            if (hasChineseTrack ||
+                                visibility == SubtitleVisibility.chineseOnly)
+                              const Padding(
+                                padding: EdgeInsets.only(top: 4),
+                                child: Text('未找到對應中文字幕'),
+                              )
+                            else
+                              const SizedBox.shrink()
+                          else
+                            for (final translation in line.translations)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  translation.text
+                                      .replaceAll(RegExp(r'\s+'), ' ')
+                                      .trim(),
+                                  style: EditorialTypography.translation(
+                                    context,
+                                    size: style.chineseSize,
+                                    height: style.lineHeight,
+                                    color: readableTranslation(
+                                      editorial.textSecondary,
+                                      background,
+                                      style.translationOpacity,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              SizedBox(
-                width: 48,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (onToggleTranslation != null)
-                      IconButton(
-                        tooltip: showChinese ? '隱藏本句翻譯' : '顯示本句翻譯',
-                        onPressed: onToggleTranslation,
-                        color: colors.onSurfaceVariant,
-                        iconSize: 20,
-                        icon: Icon(
-                          showChinese
-                              ? Icons.visibility_off_outlined
-                              : Icons.translate_rounded,
+                SizedBox(
+                  width: 48,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (onToggleTranslation != null)
+                        IconButton(
+                          tooltip: showChinese ? '隱藏本句翻譯' : '顯示本句翻譯',
+                          onPressed: onToggleTranslation,
+                          color: colors.onSurfaceVariant,
+                          iconSize: 20,
+                          icon: Icon(
+                            showChinese
+                                ? Icons.visibility_off_outlined
+                                : Icons.translate_rounded,
+                          ),
                         ),
-                      ),
-                    if (active)
-                      IconButton(
-                        tooltip: bookmarked ? '移除收藏' : '收藏本句',
-                        onPressed: onBookmark,
-                        color: colors.onSurfaceVariant,
-                        iconSize: 20,
-                        icon: Icon(
-                          bookmarked ? Icons.bookmark : Icons.bookmark_border,
+                      if (active)
+                        IconButton(
+                          tooltip: bookmarked ? '移除收藏' : '收藏本句',
+                          onPressed: onBookmark,
+                          color: colors.onSurfaceVariant,
+                          iconSize: 20,
+                          icon: Icon(
+                            bookmarked ? Icons.bookmark : Icons.bookmark_border,
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

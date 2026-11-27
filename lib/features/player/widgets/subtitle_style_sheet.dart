@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/design_system/editorial_tokens.dart';
+import '../../../core/design_system/editorial_typography.dart';
+
 import '../subtitle_style.dart';
 
 final class SubtitleStyleSheet extends StatefulWidget {
@@ -16,6 +19,7 @@ final class _SubtitleStyleSheetState extends State<SubtitleStyleSheet> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final editorial = EditorialColors.of(context);
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -55,7 +59,7 @@ final class _SubtitleStyleSheetState extends State<SubtitleStyleSheet> {
                       horizontal: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: colors.primaryContainer.withValues(alpha: .35),
+                      color: editorial.activeSubtitle,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
@@ -63,10 +67,10 @@ final class _SubtitleStyleSheetState extends State<SubtitleStyleSheet> {
                       children: [
                         Text.rich(
                           TextSpan(
-                            style: TextStyle(
-                              fontSize: _style.englishSize,
+                            style: EditorialTypography.english(
+                              context,
+                              size: _style.englishSize,
                               height: _style.lineHeight,
-                              fontWeight: FontWeight.w400,
                             ),
                             children: [
                               const TextSpan(
@@ -89,12 +93,14 @@ final class _SubtitleStyleSheetState extends State<SubtitleStyleSheet> {
                         const SizedBox(height: 4),
                         Text(
                           '學習一門語言需要練習。',
-                          style: TextStyle(
-                            fontSize: _style.chineseSize,
+                          style: EditorialTypography.translation(
+                            context,
+                            size: _style.chineseSize,
                             height: _style.lineHeight,
-                            fontWeight: FontWeight.w400,
-                            color: colors.onSurfaceVariant.withValues(
-                              alpha: _style.translationOpacity,
+                            color: readableTranslation(
+                              editorial.textSecondary,
+                              editorial.activeSubtitle,
+                              _style.translationOpacity,
                             ),
                           ),
                         ),
@@ -158,7 +164,7 @@ final class _SubtitleStyleSheetState extends State<SubtitleStyleSheet> {
                 '${_style.readingWidth.round()} px',
                 (v) => _style.copyWith(readingWidth: v),
               ),
-              const Text('閱讀寬度在較大的視窗中生效。'),
+              const Text('閱讀寬度在較大的視窗中生效。翻譯顏色會依可讀性調整。'),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('高亮已收藏單字'),

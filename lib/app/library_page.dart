@@ -1,7 +1,11 @@
 import 'package:material_ui/material_ui.dart';
+
+import '../core/design_system/editorial_components.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/dictionary/widgets/word_bank_page.dart';
+import '../features/bookmarks/bookmarks_page.dart';
 import '../features/library/library_view_model.dart';
 import '../features/library/folder_source_view_model.dart';
 import '../features/library/library_folder_view_model.dart';
@@ -172,6 +176,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               Expanded(
                 child: LibraryMaterialList(
                   library: library,
+                  heading: const EditorialPageHeading(
+                    eyebrow: "LISTENING LIBRARY",
+                    title: "我的教材",
+                  ),
                   materials: visibleMaterials,
                   gridMode: _gridMode,
                   importProgress: [
@@ -216,23 +224,56 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                 width: 260,
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: ListView(
                     children: [
-                      Icon(
-                        Icons.headphones_rounded,
-                        size: 44,
-                        color: Theme.of(context).colorScheme.primary,
+                      Text(
+                        'EDITORIAL READER',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          letterSpacing: 1.1,
+                        ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
                       Text(
                         'English Learning',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 8),
                       Text(
                         '離線教材庫',
-                        style: Theme.of(context).textTheme.bodyMedium,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 24),
+                      const Divider(),
+                      ListTile(
+                        leading: const Icon(Icons.book_outlined),
+                        title: const Text('教材庫'),
+                        selected: true,
+                      ),
+                      ListTile(
+                        leading: const Icon(
+                          Icons.collections_bookmark_outlined,
+                        ),
+                        title: const Text('我的單字庫'),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const WordBankPage(),
+                          ),
+                        ),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.bookmark_border),
+                        title: const Text('我的收藏'),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const BookmarksPage(),
+                          ),
+                        ),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.settings_outlined),
+                        title: const Text('設定與來源管理'),
+                        onTap: _openSourceManagement,
                       ),
                     ],
                   ),

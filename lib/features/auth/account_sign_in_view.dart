@@ -1,4 +1,7 @@
 import 'package:material_ui/material_ui.dart';
+
+import '../../core/design_system/editorial_typography.dart';
+
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'social_sign_in.dart';
@@ -28,12 +31,24 @@ final class AccountSignInView extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: 24),
-            Icon(
-              Icons.account_circle_outlined,
-              size: 48,
-              color: Theme.of(context).colorScheme.primary,
+            Text(
+              'EDITORIAL READER',
+              style: Theme.of(context).textTheme.labelMedium
+                  ?.copyWith(color: Theme.of(context).colorScheme.primary),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            Text(
+              'A quieter way to learn.',
+              style: EditorialTypography.english(
+                context,
+                size: 36,
+                height: 1.2,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            const Divider(),
+            const SizedBox(height: 24),
             Text('登入同步帳號', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             const Text(

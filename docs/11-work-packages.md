@@ -26,6 +26,7 @@
 | WP-19 | Dictionary 增量功能 | WP-03、WP-06、WP-08 | 滑鼠停留或長按英文字幕單字、字典浮窗、單字與例句朗讀、可離線使用且跨裝置同步的帳號單字庫 | DTO 與快取、滑鼠和觸控 Widget、語音語系、Drift 遷移及 Firebase Emulator 同帳號與唯讀權限驗收。支援 Android/iOS/macOS/Web。 |
 | WP-20 | 單字庫原句卡 | WP-03、WP-04、WP-08、WP-19 | 從字幕收藏時擷取雙語字幕與偏移後音訊區間 → 以既有單字庫 payload 同步 → 詳情卡播放原音或 TTS 備援 | SQLite 舊資料相容、首次原句去重、補加不改收藏排序、字幕偏移單次套用、片段精確起訖、播放器進度暫停與恢復、缺檔 TTS、唯讀與帳號同步。支援 Android/iOS/macOS/Web。見 [WP-20 規格](agent/wp-20-word-bank-original-context-spec.md)。 |
 | WP-21 | 續播與進度同步 | WP-06、WP-09、WP-17 | 本機播放 checkpoint → 首頁迷你播放器 → 已同意帳號的 progress outbox 自動同步 → 版本衝突候選 | 本機重開恢復、四平台首頁入口、播放中進度持續更新、progress-only queue 背景派送、UID 隔離、舊 DB migration、衝突不自動 seek；真實兩裝置 Firebase 驗收另列。見 ADR-036。 |
+| WP-22 | Editorial 產品視覺重構 | WP-06、WP-19、WP-20、WP-21 | Phase 4 tokens → 全平台共用 Theme/元件 → Player/Dictionary/Library/WordBank/Bookmarks/Account 外觀 → 回歸與上架 QA | 保留既有功能及持久化；明暗與字體、對比、RWD、Widget/Golden、實機驗收；外部阻礙另列。見 [設計系統](15-editorial-design-system.md) 與 [WP-22 交棒](agent/wp-22-editorial-handoff.md)。Visual Baseline v1.0 已人工確認；release gate 未關閉。 |
 
 ## 工作包共通 Definition of Done
 1. 產出既有模組介面可使用，不引入未核准的隱藏相依。
