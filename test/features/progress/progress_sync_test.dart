@@ -85,6 +85,8 @@ void main() {
       );
       expect(checkpoint.sequence, 1);
       expect(checkpoint.baseRevision, 0);
+      expect(await progress.resumePosition(materialId), 15000);
+      expect((await progress.mostRecentlyPlayed())?.materialId, materialId);
       final rows = await database
           .customSelect(
             "SELECT * FROM sync_outbox WHERE entity_type = 'progress'",
@@ -674,6 +676,8 @@ void main() {
       materials = SqliteMaterialRepository(scope: scope, database: database);
       progress = SqliteProgressRepository(scope: scope, db: database);
       expect(await progress.deviceId(), deviceId);
+      expect(await progress.resumePosition(materialId), 12345);
+      expect((await progress.mostRecentlyPlayed())?.materialId, materialId);
       expect((await progress.claimNext(now))?.checkpoint.positionMs, 12345);
       final other = AccountScope('other-progress-owner');
       final otherDb = await storage.open(other);
@@ -685,8 +689,63 @@ void main() {
       await _importMaterial(storage, other, otherMaterials);
       expect(await otherProgress.deviceId(), isNot(deviceId));
       expect(await otherProgress.canonical(materialId), isNull);
+      expect(await otherProgress.resumePosition(materialId), isNull);
+      expect(await otherProgress.mostRecentlyPlayed(), isNull);
       expect(await otherProgress.claimNext(now), isNull);
       await otherMaterials.close();
+    },
+  );
+
+  test(
+    'a remote revision does not replace a pending local resume position',
+    () async {
+      final local = await progress.recordCheckpoint(
+        stream: stream(device: 'mac', session: 'local-session'),
+        positionMs: 4000,
+        state: CheckpointState.paused,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+      final remote = ProgressCheckpoint(
+        stream: stream(device: 'phone', session: 'remote-session'),
+        positionMs: 3000,
+        state: CheckpointState.paused,
+        sequence: 1,
+        baseRevision: 0,
+      );
+
+      await progress.mergeRemoteCanonical(
+        checkpoint: remote,
+        revision: 1,
+        nowMs: now.add(const Duration(seconds: 1)).millisecondsSinceEpoch,
+      );
+
+      expect(local.positionMs, 4000);
+      expect(
+        (await progress.canonical(materialId))?.checkpoint.positionMs,
+        3000,
+      );
+      expect(await progress.resumePosition(materialId), 4000);
+    },
+  );
+
+  test(
+    'a remote canonical position appears in the local recent list',
+    () async {
+      final remote = ProgressCheckpoint(
+        stream: stream(device: 'other-device', session: 'remote-session'),
+        positionMs: 3600,
+        state: CheckpointState.paused,
+        sequence: 1,
+        baseRevision: 0,
+      );
+      await progress.mergeRemoteCanonical(
+        checkpoint: remote,
+        revision: 1,
+        nowMs: now.millisecondsSinceEpoch,
+      );
+
+      expect(await progress.resumePosition(materialId), 3600);
+      expect((await progress.mostRecentlyPlayed())?.positionMs, 3600);
     },
   );
 
@@ -715,6 +774,31 @@ void main() {
       expect(await progress.claimNext(now), isNotNull);
     },
   );
+
+  test('schema v12 upgrade backfills canonical resume positions', () async {
+    final canonical = ProgressCheckpoint(
+      stream: stream(device: 'old-device', session: 'old-session'),
+      positionMs: 98765,
+      state: CheckpointState.paused,
+      sequence: 3,
+      baseRevision: 2,
+    );
+    await progress.mergeRemoteCanonical(
+      checkpoint: canonical,
+      revision: 3,
+      nowMs: now.millisecondsSinceEpoch,
+    );
+    await database.customStatement('DROP TABLE playback_resume_state');
+    await database.customStatement('PRAGMA user_version = 12');
+    await materials.close();
+
+    database = await storage.open(scope);
+    materials = SqliteMaterialRepository(scope: scope, database: database);
+    progress = SqliteProgressRepository(scope: scope, db: database);
+
+    expect(await progress.resumePosition(materialId), 98765);
+    expect((await progress.mostRecentlyPlayed())?.positionMs, 98765);
+  });
 
   test(
     'recorder checkpoints every 15 seconds and on seek, pause and exit',

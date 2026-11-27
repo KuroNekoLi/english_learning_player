@@ -328,6 +328,16 @@ void main() {
         scope,
         senderDb,
       ).createFolder('Synced empty folder');
+      final sendingProgress = SqliteProgressRepository(
+        scope: scope,
+        db: senderDb,
+      );
+      final sendingProgressTransport = FirebaseProgressTransport(
+        endpoint,
+        sender,
+        http,
+        sending.documents,
+      );
       final sendingRuntime = FirebaseSyncRuntime(
         library: librarySending,
         uid: uid,
@@ -347,9 +357,17 @@ void main() {
         consent: consent,
         repository: senderRepository,
         subtitles: publishingSubtitles,
-        progress: SqliteProgressRepository(scope: scope, db: senderDb),
-        progressTransport: null,
-        progressCoordinator: null,
+        progress: sendingProgress,
+        progressTransport: sendingProgressTransport,
+        progressCoordinator: ProgressSyncCoordinator(
+          scope: scope,
+          repository: sendingProgress,
+          identityProvider: sender,
+          consentProvider: consent,
+          transport: sendingProgressTransport,
+          clock: DateTime.now,
+          random: () => 0.5,
+        ),
       );
       final container = ProviderContainer(
         overrides: [
@@ -375,6 +393,25 @@ void main() {
           )
           .getSingle();
       expect(subtitleOperation.read<String>('state'), 'completed');
+      await sendingProgress.recordCheckpoint(
+        stream: (
+          ownerId: uid,
+          materialId: downloaded.id,
+          deviceId: 'automatic-sync-device',
+          sessionId: 'automatic-sync-session',
+        ),
+        positionMs: 123000,
+        state: CheckpointState.paused,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      await sync.syncAutomatically(refreshCatalog: false);
+      expect(
+        (await sendingProgressTransport.canonical(
+          uid,
+          downloaded.id,
+        ))?.checkpoint.positionMs,
+        123000,
+      );
       final receivingSubtitles = FirebaseSubtitleSync(
         uid: uid,
         documents: receiving.documents,

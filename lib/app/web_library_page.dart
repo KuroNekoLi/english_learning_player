@@ -11,6 +11,7 @@ import '../features/library/widgets/library_item_actions.dart';
 import '../features/library/widgets/library_material_list.dart';
 import '../features/auth/web/web_account_page.dart';
 import '../features/player/player_page.dart';
+import '../features/player/widgets/recent_playback_mini_player.dart';
 import '../features/sync/firebase_sync_view_model.dart';
 import 'library_folder_page.dart';
 
@@ -119,6 +120,7 @@ final class _WebLibraryPageState extends ConsumerState<WebLibraryPage> {
           ),
         ),
       ),
+      bottomNavigationBar: const RecentPlaybackMiniPlayer(),
     );
   }
 }

@@ -10,7 +10,7 @@ class LocalDatabase extends GeneratedDatabase {
   LocalDatabase(super.executor);
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   Iterable<TableInfo<Table, Object?>> get allSchemaEntities => const [];
@@ -69,6 +69,7 @@ class LocalDatabase extends GeneratedDatabase {
       await _createBookmarkSchema();
       await _createSyncSchema();
       await _createProgressSchema();
+      await _createPlaybackResumeSchema();
       await _createFolderLibrarySchema();
       await _createSyncPreferenceSchema();
       await _createLibraryChangesSchema();
@@ -92,6 +93,9 @@ class LocalDatabase extends GeneratedDatabase {
       if (from < 10) await _createDictionarySchema();
       if (from < 11) await _createWordBankSchema();
       if (from == 11) await transaction(_upgradeWordBankSchema);
+      if (from < 13) {
+        await transaction(() => _createPlaybackResumeSchema(backfill: true));
+      }
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
@@ -391,6 +395,41 @@ class LocalDatabase extends GeneratedDatabase {
       CREATE INDEX IF NOT EXISTS progress_outbox_due
       ON sync_outbox (owner_id, entity_type, state, next_retry_at_ms, created_at_ms)
     ''');
+  }
+
+  Future<void> _createPlaybackResumeSchema({bool backfill = false}) async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS playback_resume_state (
+        owner_id TEXT NOT NULL,
+        material_id TEXT NOT NULL,
+        position_ms INTEGER NOT NULL CHECK (position_ms >= 0),
+        state TEXT NOT NULL CHECK (state IN ('playing', 'paused', 'stopped', 'completed')),
+        device_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        base_revision INTEGER NOT NULL CHECK (base_revision >= 0),
+        sync_state TEXT NOT NULL CHECK (sync_state IN ('pending', 'synced', 'conflict')),
+        last_played_at_ms INTEGER NOT NULL DEFAULT 0,
+        updated_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (owner_id, material_id),
+        FOREIGN KEY (owner_id, material_id)
+          REFERENCES materials (owner_id, id) ON DELETE CASCADE
+      )
+    ''');
+    await customStatement('''
+      CREATE INDEX IF NOT EXISTS playback_resume_recent
+      ON playback_resume_state (owner_id, last_played_at_ms DESC, updated_at_ms DESC)
+    ''');
+    if (backfill) {
+      await customStatement('''
+        INSERT OR IGNORE INTO playback_resume_state
+          (owner_id, material_id, position_ms, state, device_id, session_id,
+           sequence, base_revision, sync_state, last_played_at_ms, updated_at_ms)
+        SELECT owner_id, material_id, position_ms, state, device_id, session_id,
+               sequence, revision, 'synced', updated_at_ms, updated_at_ms
+        FROM playback_progress
+      ''');
+    }
   }
 
   Future<void> _createFolderLibrarySchema() async {

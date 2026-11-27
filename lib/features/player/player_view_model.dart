@@ -59,9 +59,21 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     return const PlayerViewState();
   }
 
-  Future<void> open(LearningMaterial material, {String? initialCueId}) async {
+  Future<void> open(
+    LearningMaterial material, {
+    String? initialCueId,
+    bool autoplay = false,
+  }) async {
     _ensureUsable();
     if (_closingAccount) return;
+    if (state.isReady &&
+        state.material?.id == material.id &&
+        initialCueId == null) {
+      if (autoplay && state.playback?.playing != true) {
+        await _runAudioCommand(_audioEngine.play);
+      }
+      return;
+    }
     final generation = ++_openGeneration;
     state = PlayerViewState(
       status: PlayerLoadStatus.loading,
@@ -124,6 +136,9 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
             bundle.englishTrack,
           ),
         );
+      }
+      if (autoplay && initialCueId == null) {
+        await _runAudioCommand(_audioEngine.play);
       }
     } catch (error) {
       if (!_isCurrent(generation)) return;

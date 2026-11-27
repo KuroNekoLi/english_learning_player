@@ -33,9 +33,9 @@ final class PlayerPlaybackStartup {
     final repository = await progressRepository();
     if (!isCurrent()) return null;
     if (restorePosition) {
-      final saved = await repository.canonical(bundle.material.id);
+      final positionMs =
+          await repository.resumePosition(bundle.material.id) ?? 0;
       if (!isCurrent()) return null;
-      final positionMs = saved?.checkpoint.positionMs ?? 0;
       if (positionMs > 0) {
         await _audio.seekTo(Duration(milliseconds: positionMs));
       }

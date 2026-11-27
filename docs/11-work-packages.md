@@ -25,6 +25,7 @@
 | WP-18 | Auth／同步安全 | WP-14、WP-17 | Google owner UID → Callable 建立獨立 Email/Password reader UID 並設定 owner claim → reader 唯讀下載 profile | 原生/Web 登入、Firestore/Storage deny-write Emulator 測試、Callable deny-write、reader 本機資料隔離；Console provider、allowlist UID、Rules/Functions 正式部署與真實登入另列 BLOCKED。見 [WP-18 交棒](agent/wp-18-readonly-account-handoff.md)。 |
 | WP-19 | Dictionary 增量功能 | WP-03、WP-06、WP-08 | 滑鼠停留或長按英文字幕單字、字典浮窗、單字與例句朗讀、可離線使用且跨裝置同步的帳號單字庫 | DTO 與快取、滑鼠和觸控 Widget、語音語系、Drift 遷移及 Firebase Emulator 同帳號與唯讀權限驗收。支援 Android/iOS/macOS/Web。 |
 | WP-20 | 單字庫原句卡 | WP-03、WP-04、WP-08、WP-19 | 從字幕收藏時擷取雙語字幕與偏移後音訊區間 → 以既有單字庫 payload 同步 → 詳情卡播放原音或 TTS 備援 | SQLite 舊資料相容、首次原句去重、補加不改收藏排序、字幕偏移單次套用、片段精確起訖、播放器進度暫停與恢復、缺檔 TTS、唯讀與帳號同步。支援 Android/iOS/macOS/Web。見 [WP-20 規格](agent/wp-20-word-bank-original-context-spec.md)。 |
+| WP-21 | 續播與進度同步 | WP-06、WP-09、WP-17 | 本機播放 checkpoint → 首頁迷你播放器 → 已同意帳號的 progress outbox 自動同步 → 版本衝突候選 | 本機重開恢復、四平台首頁入口、播放中進度持續更新、progress-only queue 背景派送、UID 隔離、舊 DB migration、衝突不自動 seek；真實兩裝置 Firebase 驗收另列。見 ADR-036。 |
 
 ## 工作包共通 Definition of Done
 1. 產出既有模組介面可使用，不引入未核准的隱藏相依。

@@ -28,6 +28,8 @@ abstract interface class ProgressRepository {
   });
 
   Future<CanonicalProgress?> canonical(String materialId);
+  Future<int?> resumePosition(String materialId);
+  Future<LocalPlaybackPosition?> mostRecentlyPlayed();
   Future<void> mergeRemoteCanonical({
     required ProgressCheckpoint checkpoint,
     required int revision,

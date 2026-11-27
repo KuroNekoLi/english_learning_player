@@ -7,6 +7,20 @@ final class CanonicalProgress {
   final int revision;
 }
 
+/// Per-account local resume state used by normal playback and the home
+/// mini-player. It is separate from server-canonical conflict resolution.
+final class LocalPlaybackPosition {
+  const LocalPlaybackPosition({
+    required this.materialId,
+    required this.positionMs,
+    required this.lastPlayedAtMs,
+  });
+
+  final String materialId;
+  final int positionMs;
+  final int lastPlayedAtMs;
+}
+
 final class ProgressCandidate {
   const ProgressCandidate({
     required this.id,

@@ -213,6 +213,10 @@ final class FirebaseSyncRuntime {
     return mediaResult;
   }
 
+  /// Sync only progress outbox operations without forcing a catalog scan.
+  /// Called by the background loop even when there are no media operations.
+  Future<SyncRunResult> syncProgress() => _syncProgress();
+
   Future<SyncRunResult> _syncProgress() async {
     final runner = progressCoordinator;
     if (runner == null) return SyncRunResult.idle;

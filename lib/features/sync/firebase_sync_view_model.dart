@@ -79,7 +79,6 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
         state = state.copyWith(status: wordBankIssue);
       }
       final due = await runtime.hasDueMedia(DateTime.now());
-      if (!due && !refreshCatalog) return;
       if (due) {
         final result = await runtime.sync(mediaOnly: true);
         if (!await _canPresent(runtime)) return;
@@ -94,6 +93,20 @@ final class FirebaseSyncViewModel extends Notifier<FirebaseSyncViewState> {
           if (!refreshCatalog) return;
         }
       }
+      final progressResult = await runtime.syncProgress();
+      if (!await _canPresent(runtime)) return;
+      if (progressResult != SyncRunResult.idle && !state.busy) {
+        state = state.copyWith(status: _message(progressResult));
+      }
+      if (progressResult == SyncRunResult.waitingForAuthentication ||
+          progressResult == SyncRunResult.waitingForConsent) {
+        return;
+      }
+      if (progressResult == SyncRunResult.retryScheduled ||
+          progressResult == SyncRunResult.needsAttention) {
+        if (!refreshCatalog) return;
+      }
+      if (!refreshCatalog) return;
       final catalog = await runtime.refresh();
       if (!await _canPresent(runtime) || state.busy) return;
       _refreshLibrary();

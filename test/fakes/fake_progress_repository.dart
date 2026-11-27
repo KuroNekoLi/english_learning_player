@@ -6,6 +6,7 @@ final class FakeProgressRepository implements ProgressRepository {
   String device = 'test-device';
   final List<ProgressCheckpoint> checkpoints = [];
   CanonicalProgress? savedCanonical;
+  final Map<String, LocalPlaybackPosition> localPositions = {};
 
   @override
   Future<String> deviceId() async => device;
@@ -25,12 +26,32 @@ final class FakeProgressRepository implements ProgressRepository {
       baseRevision: savedCanonical?.revision ?? 0,
     );
     checkpoints.add(checkpoint);
+    localPositions[stream.materialId] = LocalPlaybackPosition(
+      materialId: stream.materialId,
+      positionMs: positionMs,
+      lastPlayedAtMs: nowMs,
+    );
     return checkpoint;
   }
 
   @override
   Future<CanonicalProgress?> canonical(String materialId) async =>
       savedCanonical;
+
+  @override
+  Future<int?> resumePosition(String materialId) async =>
+      localPositions[materialId]?.positionMs ??
+      (savedCanonical?.checkpoint.stream.materialId == materialId
+          ? savedCanonical?.checkpoint.positionMs
+          : null);
+
+  @override
+  Future<LocalPlaybackPosition?> mostRecentlyPlayed() async =>
+      localPositions.values.isEmpty
+      ? null
+      : localPositions.values.reduce(
+          (a, b) => a.lastPlayedAtMs >= b.lastPlayedAtMs ? a : b,
+        );
 
   @override
   Future<void> mergeRemoteCanonical({

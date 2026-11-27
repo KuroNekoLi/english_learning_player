@@ -17,6 +17,7 @@ final class PlaybackProgressRecorder {
   final Duration interval;
   DateTime? _lastCheckpointAt;
   int? _lastPositionMs;
+  bool _wasPlaying = false;
   Future<void> _writes = Future<void>.value();
   bool _disposed = false;
 
@@ -26,8 +27,11 @@ final class PlaybackProgressRecorder {
   }) async {
     _ensureActive();
     final now = _clock().toUtc();
+    final startedPlaying = playing && !_wasPlaying;
+    _wasPlaying = playing;
     final shouldWrite =
         _lastCheckpointAt == null ||
+        startedPlaying ||
         now.difference(_lastCheckpointAt!) >= interval;
     if (shouldWrite) {
       await _write(

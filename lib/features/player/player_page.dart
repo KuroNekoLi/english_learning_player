@@ -16,10 +16,16 @@ import 'widgets/subtitle_transcript.dart';
 export 'widgets/subtitle_settings_sheet.dart';
 
 final class PlayerPage extends ConsumerStatefulWidget {
-  const PlayerPage({super.key, required this.material, this.initialCueId});
+  const PlayerPage({
+    super.key,
+    required this.material,
+    this.initialCueId,
+    this.autoplay = false,
+  });
 
   final LearningMaterial material;
   final String? initialCueId;
+  final bool autoplay;
 
   @override
   ConsumerState<PlayerPage> createState() => _PlayerPageState();
@@ -36,7 +42,11 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
         unawaited(
           ref
               .read(playerViewModelProvider.notifier)
-              .open(widget.material, initialCueId: widget.initialCueId),
+              .open(
+                widget.material,
+                initialCueId: widget.initialCueId,
+                autoplay: widget.autoplay,
+              ),
         );
       }
     });

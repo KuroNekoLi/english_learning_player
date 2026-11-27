@@ -36,6 +36,8 @@ WP-09 的本機實作以 `ProgressRepository` 原子保存 checkpoint 與 `sync_
 
 預設每 15 秒寫本地 checkpoint 並排隊；暫停、seek 完成、切教材與生命周期退出寫 checkpoint。是否每 15 秒上傳遠端取決於前景/電量/成本；應合併 outbox 同實體連續進度。不要無限制每幀寫 Firestore。
 
+首頁續播依 [ADR-036](12-decisions-and-risks.md)：每個帳號在本機保存最近播放教材與位置，首頁迷你播放器顯示名稱、時間、可用時的進度線，以及播放/暫停入口。離線可直接使用本機位置；已啟用同步的登入帳號，前景同步循環也會派送只有播放進度、沒有媒體工作的 outbox。遠端 canonical 僅更新持久化進度資料，不會在播放器播放中執行 seek。已同步版本以伺服器 revision 為序；基於舊 revision 的離線或競爭更新保留為衝突候選，交由使用者選擇。
+
 ## 4. 使用者與資料安全
 - Firebase Auth UID 是每個路徑授權核心；Auth providers（Apple/Google/Email）由 ADR 決定。不同 Apple/Google 帳號要有安全明確的 Link Account 流程。
 - Firestore/Storage Security Rules 拒絕讀寫其他 UID，限制文件允許欄位與可變更欄位；拒絕未登入用戶訪問私有教材。

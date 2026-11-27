@@ -11,6 +11,7 @@ import '../domain/progress_models.dart';
 import 'progress_repository.dart';
 import 'progress_payload_codec.dart';
 import 'sqlite_progress_positions.dart';
+import 'sqlite_playback_resume_state.dart';
 import 'sqlite_progress_queue.dart';
 
 final class SqliteProgressRepository implements ProgressRepository {
@@ -20,6 +21,7 @@ final class SqliteProgressRepository implements ProgressRepository {
   final LocalDatabase _db;
   static const _uuid = Uuid();
   late final _positions = SqliteProgressPositions(_scope, _db);
+  late final _resume = SqlitePlaybackResumeState(_scope, _db);
 
   @override
   Future<String> deviceId() async {
@@ -103,6 +105,7 @@ final class SqliteProgressRepository implements ProgressRepository {
       );
       final payload = encodeProgressCheckpoint(checkpoint);
       await _insertOutbox(stream, payload, nowMs, operation: 'writeProgress');
+      await _resume.recordLocal(checkpoint, nowMs);
       await _db.customStatement(
         '''
         UPDATE progress_stream_state SET next_sequence = ?
@@ -125,6 +128,15 @@ final class SqliteProgressRepository implements ProgressRepository {
       _positions.canonical(materialId);
 
   @override
+  Future<int?> resumePosition(String materialId) async =>
+      await _resume.position(materialId) ??
+      (await canonical(materialId))?.checkpoint.positionMs;
+
+  @override
+  Future<LocalPlaybackPosition?> mostRecentlyPlayed() =>
+      _resume.mostRecentlyPlayed();
+
+  @override
   Future<void> mergeRemoteCanonical({
     required ProgressCheckpoint checkpoint,
     required int revision,
@@ -136,6 +148,7 @@ final class SqliteProgressRepository implements ProgressRepository {
       final current = await canonical(checkpoint.stream.materialId);
       if (current != null && current.revision >= revision) return;
       await _positions.upsertCanonical(checkpoint, revision, nowMs);
+      await _resume.applyRemoteCanonical(checkpoint, revision, nowMs);
     });
   }
 
@@ -229,6 +242,13 @@ final class SqliteProgressRepository implements ProgressRepository {
           final resolvedCandidateId = resolutionPayload['resolveCandidateId'];
           if (resolvedCandidateId is String) {
             await _positions.markResolved(resolvedCandidateId, nowMs);
+            await _resume.applyResolution(
+              checkpoint,
+              result.canonicalRevision,
+              nowMs,
+            );
+          } else {
+            await _resume.applyCommit(checkpoint, result.canonicalRevision);
           }
           await _db.customStatement(
             '''
@@ -244,6 +264,7 @@ final class SqliteProgressRepository implements ProgressRepository {
             ],
           );
         case ProgressCommitStatus.ignoredStale:
+          await _resume.markConflict(checkpoint);
           final canonical = result.canonicalCheckpoint;
           if (canonical != null) {
             await _positions.upsertCanonical(
@@ -254,6 +275,7 @@ final class SqliteProgressRepository implements ProgressRepository {
           }
           break;
         case ProgressCommitStatus.conflict:
+          await _resume.markConflict(checkpoint);
           final candidateId = result.candidateId;
           final isResolution =
               (jsonDecode(payload)
