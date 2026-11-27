@@ -8,6 +8,8 @@ import '../../subtitles/domain/subtitle_synchronizer.dart';
 
 enum LearningMode { normal, intensive }
 
+enum CuePlaybackMode { continuous, pauseAfterCue, repeatCue }
+
 enum IntensivePhase { blindListening, englishShown, bilingualShown }
 
 enum SubtitleVisibility { bilingual, englishOnly, chineseOnly, hidden }
@@ -16,12 +18,14 @@ final class LearningSessionState {
   LearningSessionState({
     required this.mode,
     required this.phase,
+    this.playbackMode = CuePlaybackMode.continuous,
     required this.subtitleVisibility,
     required this.currentCue,
     required List<SubtitleCue> translationCues,
   }) : translationCues = List.unmodifiable(translationCues);
 
   final LearningMode mode;
+  final CuePlaybackMode playbackMode;
   final IntensivePhase phase;
   final SubtitleVisibility subtitleVisibility;
   final SubtitleCue? currentCue;
@@ -86,6 +90,7 @@ final class LearningSession {
   SubtitleCue? _currentCue;
   int? _oneShotCueEndMs;
   bool _sessionLoopEnabled = false;
+  bool _pauseAfterCue = false;
   bool _disposed = false;
 
   SubtitleVisibility normalVisibility;
@@ -156,13 +161,19 @@ final class LearningSession {
 
   /// Replays the active cue from its offset-adjusted start without changing
   /// the current reveal phase.
-  Future<bool> replay() async {
+  Future<bool> replay({bool preserveLoop = false}) async {
     _ensureUsable();
     if (!_isActiveMaterial) return false;
     final cue = _currentCue;
     if (cue == null) return false;
     final range = _audioRangeFor(cue);
     if (range == null) return false;
+    if (preserveLoop && _sessionLoopEnabled) {
+      await _audioEngine.seekTo(Duration(milliseconds: range.startMs));
+      await _audioEngine.play();
+      _refreshFromPlayback();
+      return true;
+    }
     _oneShotCueEndMs = null;
     if (_audioEngine.snapshot.currentLoop != null) {
       await _audioEngine.setSentenceLoop(null);
@@ -200,7 +211,7 @@ final class LearningSession {
   }
 
   /// Advances in audio-time order, clears the old loop and masks the new cue.
-  Future<bool> nextCue() async {
+  Future<bool> nextCue({bool continuous = false, bool loop = false}) async {
     _ensureUsable();
     if (!_isActiveMaterial) return false;
     if (_sortedCues.isEmpty) return false;
@@ -220,11 +231,11 @@ final class LearningSession {
           );
     if (next == null) return false;
 
-    return playCue(next.id);
+    return playCue(next.id, continuous: continuous, loop: loop);
   }
 
   /// Plays the previous English cue in audio-time order.
-  Future<bool> previousCue() async {
+  Future<bool> previousCue({bool continuous = false, bool loop = false}) async {
     _ensureUsable();
     if (!_isActiveMaterial || _sortedCues.isEmpty) return false;
     final currentIndex = _currentCue == null
@@ -236,12 +247,20 @@ final class LearningSession {
         ? _sortedCues.length - 1
         : currentIndex - 1;
     if (previousIndex < 0 || previousIndex >= _sortedCues.length) return false;
-    return playCue(_sortedCues[previousIndex].id);
+    return playCue(
+      _sortedCues[previousIndex].id,
+      continuous: continuous,
+      loop: loop,
+    );
   }
 
   /// Plays a selected English cue. Selecting another cue returns intensive
   /// mode to blind listening; selecting the active cue preserves its reveal.
-  Future<bool> playCue(String cueId) async {
+  Future<bool> playCue(
+    String cueId, {
+    bool continuous = false,
+    bool loop = false,
+  }) async {
     _ensureUsable();
     if (!_isActiveMaterial) return false;
     final cue = _cuesById[cueId];
@@ -256,7 +275,12 @@ final class LearningSession {
       _sessionLoopEnabled = false;
     }
     await _audioEngine.seekTo(Duration(milliseconds: range.startMs));
-    _oneShotCueEndMs = range.endMs;
+    if (loop) {
+      await _audioEngine.setSentenceLoop(range);
+      _sessionLoopEnabled = true;
+    } else if (!continuous || _pauseAfterCue) {
+      _oneShotCueEndMs = range.endMs;
+    }
     await _audioEngine.play();
     if (_mode == LearningMode.intensive && !isSameCue) {
       _phase = IntensivePhase.blindListening;
@@ -282,6 +306,11 @@ final class LearningSession {
     return LearningSessionState(
       mode: _mode,
       phase: _phase,
+      playbackMode: _sessionLoopEnabled
+          ? CuePlaybackMode.repeatCue
+          : _pauseAfterCue
+          ? CuePlaybackMode.pauseAfterCue
+          : CuePlaybackMode.continuous,
       subtitleVisibility: _effectiveVisibility(),
       currentCue: _currentCue,
       translationCues: _currentCue == null
@@ -305,6 +334,22 @@ final class LearningSession {
   bool get _isActiveMaterial =>
       _audioEngine.snapshot.materialId == _englishTrack.materialId;
 
+  Future<void> setPlaybackMode(CuePlaybackMode mode) async {
+    _ensureUsable();
+    _pauseAfterCue = mode == CuePlaybackMode.pauseAfterCue;
+    _oneShotCueEndMs = null;
+    if (mode == CuePlaybackMode.repeatCue) {
+      await setCueLoopEnabled(true);
+    } else if (_sessionLoopEnabled ||
+        _audioEngine.snapshot.currentLoop != null) {
+      await setCueLoopEnabled(false);
+    }
+    if (_pauseAfterCue && _currentCue != null) {
+      _oneShotCueEndMs = _audioRangeFor(_currentCue!)?.endMs;
+    }
+    _publish();
+  }
+
   /// Disables the card's one-sentence stop when the user seeks freely.
   void cancelOneShotPlayback() {
     _oneShotCueEndMs = null;
@@ -327,6 +372,13 @@ final class LearningSession {
     if (snapshot.materialId != _englishTrack.materialId) {
       _sessionLoopEnabled = false;
       _oneShotCueEndMs = null;
+    }
+    if (_pauseAfterCue &&
+        _oneShotCueEndMs == null &&
+        snapshot.playing &&
+        snapshot.materialId == _englishTrack.materialId) {
+      final cue = _englishSynchronizer.at(snapshot.positionMs);
+      if (cue != null) _oneShotCueEndMs = _audioRangeFor(cue)?.endMs;
     }
     final oneShotEndMs = _oneShotCueEndMs;
     if (snapshot.playing &&

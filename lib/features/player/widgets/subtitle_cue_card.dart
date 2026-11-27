@@ -15,12 +15,12 @@ final class SubtitleCueCard extends StatelessWidget {
     required this.offsetMs,
     required this.hasChineseTrack,
     required this.active,
+    required this.playing,
     required this.visibility,
     required this.bookmarked,
     required this.onPlay,
     required this.onBookmark,
     required this.onRepeat,
-    required this.onNext,
     this.dictionaryLookup,
   });
 
@@ -29,12 +29,12 @@ final class SubtitleCueCard extends StatelessWidget {
   final int offsetMs;
   final bool hasChineseTrack;
   final bool active;
+  final bool playing;
   final SubtitleVisibility visibility;
   final bool bookmarked;
   final VoidCallback onPlay;
   final VoidCallback onBookmark;
   final VoidCallback onRepeat;
-  final VoidCallback onNext;
   final DictionaryLookupCoordinator? dictionaryLookup;
 
   @override
@@ -55,105 +55,128 @@ final class SubtitleCueCard extends StatelessWidget {
       offsetMs,
     ).clamp(0, 9007199254740991).toInt();
     final timeRange = '${playbackTimeLabel(start)} – ${playbackTimeLabel(end)}';
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
+    final colors = Theme.of(context).colorScheme;
+    return Material(
       color: active
-          ? Theme.of(context).colorScheme.surfaceContainerHigh
-          : Theme.of(context).colorScheme.surface,
+          ? colors.primaryContainer.withValues(alpha: 0.45)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         key: active ? const ValueKey('activeSubtitleCard') : null,
         onTap: onPlay,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 12, 12, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      active ? '正在播放 · $timeRange' : timeRange,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  if (active)
-                    IconButton(
-                      tooltip: bookmarked ? '移除收藏' : '收藏本句',
-                      onPressed: onBookmark,
-                      icon: Icon(
-                        bookmarked ? Icons.bookmark : Icons.bookmark_border,
-                      ),
-                    ),
-                ],
+              IconButton(
+                tooltip: playing ? '暫停本句' : '播放本句',
+                onPressed: onPlay,
+                color: active ? colors.primary : colors.onSurfaceVariant,
+                icon: Icon(
+                  playing
+                      ? Icons.pause_circle_filled
+                      : Icons.play_circle_outline,
+                ),
               ),
-              if (visibility == SubtitleVisibility.hidden)
-                const Text('字幕已遮蔽')
-              else ...[
-                if (showEnglish)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: DictionaryWordText(
-                      text: line.english,
-                      coordinator: dictionaryLookup,
-                      originalContext: originalContext,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: active
-                            ? FontWeight.w700
-                            : FontWeight.normal,
-                      ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            active
+                                ? '${playing ? '正在播放' : '已暫停'} · $timeRange'
+                                : timeRange,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                        if (active)
+                          IconButton(
+                            tooltip: bookmarked ? '移除收藏' : '收藏本句',
+                            onPressed: onBookmark,
+                            icon: Icon(
+                              bookmarked
+                                  ? Icons.bookmark
+                                  : Icons.bookmark_border,
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                if (showChinese)
-                  if (line.translations.isEmpty)
-                    if (hasChineseTrack ||
-                        visibility == SubtitleVisibility.chineseOnly)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 4),
-                        child: Text('未找到對應中文字幕'),
-                      )
-                    else
-                      const SizedBox.shrink()
-                  else
-                    for (final translation in line.translations)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          translation.text,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                color: active
-                                    ? Theme.of(context).colorScheme.onSurface
-                                    : Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
+                    if (visibility == SubtitleVisibility.hidden)
+                      const Text('字幕已遮蔽')
+                    else ...[
+                      if (showEnglish)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: DictionaryWordText(
+                            text: line.english
+                                .replaceAll(RegExp(r'\s+'), ' ')
+                                .trim(),
+                            coordinator: dictionaryLookup,
+                            originalContext: originalContext,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w400,
+                                  fontSize: 19,
+                                  height: 1.5,
+                                ),
+                          ),
+                        ),
+                      if (showChinese)
+                        if (line.translations.isEmpty)
+                          if (hasChineseTrack ||
+                              visibility == SubtitleVisibility.chineseOnly)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 4),
+                              child: Text('未找到對應中文字幕'),
+                            )
+                          else
+                            const SizedBox.shrink()
+                        else
+                          for (final translation in line.translations)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                translation.text
+                                    .replaceAll(RegExp(r'\s+'), ' ')
+                                    .trim(),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                      fontSize: 15,
+                                      height: 1.5,
+                                    ),
                               ),
+                            ),
+                    ],
+                    if (active)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Wrap(
+                          spacing: 4,
+                          children: [
+                            IconButton(
+                              tooltip: '重播本句',
+                              onPressed: onRepeat,
+                              icon: const Icon(Icons.replay_rounded),
+                            ),
+                          ],
                         ),
                       ),
-              ],
-              if (active)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Wrap(
-                    spacing: 4,
-                    children: [
-                      IconButton(
-                        tooltip: '重播本句',
-                        onPressed: onRepeat,
-                        icon: const Icon(Icons.replay_rounded),
-                      ),
-                      IconButton(
-                        tooltip: '下一句',
-                        onPressed: onNext,
-                        icon: const Icon(Icons.skip_next_rounded),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
+              ),
             ],
           ),
         ),

@@ -318,43 +318,41 @@ void main() {
     expect(audio.snapshot.positionMs, greaterThan(0));
   });
 
-  testWidgets('tapping the current sentence seeks and plays it once', (
+  testWidgets(
+    'current sentence play button resumes and pauses without seeking',
+    (tester) async {
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+      audio.advanceTo(1800);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('播放本句'));
+      await tester.pumpAndSettle();
+      expect(audio.seekCalls, 0);
+      expect(audio.snapshot.playing, isTrue);
+      expect(audio.snapshot.positionMs, 1800);
+      await tester.tap(find.byTooltip('暫停本句'));
+      await tester.pumpAndSettle();
+      expect(audio.snapshot.playing, isFalse);
+      expect(audio.snapshot.positionMs, 1800);
+    },
+  );
+
+  testWidgets('pause-after-cue mode stops at sentence boundary', (
     tester,
   ) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     audio.advanceTo(1800);
     await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('activeSubtitleCard')));
+    await tester.tap(find.byTooltip('播放模式'));
     await tester.pumpAndSettle();
-
-    expect(audio.seekCalls, 1);
-    expect(audio.playCalls, 1);
-    expect(audio.snapshot.positionMs, 1000);
-    expect(
-      progress.checkpoints.any((checkpoint) => checkpoint.positionMs == 1000),
-      isTrue,
-    );
-  });
-
-  testWidgets('tapping a sentence card plays only that sentence', (
-    tester,
-  ) async {
-    await tester.pumpWidget(buildApp());
+    await tester.tap(find.text('逐句暫停'));
     await tester.pumpAndSettle();
-    audio.advanceTo(1800);
+    await tester.tap(find.byTooltip('播放本句'));
     await tester.pumpAndSettle();
-    expect(audio.snapshot.currentLoop, isNull);
-
-    await tester.tap(find.byKey(const ValueKey('activeSubtitleCard')));
-    await tester.pumpAndSettle();
-    expect(audio.snapshot.currentLoop, isNull);
     expect(audio.snapshot.playing, isTrue);
-
     audio.advanceTo(2600);
     await tester.pumpAndSettle();
-    expect(audio.snapshot.positionMs, 2600);
     expect(audio.snapshot.playing, isFalse);
   });
 

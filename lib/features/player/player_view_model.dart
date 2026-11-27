@@ -240,7 +240,10 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   Future<void> replay() async {
     final session = _session;
     if (session != null) {
-      await _runAudioCommand(session.replay, persistProgress: true);
+      await _runAudioCommand(
+        () => session.replay(preserveLoop: _loopCuePlayback),
+        persistProgress: true,
+      );
     }
   }
 
@@ -248,7 +251,11 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
     final session = _session;
     if (session != null) {
       await _runAudioCommand(
-        () => session.playCue(cueId),
+        () => session.playCue(
+          cueId,
+          continuous: _continuousCuePlayback,
+          loop: _loopCuePlayback,
+        ),
         persistProgress: true,
       );
     }
@@ -257,14 +264,39 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
   Future<void> nextCue() async {
     final session = _session;
     if (session != null) {
-      await _runAudioCommand(session.nextCue, persistProgress: true);
+      await _runAudioCommand(
+        () => session.nextCue(
+          continuous: _continuousCuePlayback,
+          loop: _loopCuePlayback,
+        ),
+        persistProgress: true,
+      );
     }
   }
 
   Future<void> previousCue() async {
     final session = _session;
     if (session != null) {
-      await _runAudioCommand(session.previousCue, persistProgress: true);
+      await _runAudioCommand(
+        () => session.previousCue(
+          continuous: _continuousCuePlayback,
+          loop: _loopCuePlayback,
+        ),
+        persistProgress: true,
+      );
+    }
+  }
+
+  bool get _continuousCuePlayback =>
+      state.learning?.mode != LearningMode.intensive &&
+      state.learning?.playbackMode == CuePlaybackMode.continuous;
+  bool get _loopCuePlayback =>
+      state.learning?.playbackMode == CuePlaybackMode.repeatCue;
+
+  Future<void> setCuePlaybackMode(CuePlaybackMode mode) async {
+    final session = _session;
+    if (session != null) {
+      await _runAudioCommand(() => session.setPlaybackMode(mode));
     }
   }
 

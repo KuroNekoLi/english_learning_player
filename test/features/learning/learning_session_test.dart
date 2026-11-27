@@ -25,6 +25,23 @@ void main() {
       await audio.dispose();
     });
 
+    test('continuous mode allows playback beyond the selected cue', () async {
+      await session.setPlaybackMode(CuePlaybackMode.continuous);
+      await session.playCue('en-1', continuous: true);
+      audio.advanceTo(1100);
+      await _flushPlaybackEvents();
+      expect(audio.snapshot.playing, isTrue);
+    });
+
+    test('pause mode stops at the end of the cue', () async {
+      await session.setPlaybackMode(CuePlaybackMode.pauseAfterCue);
+      await session.playCue('en-1', continuous: true);
+      audio.advanceTo(1100);
+      await _flushPlaybackEvents();
+      expect(audio.snapshot.playing, isFalse);
+      expect(session.state.playbackMode, CuePlaybackMode.pauseAfterCue);
+    });
+
     test('T-LEARN-01 enforces blind then English then bilingual reveal', () {
       session.enterIntensive();
       expect(session.state.mode, LearningMode.intensive);

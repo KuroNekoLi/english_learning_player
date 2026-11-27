@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart';
 
 import '../../dictionary/widgets/dictionary_word_text.dart';
 import '../../dictionary/domain/original_word_context.dart';
@@ -22,7 +23,8 @@ final class SubtitleTranscript extends StatefulWidget {
     required this.onPlayCue,
     required this.onBookmark,
     required this.onRepeatCue,
-    required this.onNextCue,
+    required this.playing,
+    required this.onTogglePlayback,
   });
 
   final SubtitleTimeline timeline;
@@ -35,7 +37,8 @@ final class SubtitleTranscript extends StatefulWidget {
   final Future<void> Function(String cueId) onPlayCue;
   final Future<void> Function() onBookmark;
   final Future<void> Function() onRepeatCue;
-  final Future<void> Function() onNextCue;
+  final bool playing;
+  final Future<void> Function() onTogglePlayback;
 
   @override
   State<SubtitleTranscript> createState() => _SubtitleTranscriptState();
@@ -46,7 +49,8 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
   final _dictionaryLookup = DictionaryLookupCoordinator();
   final _rowKeys = <String, GlobalKey>{};
   String? _lastAutoScrolledCueId;
-  double _averageRowExtent = 176;
+  double _averageRowExtent = 110;
+  bool _following = true;
 
   @override
   void dispose() {
@@ -57,68 +61,109 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
   @override
   Widget build(BuildContext context) {
     _keepCurrentCueVisible();
-    return NotificationListener<ScrollStartNotification>(
-      onNotification: (notification) {
-        if (notification.depth != 0) return false;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _dictionaryLookup.close();
-        });
-        return false;
-      },
-      child: ListView.builder(
-        key: const ValueKey('subtitleTranscriptList'),
-        controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-        itemCount: widget.timeline.lines.length,
-        itemBuilder: (context, index) {
-          final line = widget.timeline.lines[index];
-          final active = widget.activeCueId == line.cue.id;
-          final startMs = subtitleToAudioMs(
-            line.cue.startMs,
-            widget.timeline.offsetMs,
-          );
-          final endMs = subtitleToAudioMs(
-            line.cue.endMs,
-            widget.timeline.offsetMs,
-          );
-          final originalContext =
-              endMs > startMs && line.english.trim().isNotEmpty
-              ? OriginalWordContext(
-                  materialId: widget.materialId,
-                  materialTitle: widget.materialTitle,
-                  startMs: startMs < 0 ? 0 : startMs,
-                  endMs: endMs,
-                  english: line.english.trim(),
-                  translations: [
-                    for (final translation in line.translations)
-                      if (translation.text.trim().isNotEmpty)
-                        translation.text.trim(),
-                  ],
-                )
-              : null;
-          return SubtitleCueCard(
-            dictionaryLookup: _dictionaryLookup,
-            key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
-            line: line,
-            originalContext: originalContext,
-            offsetMs: widget.timeline.offsetMs,
-            hasChineseTrack: widget.timeline.hasChineseTrack,
-            active: active,
-            visibility: widget.intensive && !active
-                ? SubtitleVisibility.hidden
-                : widget.visibility,
-            bookmarked: widget.isCurrentCueBookmarked,
-            onPlay: () => unawaited(widget.onPlayCue(line.cue.id)),
-            onBookmark: () => unawaited(widget.onBookmark()),
-            onRepeat: () => unawaited(widget.onRepeatCue()),
-            onNext: () => unawaited(widget.onNextCue()),
-          );
-        },
-      ),
+    return Stack(
+      children: [
+        Listener(
+          onPointerSignal: (event) {
+            if (event is PointerScrollEvent && _following) {
+              setState(() => _following = false);
+            }
+          },
+          child: NotificationListener<ScrollStartNotification>(
+            onNotification: (notification) {
+              if (notification.depth != 0) return false;
+              if (notification.dragDetails != null && _following) {
+                setState(() => _following = false);
+              }
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _dictionaryLookup.close();
+              });
+              return false;
+            },
+            child: ListView.builder(
+              key: const ValueKey('subtitleTranscriptList'),
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              itemCount: widget.timeline.lines.length,
+              itemBuilder: (context, index) {
+                final line = widget.timeline.lines[index];
+                final active = widget.activeCueId == line.cue.id;
+                final startMs = subtitleToAudioMs(
+                  line.cue.startMs,
+                  widget.timeline.offsetMs,
+                );
+                final endMs = subtitleToAudioMs(
+                  line.cue.endMs,
+                  widget.timeline.offsetMs,
+                );
+                final originalContext =
+                    endMs > startMs && line.english.trim().isNotEmpty
+                    ? OriginalWordContext(
+                        materialId: widget.materialId,
+                        materialTitle: widget.materialTitle,
+                        startMs: startMs < 0 ? 0 : startMs,
+                        endMs: endMs,
+                        english: line.english.trim(),
+                        translations: [
+                          for (final translation in line.translations)
+                            if (translation.text.trim().isNotEmpty)
+                              translation.text.trim(),
+                        ],
+                      )
+                    : null;
+                return SubtitleCueCard(
+                  dictionaryLookup: _dictionaryLookup,
+                  key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
+                  line: line,
+                  originalContext: originalContext,
+                  offsetMs: widget.timeline.offsetMs,
+                  hasChineseTrack: widget.timeline.hasChineseTrack,
+                  active: active,
+                  playing: active && widget.playing,
+                  visibility: widget.intensive && !active
+                      ? SubtitleVisibility.hidden
+                      : widget.visibility,
+                  bookmarked: widget.isCurrentCueBookmarked,
+                  onPlay: () {
+                    setState(() {
+                      _following = true;
+                      _lastAutoScrolledCueId = null;
+                    });
+                    if (active) {
+                      unawaited(widget.onTogglePlayback());
+                    } else {
+                      unawaited(widget.onPlayCue(line.cue.id));
+                    }
+                  },
+                  onBookmark: () => unawaited(widget.onBookmark()),
+                  onRepeat: () => unawaited(widget.onRepeatCue()),
+                );
+              },
+            ),
+          ),
+        ),
+        if (!_following)
+          Positioned(
+            bottom: 12,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: FilledButton.tonalIcon(
+                onPressed: () => setState(() {
+                  _following = true;
+                  _lastAutoScrolledCueId = null;
+                }),
+                icon: const Icon(Icons.my_location),
+                label: const Text('回到播放位置'),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
   void _keepCurrentCueVisible() {
+    if (!_following) return;
     final activeCueId = widget.activeCueId;
     if (activeCueId == null) {
       _lastAutoScrolledCueId = null;
@@ -128,6 +173,7 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
     _lastAutoScrolledCueId = activeCueId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
+          !_following ||
           !_scrollController.hasClients ||
           widget.activeCueId != activeCueId) {
         return;
@@ -161,6 +207,7 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
     required int attemptsRemaining,
   }) {
     if (!mounted ||
+        !_following ||
         !_scrollController.hasClients ||
         widget.activeCueId != cueId) {
       return;

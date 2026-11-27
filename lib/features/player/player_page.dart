@@ -66,6 +66,11 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
         const SingleActivator(LogicalKeyboardKey.space):
             viewModel.togglePlayback,
         const SingleActivator(LogicalKeyboardKey.arrowRight): viewModel.nextCue,
+        const SingleActivator(LogicalKeyboardKey.arrowLeft):
+            viewModel.previousCue,
+        const SingleActivator(LogicalKeyboardKey.keyA): viewModel.previousCue,
+        const SingleActivator(LogicalKeyboardKey.keyS): viewModel.replay,
+        const SingleActivator(LogicalKeyboardKey.keyD): viewModel.nextCue,
       },
       child: Focus(
         autofocus: true,
@@ -75,7 +80,7 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
               message: widget.material.title,
               excludeFromSemantics: true,
               child: Text(
-                widget.material.title,
+                _displayTitle(widget.material.title),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -115,11 +120,10 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1120),
+          constraints: const BoxConstraints(maxWidth: 900),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              PlaybackControls(state: state, viewModel: viewModel),
               SubtitleToolbar(
                 visibility: state.normalVisibility,
                 onVisibilityChanged:
@@ -147,19 +151,28 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
                         intensive:
                             state.learning?.mode == LearningMode.intensive,
                         activeCueId: state.learning?.currentCue?.id,
+                        playing: state.playback?.playing == true,
                         isCurrentCueBookmarked: state.isCurrentCueBookmarked,
                         onPlayCue: viewModel.playCue,
+                        onTogglePlayback: viewModel.togglePlayback,
                         onBookmark: viewModel.toggleBookmark,
                         onRepeatCue: viewModel.replay,
-                        onNextCue: viewModel.nextCue,
                       ),
               ),
+              const Divider(height: 1),
+              PlaybackControls(state: state, viewModel: viewModel),
             ],
           ),
         ),
       ),
     );
   }
+
+  String _displayTitle(String title) => title
+      .replaceFirst(RegExp(r'\.(m4a|mp3|wav|mp4)$', caseSensitive: false), '')
+      .replaceFirst(RegExp(r'\s*\[[A-Za-z0-9_-]{11}\]$'), '')
+      .replaceAll('_', ' ')
+      .trim();
 
   Future<void> _showSubtitleSettings(
     BuildContext context,
