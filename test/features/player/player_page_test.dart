@@ -1,3 +1,6 @@
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:english_learning_player/features/player/subtitle_style.dart';
+import 'package:english_learning_player/features/dictionary/domain/saved_dictionary_word.dart';
 import 'package:english_learning_player/core/audio/audio_engine_provider.dart';
 import 'package:english_learning_player/core/audio/audio_engine.dart';
 import 'package:english_learning_player/core/audio/audio_media_session_provider.dart';
@@ -36,6 +39,7 @@ void main() {
   late FakeProgressRepository progress;
   late FakeAudioMediaSession mediaSession;
   OriginalWordContext? savedOriginalContext;
+  late List<SavedDictionaryWord> savedWords;
   late Widget Function({TextScaler textScaler}) buildApp;
 
   setUp(() {
@@ -84,6 +88,8 @@ void main() {
     progress = FakeProgressRepository();
     mediaSession = FakeAudioMediaSession();
     savedOriginalContext = null;
+    savedWords = [];
+    SharedPreferences.setMockInitialValues({});
     buildApp = ({TextScaler textScaler = TextScaler.noScaling}) =>
         ProviderScope(
           overrides: [
@@ -91,7 +97,9 @@ void main() {
             dictionaryRepositoryProvider.overrideWith(
               (ref) async => _FixtureDictionaryRepository(),
             ),
-            savedDictionaryWordsProvider.overrideWith((ref) async => []),
+            savedDictionaryWordsProvider.overrideWith(
+              (ref) async => savedWords,
+            ),
             updateSavedDictionaryWordProvider.overrideWith((ref) {
               return (word, {required save, context}) async {
                 savedOriginalContext = context;
@@ -133,7 +141,7 @@ void main() {
 
     expect(find.byTooltip('AI 語音辨識（尚未提供）'), findsOneWidget);
     expect(find.byTooltip('手動匯入 SRT'), findsOneWidget);
-    expect(find.byTooltip('字幕樣式（尚未提供）'), findsOneWidget);
+    expect(find.byTooltip('字幕樣式'), findsOneWidget);
     expect(find.text('英文'), findsWidgets);
     expect(find.text('中文'), findsWidgets);
   });
@@ -463,6 +471,99 @@ void main() {
     expect(find.byTooltip('精聽'), findsOneWidget);
     expect(find.text('A sentence to learn.'), findsOneWidget);
     expect(find.text('一句練習句。'), findsOneWidget);
+  });
+
+  testWidgets(
+    'individual translation toggles without seeking or revealing intensive answers',
+    (tester) async {
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+      audio.advanceTo(1800);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('英文'));
+      await tester.pumpAndSettle();
+      expect(find.text('一句練習句。'), findsNothing);
+      await tester.tap(find.byTooltip('顯示本句翻譯'));
+      await tester.pumpAndSettle();
+      expect(find.text('一句練習句。'), findsOneWidget);
+      expect(audio.seekCalls, 0);
+      await tester.tap(find.byTooltip('隱藏本句翻譯'));
+      await tester.pumpAndSettle();
+      expect(find.text('一句練習句。'), findsNothing);
+      await tester.tap(find.byTooltip('顯示本句翻譯'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('精聽'));
+      await tester.pumpAndSettle();
+      expect(find.text('一句練習句。'), findsNothing);
+      expect(find.byTooltip('顯示本句翻譯'), findsNothing);
+      expect(find.byTooltip('隱藏本句翻譯'), findsNothing);
+      await tester.tap(find.byTooltip('退出精聽'));
+      await tester.pumpAndSettle();
+      expect(find.text('一句練習句。'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'saved words highlight only exact words and update when provider invalidates',
+    (tester) async {
+      savedWords = [
+        SavedDictionaryWord(
+          word: await _FixtureDictionaryRepository().lookupWord('SENTENCE'),
+        ),
+        SavedDictionaryWord(
+          word: await _FixtureDictionaryRepository().lookupWord('learned'),
+        ),
+      ];
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+      TextSpan spanFor(String word) {
+        final text = tester.widget<Text>(find.text('A sentence to learn.'));
+        final root = text.textSpan! as TextSpan;
+        return root.children!.whereType<TextSpan>().firstWhere(
+          (s) => s.text == word,
+        );
+      }
+
+      expect(spanFor('sentence').style?.backgroundColor, isNotNull);
+      expect(spanFor('learn').style?.backgroundColor, isNull);
+      savedWords = [];
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(PlayerPage)),
+      );
+      container.invalidate(savedDictionaryWordsProvider);
+      await tester.pumpAndSettle();
+      expect(spanFor('sentence').style?.backgroundColor, isNull);
+    },
+  );
+
+  testWidgets('subtitle style opens, saves preferences and applies font size', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('字幕設定'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('字幕樣式'));
+    await tester.pumpAndSettle();
+    final slider = find.byKey(const ValueKey('英文字體'));
+    await tester.ensureVisible(slider);
+    await tester.tapAt(tester.getCenter(slider));
+    await tester.pumpAndSettle();
+    final save = find.text('儲存字幕樣式');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(PlayerPage)),
+    );
+    final style = await container.read(subtitleStyleProvider.future);
+    expect(style.englishSize, isNot(19));
+    final stored = await SharedPreferences.getInstance();
+    expect(stored.getString('player.subtitle_style.v1'), isNotNull);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    final text = tester.widget<Text>(find.text('A sentence to learn.'));
+    expect((text.textSpan! as TextSpan).style?.fontSize, style.englishSize);
   });
 
   testWidgets('current cue can be bookmarked and removed', (tester) async {

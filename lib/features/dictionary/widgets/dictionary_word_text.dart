@@ -36,12 +36,14 @@ final class DictionaryWordText extends StatefulWidget {
     required this.style,
     this.coordinator,
     this.originalContext,
+    this.savedWords = const {},
   });
 
   final String text;
   final TextStyle? style;
   final DictionaryLookupCoordinator? coordinator;
   final OriginalWordContext? originalContext;
+  final Set<String> savedWords;
 
   @override
   State<DictionaryWordText> createState() => _DictionaryWordTextState();
@@ -187,6 +189,15 @@ final class _DictionaryWordTextState extends State<DictionaryWordText> {
                       .colorScheme
                       .primaryContainer,
                   decoration: TextDecoration.underline,
+                )
+              : widget.savedWords.contains(
+                  match.group(0)!.toLowerCase().replaceAll('’', "'"),
+                )
+              ? TextStyle(
+                  backgroundColor: Theme.of(context)
+                      .colorScheme
+                      .tertiaryContainer,
+                  color: Theme.of(context).colorScheme.onTertiaryContainer,
                 )
               : null,
         ),

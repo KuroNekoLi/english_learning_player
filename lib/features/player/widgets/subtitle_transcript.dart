@@ -9,11 +9,14 @@ import '../../learning/domain/learning_session.dart';
 import '../../subtitles/domain/subtitle_time.dart';
 import '../../subtitles/domain/subtitle_timeline.dart';
 import 'subtitle_cue_card.dart';
+import '../subtitle_style.dart';
 
 final class SubtitleTranscript extends StatefulWidget {
   const SubtitleTranscript({
     super.key,
     required this.timeline,
+    this.style = const SubtitleStyle(),
+    this.savedWords = const {},
     required this.materialId,
     required this.materialTitle,
     required this.visibility,
@@ -27,6 +30,8 @@ final class SubtitleTranscript extends StatefulWidget {
   });
 
   final SubtitleTimeline timeline;
+  final SubtitleStyle style;
+  final Set<String> savedWords;
   final String materialId;
   final String materialTitle;
   final SubtitleVisibility visibility;
@@ -49,6 +54,19 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
   String? _lastAutoScrolledCueId;
   double _averageRowExtent = 110;
   bool _following = true;
+  final _translationOverrides = <String>{};
+
+  @override
+  void didUpdateWidget(SubtitleTranscript oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visibility != widget.visibility ||
+        oldWidget.intensive != widget.intensive ||
+        oldWidget.materialId != widget.materialId ||
+        oldWidget.timeline != widget.timeline) {
+      _translationOverrides.clear();
+    }
+    if (oldWidget.style != widget.style) _lastAutoScrolledCueId = null;
+  }
 
   @override
   void dispose() {
@@ -109,10 +127,26 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
                         ],
                       )
                     : null;
+                final canToggleTranslation =
+                    !widget.intensive &&
+                    (widget.visibility == SubtitleVisibility.englishOnly ||
+                        widget.visibility == SubtitleVisibility.bilingual) &&
+                    line.translations.any((t) => t.text.trim().isNotEmpty);
+                final overridden = _translationOverrides.contains(line.cue.id);
                 return SubtitleCueCard(
                   dictionaryLookup: _dictionaryLookup,
                   key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
                   line: line,
+                  style: widget.style,
+                  savedWords: widget.savedWords,
+                  translationOverride: canToggleTranslation && overridden,
+                  onToggleTranslation: canToggleTranslation
+                      ? () => setState(() {
+                          if (!_translationOverrides.remove(line.cue.id)) {
+                            _translationOverrides.add(line.cue.id);
+                          }
+                        })
+                      : null,
                   originalContext: originalContext,
                   offsetMs: widget.timeline.offsetMs,
                   hasChineseTrack: widget.timeline.hasChineseTrack,

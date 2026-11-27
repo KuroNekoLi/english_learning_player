@@ -31,6 +31,19 @@ final savedDictionaryWordsProvider =
       retry: (_, _) => null,
     );
 
+/// A normalized lookup set shared by all visible transcript rows.
+final savedDictionaryWordKeysProvider = Provider.autoDispose<Set<String>>((
+  ref,
+) {
+  final words = ref.watch(savedDictionaryWordsProvider).asData?.value;
+  return Set.unmodifiable(
+    words?.map(
+          (entry) => entry.key.trim().toLowerCase().replaceAll('’', "'"),
+        ) ??
+        const <String>[],
+  );
+});
+
 final canEditWordBankProvider = Provider<bool>((ref) {
   final account = ref.watch(accountScopeProvider);
   return account.ownerId == account.cloudUid;

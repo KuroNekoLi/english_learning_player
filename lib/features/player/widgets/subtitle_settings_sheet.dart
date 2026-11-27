@@ -14,6 +14,7 @@ final class SubtitleSettingsSheet extends StatefulWidget {
     required this.onImport,
     required this.visibility,
     required this.onVisibilityChanged,
+    this.onStyle,
   });
 
   final List<SubtitleTrack> tracks;
@@ -23,6 +24,7 @@ final class SubtitleSettingsSheet extends StatefulWidget {
   final Future<void> Function() onImport;
   final SubtitleVisibility visibility;
   final ValueChanged<SubtitleVisibility> onVisibilityChanged;
+  final VoidCallback? onStyle;
 
   @override
   State<SubtitleSettingsSheet> createState() => _SubtitleSettingsSheetState();
@@ -64,8 +66,8 @@ final class _SubtitleSettingsSheetState extends State<SubtitleSettingsSheet> {
                   icon: const Icon(Icons.playlist_add),
                 ),
                 IconButton(
-                  tooltip: '字幕樣式（尚未提供）',
-                  onPressed: null,
+                  tooltip: '字幕樣式',
+                  onPressed: widget.onStyle,
                   icon: const Icon(Icons.tune),
                 ),
               ],

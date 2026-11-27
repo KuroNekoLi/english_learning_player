@@ -6,11 +6,16 @@ import '../../dictionary/widgets/dictionary_word_text.dart';
 import '../../subtitles/domain/subtitle_time.dart';
 import '../../subtitles/domain/subtitle_timeline.dart';
 import 'playback_time_label.dart';
+import '../subtitle_style.dart';
 
 final class SubtitleCueCard extends StatelessWidget {
   const SubtitleCueCard({
     super.key,
     required this.line,
+    this.style = const SubtitleStyle(),
+    this.savedWords = const {},
+    this.translationOverride = false,
+    this.onToggleTranslation,
     this.originalContext,
     required this.offsetMs,
     required this.hasChineseTrack,
@@ -24,6 +29,10 @@ final class SubtitleCueCard extends StatelessWidget {
   });
 
   final SubtitleLine line;
+  final SubtitleStyle style;
+  final Set<String> savedWords;
+  final bool translationOverride;
+  final VoidCallback? onToggleTranslation;
   final OriginalWordContext? originalContext;
   final int offsetMs;
   final bool hasChineseTrack;
@@ -42,7 +51,8 @@ final class SubtitleCueCard extends StatelessWidget {
         visibility == SubtitleVisibility.bilingual;
     final showChinese =
         visibility == SubtitleVisibility.chineseOnly ||
-        visibility == SubtitleVisibility.bilingual;
+        (visibility == SubtitleVisibility.bilingual && !translationOverride) ||
+        (visibility == SubtitleVisibility.englishOnly && translationOverride);
     final cue = line.cue;
     final start = subtitleToAudioMs(
       cue.startMs,
@@ -64,7 +74,12 @@ final class SubtitleCueCard extends StatelessWidget {
         onTap: onPlay,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+          padding: EdgeInsets.fromLTRB(
+            4,
+            style.spacing / 2,
+            4,
+            style.spacing / 2,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -109,12 +124,13 @@ final class SubtitleCueCard extends StatelessWidget {
                                 .replaceAll(RegExp(r'\s+'), ' ')
                                 .trim(),
                             coordinator: dictionaryLookup,
+                            savedWords: savedWords,
                             originalContext: originalContext,
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
                                   fontWeight: FontWeight.w400,
-                                  fontSize: 19,
-                                  height: 1.45,
+                                  fontSize: style.englishSize,
+                                  height: style.lineHeight,
                                 ),
                           ),
                         ),
@@ -138,10 +154,12 @@ final class SubtitleCueCard extends StatelessWidget {
                                     .trim(),
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(
-                                      color: colors.onSurfaceVariant,
-                                      fontSize: 15,
+                                      color: colors.onSurfaceVariant.withValues(
+                                        alpha: style.translationOpacity,
+                                      ),
+                                      fontSize: style.chineseSize,
                                       fontWeight: FontWeight.w400,
-                                      height: 1.5,
+                                      height: style.lineHeight,
                                     ),
                               ),
                             ),
@@ -151,8 +169,23 @@ final class SubtitleCueCard extends StatelessWidget {
               ),
               SizedBox(
                 width: 48,
-                child: active
-                    ? IconButton(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (onToggleTranslation != null)
+                      IconButton(
+                        tooltip: showChinese ? '隱藏本句翻譯' : '顯示本句翻譯',
+                        onPressed: onToggleTranslation,
+                        color: colors.onSurfaceVariant,
+                        iconSize: 20,
+                        icon: Icon(
+                          showChinese
+                              ? Icons.visibility_off_outlined
+                              : Icons.translate_rounded,
+                        ),
+                      ),
+                    if (active)
+                      IconButton(
                         tooltip: bookmarked ? '移除收藏' : '收藏本句',
                         onPressed: onBookmark,
                         color: colors.onSurfaceVariant,
@@ -160,8 +193,9 @@ final class SubtitleCueCard extends StatelessWidget {
                         icon: Icon(
                           bookmarked ? Icons.bookmark : Icons.bookmark_border,
                         ),
-                      )
-                    : null,
+                      ),
+                  ],
+                ),
               ),
             ],
           ),

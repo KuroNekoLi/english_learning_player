@@ -7,6 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/learning/domain/learning_session.dart';
 import '../../features/library/material_repository.dart';
 import 'player_view_model.dart';
+import 'subtitle_style.dart';
+import '../dictionary/dictionary_dependencies.dart';
+import 'widgets/subtitle_style_sheet.dart';
 import 'widgets/playback_controls.dart';
 import 'widgets/subtitle_empty_state.dart';
 import 'widgets/subtitle_settings_sheet.dart';
@@ -127,10 +130,17 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
       );
     }
 
+    final style =
+        ref.watch(subtitleStyleProvider).asData?.value ?? const SubtitleStyle();
+    final savedWords = style.highlightSavedWords
+        ? ref.watch(savedDictionaryWordKeysProvider)
+        : const <String>{};
     return SafeArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
+          constraints: BoxConstraints(
+            maxWidth: style.readingWidth < 900 ? 900 : style.readingWidth,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -148,24 +158,34 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
                         onImport: () =>
                             _showSubtitleSettings(context, viewModel),
                       )
-                    : SubtitleTranscript(
-                        key: ValueKey(
-                          '${state.englishTrack!.id}:${state.englishTrack!.revision}:${state.subtitleTracks.length}',
+                    : Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: style.readingWidth,
+                          ),
+                          child: SubtitleTranscript(
+                            key: ValueKey(
+                              '${widget.material.id}:${state.englishTrack!.id}:${state.englishTrack!.revision}:${state.subtitleTracks.length}',
+                            ),
+                            timeline: state.timeline!,
+                            style: style,
+                            savedWords: savedWords,
+                            materialId: widget.material.id,
+                            materialTitle: widget.material.title,
+                            visibility:
+                                state.learning?.subtitleVisibility ??
+                                state.normalVisibility,
+                            intensive:
+                                state.learning?.mode == LearningMode.intensive,
+                            activeCueId: state.learning?.currentCue?.id,
+                            playing: state.playback?.playing == true,
+                            isCurrentCueBookmarked:
+                                state.isCurrentCueBookmarked,
+                            onPlayCue: viewModel.playCue,
+                            onTogglePlayback: viewModel.togglePlayback,
+                            onBookmark: viewModel.toggleBookmark,
+                          ),
                         ),
-                        timeline: state.timeline!,
-                        materialId: widget.material.id,
-                        materialTitle: widget.material.title,
-                        visibility:
-                            state.learning?.subtitleVisibility ??
-                            state.normalVisibility,
-                        intensive:
-                            state.learning?.mode == LearningMode.intensive,
-                        activeCueId: state.learning?.currentCue?.id,
-                        playing: state.playback?.playing == true,
-                        isCurrentCueBookmarked: state.isCurrentCueBookmarked,
-                        onPlayCue: viewModel.playCue,
-                        onTogglePlayback: viewModel.togglePlayback,
-                        onBookmark: viewModel.toggleBookmark,
                       ),
               ),
               const Divider(height: 1),
@@ -182,6 +202,27 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
       .replaceFirst(RegExp(r'\s*\[[A-Za-z0-9_-]{11}\]$'), '')
       .replaceAll('_', ' ')
       .trim();
+
+  Future<void> _showSubtitleStyle(BuildContext context) async {
+    final initial =
+        ref.read(subtitleStyleProvider).asData?.value ?? const SubtitleStyle();
+    final result = await showModalBottomSheet<SubtitleStyle>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SubtitleStyleSheet(initial: initial),
+    );
+    if (result == null || !mounted) return;
+    try {
+      await saveSubtitleStyle(result);
+      if (mounted) ref.invalidate(subtitleStyleProvider);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(this.context)
+            .showSnackBar(const SnackBar(content: Text('無法儲存字幕樣式，請重試。')));
+      }
+    }
+  }
 
   Future<void> _showSubtitleSettings(
     BuildContext context,
@@ -207,6 +248,7 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
             );
             return SubtitleSettingsSheet(
               tracks: settings.tracks,
+              onStyle: () => _showSubtitleStyle(context),
               visibility: settings.visibility,
               onVisibilityChanged: viewModel.setNormalVisibility,
               onImport: () async {
