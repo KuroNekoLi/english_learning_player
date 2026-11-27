@@ -20,7 +20,6 @@ final class SubtitleCueCard extends StatelessWidget {
     required this.bookmarked,
     required this.onPlay,
     required this.onBookmark,
-    required this.onRepeat,
     this.dictionaryLookup,
   });
 
@@ -34,7 +33,6 @@ final class SubtitleCueCard extends StatelessWidget {
   final bool bookmarked;
   final VoidCallback onPlay;
   final VoidCallback onBookmark;
-  final VoidCallback onRepeat;
   final DictionaryLookupCoordinator? dictionaryLookup;
 
   @override
@@ -60,18 +58,19 @@ final class SubtitleCueCard extends StatelessWidget {
       color: active
           ? colors.primaryContainer.withValues(alpha: 0.45)
           : Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
         key: active ? const ValueKey('activeSubtitleCard') : null,
         onTap: onPlay,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               IconButton(
                 tooltip: playing ? '暫停本句' : '播放本句',
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                 onPressed: onPlay,
                 color: active ? colors.primary : colors.onSurfaceVariant,
                 icon: Icon(
@@ -84,34 +83,20 @@ final class SubtitleCueCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            active
-                                ? '${playing ? '正在播放' : '已暫停'} · $timeRange'
-                                : timeRange,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5, bottom: 2),
+                      child: Text(
+                        active
+                            ? '$timeRange · ${playing ? '播放中' : '已暫停'}'
+                            : timeRange,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: colors.onSurfaceVariant,
                         ),
-                        if (active)
-                          IconButton(
-                            tooltip: bookmarked ? '移除收藏' : '收藏本句',
-                            onPressed: onBookmark,
-                            icon: Icon(
-                              bookmarked
-                                  ? Icons.bookmark
-                                  : Icons.bookmark_border,
-                            ),
-                          ),
-                      ],
+                      ),
                     ),
                     if (visibility == SubtitleVisibility.hidden)
                       const Text('字幕已遮蔽')
@@ -129,7 +114,7 @@ final class SubtitleCueCard extends StatelessWidget {
                                 ?.copyWith(
                                   fontWeight: FontWeight.w400,
                                   fontSize: 19,
-                                  height: 1.5,
+                                  height: 1.45,
                                 ),
                           ),
                         ),
@@ -151,31 +136,32 @@ final class SubtitleCueCard extends StatelessWidget {
                                 translation.text
                                     .replaceAll(RegExp(r'\s+'), ' ')
                                     .trim(),
-                                style: Theme.of(context).textTheme.titleMedium
+                                style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(
                                       color: colors.onSurfaceVariant,
                                       fontSize: 15,
+                                      fontWeight: FontWeight.w400,
                                       height: 1.5,
                                     ),
                               ),
                             ),
                     ],
-                    if (active)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Wrap(
-                          spacing: 4,
-                          children: [
-                            IconButton(
-                              tooltip: '重播本句',
-                              onPressed: onRepeat,
-                              icon: const Icon(Icons.replay_rounded),
-                            ),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
+              ),
+              SizedBox(
+                width: 48,
+                child: active
+                    ? IconButton(
+                        tooltip: bookmarked ? '移除收藏' : '收藏本句',
+                        onPressed: onBookmark,
+                        color: colors.onSurfaceVariant,
+                        iconSize: 20,
+                        icon: Icon(
+                          bookmarked ? Icons.bookmark : Icons.bookmark_border,
+                        ),
+                      )
+                    : null,
               ),
             ],
           ),

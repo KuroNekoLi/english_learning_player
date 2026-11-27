@@ -22,7 +22,6 @@ final class SubtitleTranscript extends StatefulWidget {
     required this.isCurrentCueBookmarked,
     required this.onPlayCue,
     required this.onBookmark,
-    required this.onRepeatCue,
     required this.playing,
     required this.onTogglePlayback,
   });
@@ -36,7 +35,6 @@ final class SubtitleTranscript extends StatefulWidget {
   final bool isCurrentCueBookmarked;
   final Future<void> Function(String cueId) onPlayCue;
   final Future<void> Function() onBookmark;
-  final Future<void> Function() onRepeatCue;
   final bool playing;
   final Future<void> Function() onTogglePlayback;
 
@@ -136,7 +134,6 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
                     }
                   },
                   onBookmark: () => unawaited(widget.onBookmark()),
-                  onRepeat: () => unawaited(widget.onRepeatCue()),
                 );
               },
             ),

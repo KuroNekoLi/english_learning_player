@@ -29,6 +29,12 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
     CuePlaybackMode.repeatCue => '單句循環',
   };
 
+  IconData _modeIcon(CuePlaybackMode mode) => switch (mode) {
+    CuePlaybackMode.continuous => Icons.playlist_play_rounded,
+    CuePlaybackMode.pauseAfterCue => Icons.pause_circle_outline_rounded,
+    CuePlaybackMode.repeatCue => Icons.repeat_one_rounded,
+  };
+
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
@@ -38,6 +44,129 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
     final position = _dragPosition?.round() ?? playback?.positionMs ?? 0;
     final canSeek = state.isReady && duration != null && duration > 0;
     final learning = state.learning;
+    final mode = learning?.playbackMode ?? CuePlaybackMode.continuous;
+    final intensive = learning?.mode == LearningMode.intensive;
+    final theme = Theme.of(context);
+    final timeStyle = theme.textTheme.bodySmall?.copyWith(
+      fontSize: 12,
+      fontWeight: FontWeight.w400,
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final speedControl = PopupMenuButton<double>(
+      tooltip: '播放速度',
+      enabled: state.isReady,
+      initialValue: playback?.speed ?? 1,
+      onSelected: (speed) => unawaited(viewModel.setSpeed(speed)),
+      itemBuilder: (context) => [
+        for (final speed in [0.5, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0])
+          PopupMenuItem(value: speed, child: Text('$speed×')),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${playback?.speed ?? 1.0}×'),
+            const Icon(Icons.expand_more, size: 16),
+          ],
+        ),
+      ),
+    );
+    final modeControl = PopupMenuButton<CuePlaybackMode>(
+      tooltip: '播放模式',
+      enabled: learning != null,
+      initialValue: mode,
+      onSelected: (mode) => unawaited(viewModel.setCuePlaybackMode(mode)),
+      itemBuilder: (context) => [
+        for (final option in CuePlaybackMode.values)
+          PopupMenuItem(
+            value: option,
+            enabled:
+                option != CuePlaybackMode.repeatCue ||
+                learning?.currentCue != null,
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(_modeIcon(option)),
+              title: Text(_modeLabel(option)),
+              trailing: option == mode ? const Icon(Icons.check) : null,
+            ),
+          ),
+      ],
+      child: Semantics(
+        label: '目前播放模式：${_modeLabel(mode)}',
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_modeIcon(mode), size: 24),
+              Text(_modeLabel(mode), style: timeStyle),
+            ],
+          ),
+        ),
+      ),
+    );
+    final intensiveControl = IconButton(
+      tooltip: intensive ? '退出精聽' : '精聽',
+      isSelected: intensive,
+      onPressed: learning == null ? null : viewModel.toggleIntensiveMode,
+      icon: const Icon(Icons.school_outlined),
+      selectedIcon: Icon(Icons.school, color: theme.colorScheme.primary),
+    );
+    final primaryControls = SizedBox(
+      width: 248,
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  tooltip: '上一句 (A / ←)',
+                  onPressed: state.englishTrack == null
+                      ? null
+                      : () => unawaited(viewModel.previousCue()),
+                  icon: const Icon(Icons.skip_previous_rounded),
+                ),
+                IconButton(
+                  tooltip: '重播本句 (S)',
+                  onPressed: learning?.currentCue == null
+                      ? null
+                      : () => unawaited(viewModel.replay()),
+                  icon: const Icon(Icons.replay_rounded),
+                ),
+              ],
+            ),
+          ),
+          IconButton.filled(
+            key: const ValueKey('primaryPlayPauseButton'),
+            tooltip: playback?.playing == true ? '暫停 (Space)' : '播放 (Space)',
+            style: IconButton.styleFrom(fixedSize: const Size(56, 56)),
+            onPressed: state.isReady
+                ? () => unawaited(viewModel.togglePlayback())
+                : null,
+            icon: Icon(
+              playback?.playing == true
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+            ),
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                tooltip: '下一句 (D / →)',
+                onPressed: state.englishTrack == null
+                    ? null
+                    : () => unawaited(viewModel.nextCue()),
+                icon: const Icon(Icons.skip_next_rounded),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
@@ -47,7 +176,7 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
           children: [
             Row(
               children: [
-                Text(playbackTimeLabel(position)),
+                Text(playbackTimeLabel(position), style: timeStyle),
                 Expanded(
                   child: Slider(
                     key: const ValueKey('playbackPositionSlider'),
@@ -69,100 +198,65 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
                         : null,
                   ),
                 ),
-                Text(duration == null ? '--:--' : playbackTimeLabel(duration)),
+                Text(
+                  duration == null ? '--:--' : playbackTimeLabel(duration),
+                  style: timeStyle,
+                ),
               ],
             ),
-            Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              children: [
-                IconButton(
-                  tooltip: '上一句',
-                  onPressed: state.englishTrack == null
-                      ? null
-                      : () => unawaited(viewModel.previousCue()),
-                  icon: const Icon(Icons.skip_previous_rounded),
-                ),
-                IconButton(
-                  tooltip: '重播本句',
-                  onPressed: learning?.currentCue == null
-                      ? null
-                      : () => unawaited(viewModel.replay()),
-                  icon: const Icon(Icons.replay_rounded),
-                ),
-                IconButton.filled(
-                  tooltip: playback?.playing == true ? '暫停' : '播放',
-                  onPressed: state.isReady
-                      ? () => unawaited(viewModel.togglePlayback())
-                      : null,
-                  icon: Icon(
-                    playback?.playing == true
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                  ),
-                ),
-                IconButton(
-                  tooltip: '下一句',
-                  onPressed: state.englishTrack == null
-                      ? null
-                      : () => unawaited(viewModel.nextCue()),
-                  icon: const Icon(Icons.skip_next_rounded),
-                ),
-                PopupMenuButton<double>(
-                  tooltip: '播放速度',
-                  initialValue: playback?.speed ?? 1,
-                  onSelected: (speed) => unawaited(viewModel.setSpeed(speed)),
-                  itemBuilder: (context) => [
-                    for (final speed in [0.5, 0.75, 0.9, 1.0, 1.25, 1.5, 2.0])
-                      PopupMenuItem(value: speed, child: Text('$speed×')),
-                  ],
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text('${playback?.speed ?? 1.0}×'),
-                  ),
-                ),
-                PopupMenuButton<CuePlaybackMode>(
-                  tooltip: '播放模式',
-                  enabled: learning != null,
-                  initialValue: learning?.playbackMode,
-                  onSelected: (mode) =>
-                      unawaited(viewModel.setCuePlaybackMode(mode)),
-                  itemBuilder: (context) => [
-                    for (final mode in CuePlaybackMode.values)
-                      PopupMenuItem(
-                        value: mode,
-                        enabled:
-                            mode != CuePlaybackMode.repeatCue ||
-                            learning?.currentCue != null,
-                        child: Text(_modeLabel(mode)),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final wide =
+                    constraints.maxWidth >= 600 &&
+                    MediaQuery.textScalerOf(context).scale(12) <= 18;
+                if (wide) {
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: speedControl,
+                        ),
                       ),
-                  ],
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 12,
-                    ),
-                    child: Text(
-                      _modeLabel(
-                        learning?.playbackMode ?? CuePlaybackMode.continuous,
+                      primaryControls,
+                      Expanded(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [modeControl, intensiveControl],
+                        ),
                       ),
+                    ],
+                  );
+                }
+                return Column(
+                  children: [
+                    primaryControls,
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      children: [speedControl, modeControl, intensiveControl],
                     ),
+                  ],
+                );
+              },
+            ),
+            if (intensive)
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                children: [
+                  Text(
+                    '精聽 · ${switch (learning!.phase) {
+                      IntensivePhase.blindListening => '盲聽',
+                      IntensivePhase.englishShown => '英文',
+                      IntensivePhase.bilingualShown => '雙語',
+                    }}',
+                    style: timeStyle,
                   ),
-                ),
-                if (learning != null && learning.mode != LearningMode.intensive)
                   ActionChip(
-                    avatar: const Icon(Icons.school_outlined, size: 18),
-                    label: const Text('精聽'),
-                    onPressed: viewModel.toggleIntensiveMode,
-                  )
-                else if (learning?.mode == LearningMode.intensive) ...[
-                  ActionChip(
-                    label: const Text('退出精聽'),
-                    onPressed: viewModel.toggleIntensiveMode,
-                  ),
-                  ActionChip(
-                    label: Text(switch (learning!.phase) {
+                    label: Text(switch (learning.phase) {
                       IntensivePhase.blindListening => '顯示英文',
                       IntensivePhase.englishShown => '顯示中文',
                       IntensivePhase.bilingualShown => '重新遮蔽',
@@ -170,8 +264,7 @@ final class _PlaybackControlsState extends State<PlaybackControls> {
                     onPressed: viewModel.revealNext,
                   ),
                 ],
-              ],
-            ),
+              ),
             if (state.errorMessage != null)
               Align(
                 alignment: Alignment.centerLeft,

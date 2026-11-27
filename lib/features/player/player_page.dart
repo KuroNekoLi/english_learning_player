@@ -166,7 +166,6 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
                         onPlayCue: viewModel.playCue,
                         onTogglePlayback: viewModel.togglePlayback,
                         onBookmark: viewModel.toggleBookmark,
-                        onRepeatCue: viewModel.replay,
                       ),
               ),
               const Divider(height: 1),

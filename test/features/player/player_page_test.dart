@@ -295,6 +295,11 @@ void main() {
         find.byKey(const ValueKey('subtitleTranscriptList')),
         findsOneWidget,
       );
+      final playCenter = tester.getCenter(
+        find.byKey(const ValueKey('primaryPlayPauseButton')),
+      );
+      expect(playCenter.dx, closeTo(scenario.size.width / 2, 1));
+      expect(find.byTooltip('重播本句 (S)'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -441,7 +446,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('一句練習句。'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(ActionChip, '精聽'));
+    await tester.tap(find.byTooltip('精聽'));
     await tester.pumpAndSettle();
     expect(find.text('A sentence to learn.'), findsNothing);
     expect(find.text('一句練習句。'), findsNothing);
@@ -453,6 +458,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('一句練習句。'), findsOneWidget);
     expect(audio.seekCalls, 0);
+    await tester.tap(find.byTooltip('退出精聽'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('精聽'), findsOneWidget);
+    expect(find.text('A sentence to learn.'), findsOneWidget);
+    expect(find.text('一句練習句。'), findsOneWidget);
   });
 
   testWidgets('current cue can be bookmarked and removed', (tester) async {
