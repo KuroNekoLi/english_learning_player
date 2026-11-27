@@ -40,3 +40,5 @@
 - [WP-17 Web 實作交棒](agent/wp-17-implementation-handoff.md) 記錄分段操作、鎖版資產、測試與交回架構審查的條件。第一段可用 [Prompt E](10-agent-prompts.md#prompt-e--wp-17-第一段-web-實作) 開始。
 - [WP-18 唯讀登入交棒](agent/wp-18-readonly-account-handoff.md) 記錄 username alias、同 UID credential linking、服務端寫入拒絕及正式啟用前置條件。
 - [WP-19 Dictionary 交棒](agent/wp-19-dictionary-handoff.md) 記錄字幕單字查詢、BlackCatNews API/模型契約、Drift local-first cache 與驗收限制。
+- [WP-20 單字庫原句卡規格](agent/wp-20-word-bank-original-context-spec.md) 定義字幕快照、片段回放、TTS 備援與同步契約。
+- [WP-20 實作交接](agent/wp-20-handoff.md) 記錄完成項目、測試結果與平台驗收限制。

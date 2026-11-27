@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../dictionary_dependencies.dart';
+import '../domain/saved_dictionary_word.dart';
 import '../domain/word.dart';
 import 'dictionary_lookup_panel.dart';
 
@@ -38,7 +39,7 @@ final class WordBankPage extends ConsumerWidget {
               : ListView.builder(
                   itemCount: words.length,
                   itemBuilder: (context, index) {
-                    final word = words[index];
+                    final word = words[index].word;
                     final glosses = [
                       for (final entry in word.entries)
                         for (final definition in entry.definitions)
@@ -67,22 +68,46 @@ final class WordBankPage extends ConsumerWidget {
   );
 }
 
-final class _SavedWordPage extends StatelessWidget {
+final class _SavedWordPage extends ConsumerWidget {
   const _SavedWordPage({required this.word});
   final Word word;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
     appBar: AppBar(title: Text(word.word)),
-    body: Center(
-      heightFactor: 1,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: DictionaryWordDetails(word: word),
+    body: ref
+        .watch(savedDictionaryWordsProvider)
+        .when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (_, _) => Center(
+            child: TextButton(
+              onPressed: () => ref.invalidate(savedDictionaryWordsProvider),
+              child: const Text('單字庫載入失敗，重試'),
+            ),
+          ),
+          data: (words) {
+            SavedDictionaryWord? saved;
+            for (final entry in words) {
+              if (entry.word.word.toLowerCase() == word.word.toLowerCase()) {
+                saved = entry;
+                break;
+              }
+            }
+            return Center(
+              heightFactor: 1,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: DictionaryWordDetails(
+                    word: saved?.word ?? word,
+                    originalContext: saved?.originalContext,
+                    showOriginalContextCard: true,
+                  ),
+                ),
+              ),
+            );
+          },
         ),
-      ),
-    ),
   );
 }

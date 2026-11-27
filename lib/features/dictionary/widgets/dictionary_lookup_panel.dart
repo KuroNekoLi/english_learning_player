@@ -3,17 +3,21 @@ import 'package:material_ui/material_ui.dart';
 
 import '../dictionary_dependencies.dart';
 import '../domain/word.dart';
+import '../domain/original_word_context.dart';
 import 'dictionary_save_button.dart';
 import 'dictionary_speech_button.dart';
+import 'original_word_context_card.dart';
 
 final class DictionaryLookupPanel extends ConsumerStatefulWidget {
   const DictionaryLookupPanel({
     super.key,
     required this.word,
     required this.onClose,
+    this.originalContext,
   });
   final String word;
   final VoidCallback onClose;
+  final OriginalWordContext? originalContext;
 
   @override
   ConsumerState<DictionaryLookupPanel> createState() =>
@@ -85,7 +89,10 @@ final class _DictionaryLookupPanelState
                   ),
                 );
               }
-              return DictionaryWordDetails(word: snapshot.data!);
+              return DictionaryWordDetails(
+                word: snapshot.data!,
+                originalContext: widget.originalContext,
+              );
             },
           ),
         ),
@@ -95,8 +102,15 @@ final class _DictionaryLookupPanelState
 }
 
 final class DictionaryWordDetails extends StatelessWidget {
-  const DictionaryWordDetails({super.key, required this.word});
+  const DictionaryWordDetails({
+    super.key,
+    required this.word,
+    this.originalContext,
+    this.showOriginalContextCard = false,
+  });
   final Word word;
+  final OriginalWordContext? originalContext;
+  final bool showOriginalContextCard;
 
   @override
   Widget build(BuildContext context) {
@@ -126,9 +140,20 @@ final class DictionaryWordDetails extends StatelessWidget {
                 label: '美式發音',
                 caption: '美式',
               ),
-              DictionarySaveButton(word: word),
+              DictionarySaveButton(
+                word: word,
+                originalContext: originalContext,
+              ),
             ],
           ),
+          if (showOriginalContextCard)
+            if (originalContext case final context?)
+              OriginalWordContextCard(
+                word: word.word,
+                originalContext: context,
+              ),
+          if (showOriginalContextCard && originalContext == null)
+            const _MissingOriginalContextNotice(),
           if (senseCount > 1)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -158,6 +183,27 @@ final class DictionaryWordDetails extends StatelessWidget {
             const SizedBox(height: 8),
           ],
         ],
+      ),
+    );
+  }
+}
+
+final class _MissingOriginalContextNotice extends ConsumerWidget {
+  const _MissingOriginalContextNotice();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final canEdit = ref.watch(canEditWordBankProvider);
+    return Card(
+      margin: const EdgeInsets.only(top: 12, bottom: 12),
+      child: ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: const Text('尚未保存原句'),
+        subtitle: Text(
+          canEdit
+              ? '到這個單字出現的字幕長按它，再選「補加這段原句」，即可保存原音片段。'
+              : '目前是唯讀帳號，無法補加原句；請使用可編輯帳號操作。',
+        ),
       ),
     );
   }

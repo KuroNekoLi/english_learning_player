@@ -26,6 +26,18 @@ import 'player_view_state.dart';
 
 export 'player_view_state.dart';
 
+final class PlayerPreviewResume {
+  const PlayerPreviewResume({
+    required this.material,
+    required this.positionMs,
+    required this.generation,
+  });
+
+  final LearningMaterial material;
+  final int positionMs;
+  final int generation;
+}
+
 final class PlayerViewModel extends Notifier<PlayerViewState> {
   late AudioEngine _audioEngine;
   late LearningSessionFactory _sessionFactory;
@@ -146,6 +158,81 @@ final class PlayerViewModel extends Notifier<PlayerViewState> {
 
   Future<void> onLifecycleExit() =>
       _resources.onLifecycleExit(_audioEngine.snapshot);
+
+  /// Pauses progress recording while another feature temporarily borrows the
+  /// shared AudioEngine. The caller must later restore this session.
+  Future<PlayerPreviewResume?> suspendForOriginalContext() async {
+    final material = state.material;
+    if (!state.isReady || material == null || _bundle == null) return null;
+    final generation = _openGeneration;
+    final snapshot = _audioEngine.snapshot;
+    if (snapshot.playing) await _audioEngine.pause();
+    await _resources.savePosition(_audioEngine.snapshot);
+    await _resources.close(CheckpointState.paused);
+    if (!_isCurrent(generation)) return null;
+    state = state.copyWith(
+      playback: _audioEngine.snapshot,
+      clearLearning: true,
+    );
+    return PlayerPreviewResume(
+      material: material,
+      positionMs: snapshot.positionMs,
+      generation: generation,
+    );
+  }
+
+  Future<void> resumeAfterOriginalContext(PlayerPreviewResume? resume) async {
+    if (resume == null || !_isCurrent(resume.generation)) return;
+    try {
+      final loader = await ref.read(materialPlaybackLoaderProvider.future);
+      final bundle = await loader.load(resume.material);
+      if (!_isCurrent(resume.generation)) {
+        await bundle.source.release?.call();
+        return;
+      }
+      await _audioEngine.load(bundle.source);
+      if (!_isCurrent(resume.generation)) return;
+      await _audioEngine.seekTo(Duration(milliseconds: resume.positionMs));
+      _bundle = bundle;
+      await _loadBookmarkAnchors(
+        resume.material.id,
+        bundle.subtitleTracks,
+        resume.generation,
+      );
+      if (!_isCurrent(resume.generation)) return;
+      await _createSession(resume.generation);
+      final progressRepository = await ref.read(
+        progressRepositoryProvider.future,
+      );
+      if (!_isCurrent(resume.generation)) return;
+      await _resources.startProgress(
+        audio: _audioEngine,
+        repository: progressRepository,
+        material: resume.material,
+        isCurrent: () => _isCurrent(resume.generation),
+        onPlayback: (snapshot) =>
+            state = state.copyWith(playback: snapshot, clearError: true),
+      );
+      if (!_isCurrent(resume.generation)) return;
+      state = state.copyWith(
+        playback: _audioEngine.snapshot,
+        learning: _session?.state,
+        englishTrack: bundle.englishTrack,
+        subtitleTracks: bundle.subtitleTracks,
+        timeline: bundle.timeline,
+        clearLearning: _session == null,
+        clearEnglishTrack: bundle.englishTrack == null,
+        isCurrentCueBookmarked: _isBookmarked(
+          _session?.state.currentCue,
+          state.englishTrack,
+        ),
+      );
+    } catch (_) {
+      if (_isCurrent(resume.generation)) {
+        state = state.copyWith(errorMessage: '無法恢復原教材播放，請重新開啟教材。');
+      }
+    }
+  }
 
   Future<void> setSpeed(double speed) =>
       _runAudioCommand(() => _audioEngine.setSpeed(speed));

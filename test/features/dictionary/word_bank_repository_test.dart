@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:english_learning_player/core/db/local_database.dart';
 import 'package:english_learning_player/features/dictionary/data/word_bank_repository.dart';
 import 'package:english_learning_player/features/dictionary/domain/word.dart';
+import 'package:english_learning_player/features/dictionary/domain/original_word_context.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -36,7 +37,7 @@ void main() {
       final entry = (await bank.pending()).single;
       expect(entry.migrated, isTrue);
       expect(entry.change.opId, matches(r'^[0-9a-f]{32}$'));
-      expect((await bank.list()).single.word, 'refine');
+      expect((await bank.list()).single.word.word, 'refine');
       await bank.merge([
         (
           word: 'refine',
@@ -90,10 +91,10 @@ void main() {
       addTearDown(reopened.close);
       final bank = WordBankRepository(reopened);
       final saved = (await bank.list()).single;
-      expect(saved.word, 'refine');
-      expect(saved.pronunciations.phonetic, '/rɪˈfaɪn/');
+      expect(saved.word.word, 'refine');
+      expect(saved.word.pronunciations.phonetic, '/rɪˈfaɪn/');
       expect(
-        saved.entries.single.definitions.single.examples.single.text,
+        saved.word.entries.single.definitions.single.examples.single.text,
         'The factory refines sugar.\n工廠提煉砂糖。',
       );
       await bank.remove(' REFINE ');
@@ -101,6 +102,55 @@ void main() {
       expect(
         await reopened.customSelect('SELECT word FROM dictionary_words').get(),
         hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'saves the first original context and attaches old entries in place',
+    () async {
+      final db = LocalDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final bank = WordBankRepository(db);
+      const first = OriginalWordContext(
+        materialId: 'lesson-1',
+        materialTitle: 'Lesson one',
+        startMs: 45000,
+        endMs: 48000,
+        english: 'It is incredibly murky.',
+        translations: ['非常模糊。'],
+      );
+      const second = OriginalWordContext(
+        materialId: 'lesson-2',
+        materialTitle: 'Lesson two',
+        startMs: 8000,
+        endMs: 12000,
+        english: 'The water looks murky.',
+        translations: [],
+      );
+
+      await bank.save(_refine);
+      final savedAtBeforeAttach =
+          (await bank.pending()).single.change.savedAtMs;
+      expect(await bank.attachContext('refine', first), isTrue);
+      final attached = (await bank.list()).single;
+      expect(attached.originalContext?.materialId, 'lesson-1');
+      expect(
+        attached.word.entries.single.definitions.single.zhDefinition,
+        '提煉。',
+      );
+      final savedAtAfterAttach = (await bank.pending()).single.change.savedAtMs;
+      expect(savedAtAfterAttach, savedAtBeforeAttach);
+
+      await bank.save(_refine, context: second);
+      expect(
+        (await bank.list()).single.originalContext?.materialId,
+        'lesson-1',
+      );
+      expect(await bank.attachContext('refine', second), isFalse);
+      expect(
+        (await bank.pending()).single.change.payload,
+        contains('original_context'),
       );
     },
   );

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../learning/domain/learning_session.dart';
+import '../../dictionary/domain/original_word_context.dart';
 import '../../dictionary/widgets/dictionary_word_text.dart';
 import '../../subtitles/domain/subtitle_time.dart';
 import '../../subtitles/domain/subtitle_timeline.dart';
@@ -10,6 +11,7 @@ final class SubtitleCueCard extends StatelessWidget {
   const SubtitleCueCard({
     super.key,
     required this.line,
+    this.originalContext,
     required this.offsetMs,
     required this.hasChineseTrack,
     required this.active,
@@ -23,6 +25,7 @@ final class SubtitleCueCard extends StatelessWidget {
   });
 
   final SubtitleLine line;
+  final OriginalWordContext? originalContext;
   final int offsetMs;
   final bool hasChineseTrack;
   final bool active;
@@ -97,6 +100,7 @@ final class SubtitleCueCard extends StatelessWidget {
                     child: DictionaryWordText(
                       text: line.english,
                       coordinator: dictionaryLookup,
+                      originalContext: originalContext,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: active
                             ? FontWeight.w700

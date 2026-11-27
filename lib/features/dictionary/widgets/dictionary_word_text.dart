@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'dictionary_lookup_panel.dart';
+import '../domain/original_word_context.dart';
 
 /// The transcript shares one coordinator so only one cue can open a popup.
 final class DictionaryLookupCoordinator {
@@ -34,11 +35,13 @@ final class DictionaryWordText extends StatefulWidget {
     required this.text,
     required this.style,
     this.coordinator,
+    this.originalContext,
   });
 
   final String text;
   final TextStyle? style;
   final DictionaryLookupCoordinator? coordinator;
+  final OriginalWordContext? originalContext;
 
   @override
   State<DictionaryWordText> createState() => _DictionaryWordTextState();
@@ -264,6 +267,7 @@ final class _DictionaryWordTextState extends State<DictionaryWordText> {
                       child: DictionaryLookupPanel(
                         key: ValueKey(target.word),
                         word: target.word,
+                        originalContext: widget.originalContext,
                         onClose: _hide,
                       ),
                     ),

@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../dictionary/widgets/dictionary_word_text.dart';
+import '../../dictionary/domain/original_word_context.dart';
 import '../../learning/domain/learning_session.dart';
+import '../../subtitles/domain/subtitle_time.dart';
 import '../../subtitles/domain/subtitle_timeline.dart';
 import 'subtitle_cue_card.dart';
 
@@ -11,6 +13,8 @@ final class SubtitleTranscript extends StatefulWidget {
   const SubtitleTranscript({
     super.key,
     required this.timeline,
+    required this.materialId,
+    required this.materialTitle,
     required this.visibility,
     required this.activeCueId,
     required this.intensive,
@@ -22,6 +26,8 @@ final class SubtitleTranscript extends StatefulWidget {
   });
 
   final SubtitleTimeline timeline;
+  final String materialId;
+  final String materialTitle;
   final SubtitleVisibility visibility;
   final String? activeCueId;
   final bool intensive;
@@ -67,10 +73,34 @@ final class _SubtitleTranscriptState extends State<SubtitleTranscript> {
         itemBuilder: (context, index) {
           final line = widget.timeline.lines[index];
           final active = widget.activeCueId == line.cue.id;
+          final startMs = subtitleToAudioMs(
+            line.cue.startMs,
+            widget.timeline.offsetMs,
+          );
+          final endMs = subtitleToAudioMs(
+            line.cue.endMs,
+            widget.timeline.offsetMs,
+          );
+          final originalContext =
+              endMs > startMs && line.english.trim().isNotEmpty
+              ? OriginalWordContext(
+                  materialId: widget.materialId,
+                  materialTitle: widget.materialTitle,
+                  startMs: startMs < 0 ? 0 : startMs,
+                  endMs: endMs,
+                  english: line.english.trim(),
+                  translations: [
+                    for (final translation in line.translations)
+                      if (translation.text.trim().isNotEmpty)
+                        translation.text.trim(),
+                  ],
+                )
+              : null;
           return SubtitleCueCard(
             dictionaryLookup: _dictionaryLookup,
             key: _rowKeys.putIfAbsent(line.cue.id, GlobalKey.new),
             line: line,
+            originalContext: originalContext,
             offsetMs: widget.timeline.offsetMs,
             hasChineseTrack: widget.timeline.hasChineseTrack,
             active: active,

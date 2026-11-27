@@ -15,6 +15,7 @@ import 'package:english_learning_player/features/library/library_dependencies.da
 import 'package:english_learning_player/features/dictionary/data/dictionary_repository.dart';
 import 'package:english_learning_player/features/dictionary/dictionary_dependencies.dart';
 import 'package:english_learning_player/features/dictionary/domain/word.dart';
+import 'package:english_learning_player/features/dictionary/domain/original_word_context.dart';
 import 'package:english_learning_player/features/progress/progress_dependencies.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,6 +35,7 @@ void main() {
   late FakeBookmarkRepository bookmarks;
   late FakeProgressRepository progress;
   late FakeAudioMediaSession mediaSession;
+  OriginalWordContext? savedOriginalContext;
   late Widget Function({TextScaler textScaler}) buildApp;
 
   setUp(() {
@@ -81,6 +83,7 @@ void main() {
     bookmarks = FakeBookmarkRepository();
     progress = FakeProgressRepository();
     mediaSession = FakeAudioMediaSession();
+    savedOriginalContext = null;
     buildApp = ({TextScaler textScaler = TextScaler.noScaling}) =>
         ProviderScope(
           overrides: [
@@ -89,6 +92,11 @@ void main() {
               (ref) async => _FixtureDictionaryRepository(),
             ),
             savedDictionaryWordsProvider.overrideWith((ref) async => []),
+            updateSavedDictionaryWordProvider.overrideWith((ref) {
+              return (word, {required save, context}) async {
+                savedOriginalContext = context;
+              };
+            }),
             bookmarkRepositoryProvider.overrideWith((ref) async => bookmarks),
             progressRepositoryProvider.overrideWith((ref) async => progress),
             audioMediaSessionProvider.overrideWith((ref) async => mediaSession),
@@ -133,6 +141,7 @@ void main() {
   testWidgets(
     'long pressing an English cue opens the dictionary without playing',
     (tester) async {
+      tracks[0] = tracks[0].copyWith(offsetMs: 250);
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
       final cue = find.text('A sentence to learn.');
@@ -148,6 +157,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip('關閉單字查詢'), findsOneWidget);
       expect(audio.snapshot.playing, isFalse);
+      await tester.tap(find.text('加入單字庫'));
+      await tester.pumpAndSettle();
+      expect(savedOriginalContext?.materialId, material.id);
+      expect(savedOriginalContext?.materialTitle, material.title);
+      expect(savedOriginalContext?.startMs, 1250);
+      expect(savedOriginalContext?.endMs, 2750);
+      expect(savedOriginalContext?.english, 'A sentence to learn.');
+      expect(savedOriginalContext?.translations, ['一句練習句。']);
       await tester.tap(find.byTooltip('關閉單字查詢'));
       await tester.pumpAndSettle();
       await tester.tapAt(at);

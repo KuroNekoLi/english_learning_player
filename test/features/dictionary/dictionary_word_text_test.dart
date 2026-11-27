@@ -1,10 +1,13 @@
 import 'package:english_learning_player/core/audio/audio_engine.dart';
 import 'package:english_learning_player/core/audio/speech_playback.dart';
 import 'package:english_learning_player/features/dictionary/widgets/dictionary_word_text.dart';
+import 'package:english_learning_player/features/dictionary/widgets/dictionary_lookup_panel.dart';
 import 'package:english_learning_player/features/dictionary/widgets/word_bank_page.dart';
 import 'package:english_learning_player/features/dictionary/data/dictionary_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:english_learning_player/features/dictionary/domain/word.dart';
+import 'package:english_learning_player/features/dictionary/domain/saved_dictionary_word.dart';
+import 'package:english_learning_player/features/dictionary/domain/original_word_context.dart';
 import 'package:english_learning_player/features/dictionary/dictionary_dependencies.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,10 +16,47 @@ import 'package:flutter/gestures.dart';
 import '../../fakes/fake_audio_engine.dart';
 
 void main() {
+  testWidgets('explains read-only access and missing original context', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          canEditWordBankProvider.overrideWithValue(false),
+          savedDictionaryWordsProvider.overrideWith((ref) async => []),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: DictionaryWordDetails(
+              word: Word(
+                word: 'universally',
+                pronunciations: WordPronunciations(),
+                entries: [],
+              ),
+              showOriginalContextCard: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('唯讀帳號'), findsOneWidget);
+    expect(find.text('尚未保存原句'), findsOneWidget);
+    expect(find.text('目前是唯讀帳號，無法補加原句；請使用可編輯帳號操作。'), findsOneWidget);
+  });
+
   testWidgets('can save from lookup and remove from the word bank detail', (
     tester,
   ) async {
-    final words = <Word>[];
+    final words = <SavedDictionaryWord>[];
+    const context = OriginalWordContext(
+      materialId: 'lesson-1',
+      materialTitle: 'Lesson one',
+      startMs: 45000,
+      endMs: 48000,
+      english: 'A hello, helloish example.',
+      translations: ['有 hello 的句子。'],
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -27,11 +67,13 @@ void main() {
             (ref) async => List.of(words),
           ),
           updateSavedDictionaryWordProvider.overrideWith((ref) {
-            return (word, {required save}) async {
+            return (word, {required save, context}) async {
               if (save) {
-                words.add(word);
+                words.add(
+                  SavedDictionaryWord(word: word, originalContext: context),
+                );
               } else {
-                words.removeWhere((saved) => saved.word == word.word);
+                words.removeWhere((saved) => saved.word.word == word.word);
               }
               ref.invalidate(savedDictionaryWordsProvider);
             };
@@ -44,6 +86,7 @@ void main() {
               child: DictionaryWordText(
                 text: 'hello',
                 style: TextStyle(fontSize: 20),
+                originalContext: context,
               ),
             ),
           ),
@@ -62,6 +105,20 @@ void main() {
     await tester.tap(find.widgetWithText(ListTile, 'hello'));
     await tester.pumpAndSettle();
     expect(find.text('喂, 嘿'), findsOneWidget);
+    expect(find.text('Lesson one · 0:45–0:48'), findsOneWidget);
+    expect(find.text('A hello, helloish example.'), findsOneWidget);
+    final originalSentence = tester.widget<Text>(
+      find.text('A hello, helloish example.'),
+    );
+    final originalSpans = originalSentence.textSpan! as TextSpan;
+    final highlighted = originalSpans.children!.cast<TextSpan>().singleWhere(
+      (span) => span.text == 'hello',
+    );
+    final unhighlighted = originalSpans.children!.cast<TextSpan>().singleWhere(
+      (span) => span.text == 'helloish',
+    );
+    expect(highlighted.style?.backgroundColor, isNotNull);
+    expect(unhighlighted.style?.backgroundColor, isNull);
     await tester.tap(find.text('已加入單字庫 · 移除'));
     await tester.pumpAndSettle();
     await tester.pageBack();

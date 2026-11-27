@@ -7,6 +7,7 @@ import 'package:english_learning_player/core/db/local_database.dart';
 import 'package:english_learning_player/features/dictionary/data/firebase_word_bank_sync.dart';
 import 'package:english_learning_player/features/dictionary/data/word_bank_repository.dart';
 import 'package:english_learning_player/features/dictionary/domain/word.dart';
+import 'package:english_learning_player/features/dictionary/domain/original_word_context.dart';
 import 'package:english_learning_player/features/library/data/sqlite_library_folder_repository.dart';
 import 'package:english_learning_player/features/library/data/sqlite_library_changes.dart';
 import 'package:english_learning_player/features/library/material_repository.dart';
@@ -93,13 +94,23 @@ void main() {
       pronunciations: WordPronunciations(),
       entries: [],
     );
-    await a.save(word);
-    expect((await a.list()).single.word, 'refine');
+    const originalContext = OriginalWordContext(
+      materialId: 'lesson-1',
+      materialTitle: 'Example lesson',
+      startMs: 45000,
+      endMs: 48000,
+      english: 'It looks murky.',
+      translations: ['看起來很模糊。'],
+    );
+    await a.save(word, context: originalContext);
+    expect((await a.list()).single.word.word, 'refine');
     expect(await b.list(), isEmpty);
     await syncA.run(refresh: false);
     expect(await a.pending(), isEmpty);
     expect(await syncB.run(refresh: true), isTrue);
-    expect((await b.list()).single.word, 'refine');
+    expect((await b.list()).single.word.word, 'refine');
+    expect((await b.list()).single.originalContext?.materialId, 'lesson-1');
+    expect((await b.list()).single.originalContext?.english, 'It looks murky.');
     await a.remove('refine');
     await b.save(
       word,
@@ -113,7 +124,7 @@ void main() {
     await b.save(word);
     await syncB.run(refresh: false);
     await syncA.run(refresh: true);
-    expect((await a.list()).single.word, 'refine');
+    expect((await a.list()).single.word.word, 'refine');
   }, skip: Platform.environment['ELP_RUN_FIREBASE_TEST'] != '1');
 
   test('Firebase emulator: Google and Apple exchange mock credentials for isolated UIDs', () async {

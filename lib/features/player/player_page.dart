@@ -139,6 +139,8 @@ final class _PlayerPageState extends ConsumerState<PlayerPage>
                           '${state.englishTrack!.id}:${state.englishTrack!.revision}:${state.subtitleTracks.length}',
                         ),
                         timeline: state.timeline!,
+                        materialId: widget.material.id,
+                        materialTitle: widget.material.title,
                         visibility:
                             state.learning?.subtitleVisibility ??
                             state.normalVisibility,
